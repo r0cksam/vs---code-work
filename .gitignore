@@ -25,3 +25,15 @@ superset/
 *.csv
 *.xlsx
 *.xls
+# DuckDB cache/database files
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+*.db
+*.db-wal
+*.db-shm
+
+# pDash generated cache
+pDash_analytics_cache.duckdb
+pDash_cache.duckdb
+asn_lookup_cache.json
