@@ -46,6 +46,14 @@ python asn_smart_lookup_ip2location.py `
 Install:
 pip install pandas requests duckdb
 """
+# python asn_smart_lookup_ip2location.py `
+#   --csv "D:\Vs - Code Work\unique_asn.csv" `
+#   --output "D:\Vs - Code Work\asn_summary_with_ip2location.csv" `
+#   --top 1514 `
+#   --sleep 3 `
+#   --jitter 1 `
+#   --max-new-per-run 200 `
+#   --batch-save-every 10
 
 from __future__ import annotations
 
