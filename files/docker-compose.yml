@@ -1,13 +1,13 @@
-version: "3.8"
-
 services:
   cdn-intelligence:
     build: .
     ports:
       - "8501:8501"
     volumes:
-      # This maps your Windows folder to the /data folder inside Docker
-      - "D:/Vs - Code Work/cleaned_output:/data:ro"
+      # All your drives are mounted — type any path in the app UI directly
+      - C:\:/mnt/c:ro
+      - D:\:/mnt/d:ro
+      - Z:\:/mnt/z:ro
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
