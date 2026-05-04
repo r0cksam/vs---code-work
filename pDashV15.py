@@ -1,38 +1,3 @@
-"""
-parquet_explorer.py  -  Visual Parquet Explorer (multi-folder + smart browser)
-===============================================================================
-Run:  streamlit run parquet_explorer.py
-
-pip install streamlit pandas pyarrow duckdb plotly reportlab requests
-
-v15 fixes applied:
-  - [CRITICAL] ub_get_conn: replaced shared in-memory DuckDB with file-backed connection
-    to eliminate thread-safety collisions across concurrent Streamlit sessions.
-  - [CRITICAL] ub_lookup_geo: changed http:// → https:// to protect IP addresses (PII)
-    in transit. Added graceful fallback if `requests` is not installed.
-  - [CRITICAL] import requests moved to top-level so import errors surface at startup.
-  - [LOGIC] load_schema: now reads schema from every parquet file (not just the first
-    per directory) to correctly handle schema-evolved datasets.
-  - [LOGIC] ub_build_sessions: added minimum-session-length guard (≥2 prior rows) on
-    smart_break to prevent ultra-short spurious sessions on mobile connections.
-  - [LOGIC] apply_all_filters: documented the intentional OR-between-columns dual filter
-    behaviour to prevent future confusion.
-  - [PERFORMANCE] refresh_file_inventory_cache: replaced iterrows() with
-    set_index().to_dict() for O(1) per-row lookups — ~100x faster on large inventories.
-  - [PERFORMANCE] unique_values: rewritten to use DuckDB first (single SQL pass);
-    falls back to PyArrow batch iteration if DuckDB is unavailable.
-  - [PERFORMANCE] full_filtered_value_counts: added cardinality_cap (500k) to prevent
-    the counter dict from ballooning in RAM on high-cardinality columns.
-  - [PERFORMANCE] Removed all time.sleep() calls from progress bar update paths;
-    any sleep() in the Streamlit main thread freezes the UI.
-  - [MAINTAINABILITY] _gb_cache_get: three-state return (_GB_NOT_RUN / None / payload)
-    so "never run" vs "ran but stale" are correctly distinguished in the UI.
-  - [MAINTAINABILITY] collect_files: now logs a warning for paths that no longer exist.
-  - [MAINTAINABILITY] Type hints added to log_warning, build_mask, run_query,
-    ub_build_sessions, ub_estimate_watch_minutes, and load_schema.
-  - [MAINTAINABILITY] Optional imported from typing for Python < 3.10 compatibility.
-"""
-
 import json
 import time
 import logging
