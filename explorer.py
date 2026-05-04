@@ -6,25 +6,90 @@ import tempfile
 st.set_page_config(layout="wide")
 st.title("📊 Parquet Date-wise Explorer")
 
+
+def duckdb_path(path_value):
+    """Convert Windows/Linux path into safe DuckDB SQL string."""
+    return "'" + str(path_value).replace("\\", "/").replace("'", "''") + "'"
+
+
 # -----------------------------
-# Input
+# Root folder input
 # -----------------------------
-path = st.text_input(
-    "Enter parquet file or folder path",
-    r"D:\Vs - Code Work\cleaned_output\*.parquet"
+root_path = st.text_input(
+    "Enter ROOT folder path",
+    r"D:\Vs - Code Work\cleaned_output"
 )
 
-if not path:
+if not root_path:
     st.stop()
 
-p = Path(path)
+root = Path(root_path)
 
-if p.is_dir():
-    parquet_path = str(p / "*.parquet")
+if not root.exists():
+    st.error("Root path does not exist.")
+    st.stop()
+
+if not root.is_dir():
+    st.error("Please enter a folder path, not a file path.")
+    st.stop()
+
+# -----------------------------
+# Choose folder/file
+# -----------------------------
+st.subheader("📂 Select data source")
+
+mode = st.radio(
+    "Choose input type",
+    [
+        "Entire root folder",
+        "Select one or more subfolders",
+        "Select single parquet file"
+    ]
+)
+
+parquet_source_sql = None
+
+if mode == "Entire root folder":
+    parquet_source_sql = duckdb_path(root / "**" / "*.parquet")
+
+elif mode == "Select one or more subfolders":
+    subfolders = sorted([f for f in root.iterdir() if f.is_dir()])
+
+    if not subfolders:
+        st.warning("No subfolders found inside root folder.")
+        st.stop()
+
+    selected_folders = st.multiselect(
+        "Choose one or more subfolders",
+        subfolders,
+        format_func=lambda x: f"{x.name} ({len(list(x.glob('*.parquet')))} files)"
+    )
+
+    if not selected_folders:
+        st.info("Select at least one folder.")
+        st.stop()
+
+    parquet_source_sql = "[" + ", ".join(
+        duckdb_path(folder / "*.parquet")
+        for folder in selected_folders
+    ) + "]"
+
 else:
-    parquet_path = str(p)
+    parquet_files = sorted(root.rglob("*.parquet"))
 
-parquet_path = parquet_path.replace("\\", "/").replace("'", "''")
+    if not parquet_files:
+        st.warning("No parquet files found inside root folder.")
+        st.stop()
+
+    selected_file = st.selectbox(
+        "Choose parquet file",
+        parquet_files,
+        format_func=lambda x: str(x.relative_to(root))
+    )
+
+    parquet_source_sql = duckdb_path(selected_file)
+
+st.success(f"Using: {parquet_source_sql}")
 
 # -----------------------------
 # DuckDB
@@ -35,6 +100,32 @@ con.execute("SET memory_limit='28GB';")
 con.execute("SET preserve_insertion_order=false;")
 
 # -----------------------------
+# Timezone choice
+# -----------------------------
+timezone_mode = st.radio(
+    "Treat date filter as",
+    ["IST", "UTC"],
+    horizontal=True
+)
+
+if timezone_mode == "IST":
+    record_date_expr = """
+        CAST(
+            to_timestamp(TRY_CAST(reqTimeSec AS DOUBLE))
+            AT TIME ZONE 'Asia/Kolkata'
+            AS DATE
+        )
+    """
+else:
+    record_date_expr = """
+        CAST(
+            to_timestamp(TRY_CAST(reqTimeSec AS DOUBLE))
+            AT TIME ZONE 'UTC'
+            AS DATE
+        )
+    """
+
+# -----------------------------
 # Create optimized view
 # -----------------------------
 try:
@@ -42,12 +133,15 @@ try:
         CREATE OR REPLACE VIEW data AS
         SELECT
             *,
-            CAST(to_timestamp(TRY_CAST(reqTimeSec AS DOUBLE)) AS DATE) AS record_date
-        FROM read_parquet('{parquet_path}')
+            to_timestamp(TRY_CAST(reqTimeSec AS DOUBLE)) AS req_time_utc,
+            to_timestamp(TRY_CAST(reqTimeSec AS DOUBLE)) AT TIME ZONE 'Asia/Kolkata' AS req_time_ist,
+            {record_date_expr} AS record_date
+        FROM read_parquet({parquet_source_sql})
         WHERE TRY_CAST(reqTimeSec AS DOUBLE) IS NOT NULL;
     """)
 except Exception as e:
     st.error(f"Error loading parquet: {e}")
+    con.close()
     st.stop()
 
 st.success("✅ Data loaded")
@@ -81,36 +175,37 @@ daily_df = con.execute("""
 
 st.dataframe(daily_df, use_container_width=True)
 
+if daily_df.empty:
+    st.warning("No valid reqTimeSec values found.")
+    con.close()
+    st.stop()
+
+min_date = daily_df["record_date"].min()
+max_date = daily_df["record_date"].max()
+
 # -----------------------------
 # Date range preview
 # -----------------------------
 st.subheader("📅 Filter by date range")
 
-if not daily_df.empty:
-    min_date = daily_df["record_date"].min()
-    max_date = daily_df["record_date"].max()
+date_range = st.date_input(
+    "Select date range",
+    [min_date, max_date],
+    key="range_date"
+)
 
-    date_range = st.date_input(
-        "Select date range",
-        [min_date, max_date],
-        key="range_date"
-    )
+if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
+    start_date, end_date = date_range
 
-    if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
-        start_date, end_date = date_range
+    filtered = con.execute(f"""
+        SELECT *
+        FROM data
+        WHERE record_date BETWEEN DATE '{start_date}' AND DATE '{end_date}'
+        LIMIT 100
+    """).fetchdf()
 
-        filtered = con.execute(f"""
-            SELECT *
-            FROM data
-            WHERE record_date BETWEEN DATE '{start_date}' AND DATE '{end_date}'
-            LIMIT 100
-        """).fetchdf()
-
-        st.write(f"Showing first {len(filtered):,} rows")
-        st.dataframe(filtered, use_container_width=True)
-else:
-    st.warning("No valid reqTimeSec values found.")
-    st.stop()
+    st.write(f"Showing first {len(filtered):,} rows")
+    st.dataframe(filtered, use_container_width=True)
 
 # -----------------------------
 # Distinct records for selected date
@@ -139,6 +234,7 @@ if distinct_mode == "Distinct selected columns":
 
     if not selected_cols:
         st.info("Select at least one column.")
+        con.close()
         st.stop()
 
     cols_sql = ", ".join([f'"{c}"' for c in selected_cols])
