@@ -17,7 +17,7 @@ try:
 except ImportError:
     pytz = None
 
-APP_TITLE = "Mini Parquet Explorer"
+APP_TITLE = "Veto Dashboard"
 REQ_TIME_COL_DEFAULT = "reqTimeSec"
 
 st.set_page_config(page_title=APP_TITLE, page_icon="🧮", layout="wide", initial_sidebar_state="expanded")
@@ -113,6 +113,321 @@ def count_rows(files: List[str], req_time_col: str, start_epoch: int, end_epoch:
         WHERE TRY_CAST({qcol} AS BIGINT) BETWEEN {int(start_epoch)} AND {int(end_epoch)}
     """
     return int(con.execute(query).fetchone()[0] or 0)
+
+
+
+@st.cache_data(show_spinner=False)
+def distinct_count_one_column(
+    files: List[str],
+    column: str,
+    req_time_col: str,
+    start_epoch: int,
+    end_epoch: int,
+) -> dict:
+    """Exact distinct count for one column inside the selected reqTimeSec range."""
+    con = duckdb.connect(database=":memory:")
+    try:
+        con.execute("PRAGMA threads=4")
+        con.execute("PRAGMA enable_object_cache")
+    except Exception:
+        pass
+    parquet_sql = _path_list_sql(files)
+    q_col = _dq(column)
+    q_ts = _dq(req_time_col)
+    time_filter = f"TRY_CAST({q_ts} AS BIGINT) BETWEEN {int(start_epoch)} AND {int(end_epoch)}"
+    query = f"""
+        SELECT
+            COUNT(*) AS total_rows,
+            SUM(CASE WHEN {q_col} IS NOT NULL AND TRIM(CAST({q_col} AS VARCHAR)) <> '' THEN 1 ELSE 0 END) AS filled_rows,
+            COUNT(DISTINCT CASE WHEN {q_col} IS NOT NULL AND TRIM(CAST({q_col} AS VARCHAR)) <> '' THEN CAST({q_col} AS VARCHAR) END) AS distinct_count
+        FROM read_parquet({parquet_sql}, union_by_name=true)
+        WHERE {time_filter}
+    """
+    total_rows, filled_rows, distinct_count = con.execute(query).fetchone()
+    total_rows = int(total_rows or 0)
+    filled_rows = int(filled_rows or 0)
+    distinct_count = int(distinct_count or 0)
+    return {
+        "Column": column,
+        "Distinct Count": distinct_count,
+        "Filled Rows": filled_rows,
+        "Total Rows": total_rows,
+        "Fill %": round((filled_rows / total_rows * 100), 2) if total_rows else 0.0,
+    }
+
+
+@st.cache_data(show_spinner=False)
+def compare_distinct_count_one_column(
+    files: List[str],
+    column: str,
+    req_time_col: str,
+    a_start_epoch: int,
+    a_end_epoch: int,
+    b_start_epoch: int,
+    b_end_epoch: int,
+) -> dict:
+    """Exact Range A vs Range B distinct count for one column."""
+    a = distinct_count_one_column(files, column, req_time_col, a_start_epoch, a_end_epoch)
+    b = distinct_count_one_column(files, column, req_time_col, b_start_epoch, b_end_epoch)
+    a_distinct = int(a.get("Distinct Count", 0) or 0)
+    b_distinct = int(b.get("Distinct Count", 0) or 0)
+    delta = b_distinct - a_distinct
+    return {
+        "Column": column,
+        "Range A Distinct": a_distinct,
+        "Range B Distinct": b_distinct,
+        "Delta (B - A)": delta,
+        "Delta %": round(delta / a_distinct * 100, 2) if a_distinct else None,
+        "Range A Filled Rows": int(a.get("Filled Rows", 0) or 0),
+        "Range B Filled Rows": int(b.get("Filled Rows", 0) or 0),
+    }
+
+
+def _default_query_string_column(columns: List[str]) -> str:
+    for name in ["queryStr", "qrystr", "query_string", "querystring"]:
+        for col in columns:
+            if col.lower() == name.lower():
+                return col
+    for col in columns:
+        if "query" in col.lower():
+            return col
+    return ""
+
+
+def _default_device_column(columns: List[str]) -> str:
+    for name in ["device_id", "deviceId", "device", "clientDeviceId"]:
+        for col in columns:
+            if col.lower() == name.lower():
+                return col
+    for col in columns:
+        if "device" in col.lower():
+            return col
+    return ""
+
+
+def _default_ip_column(columns: List[str]) -> str:
+    for name in ["cliIP", "clientIP", "client_ip", "ip", "IP"]:
+        for col in columns:
+            if col.lower() == name.lower():
+                return col
+    for col in columns:
+        low = col.lower()
+        if low in {"ip", "clientip"} or "cliip" in low or "client_ip" in low:
+            return col
+    return ""
+
+
+def _query_key_expr(query_col: str, key: str) -> str:
+    if not query_col or not key:
+        return "NULL"
+    # Matches raw query strings such as a=1&device_id=x or URLs ending in ?device_id=x.
+    safe_key = str(key).replace("'", "''")
+    return f"regexp_extract(CAST({_dq(query_col)} AS VARCHAR), '(?:^|[?&]){safe_key}=([^&]+)', 1)"
+
+
+def _device_expr(device_source: str, query_col: str, device_col: str, device_key: str) -> str:
+    if device_source == "Parsed from query string":
+        return _query_key_expr(query_col, device_key)
+    if device_source == "Direct column":
+        return f"CAST({_dq(device_col)} AS VARCHAR)" if device_col else "NULL"
+    return "NULL"
+
+
+def _display_date_expr(req_time_col: str, tz_name: str) -> str:
+    zone = "Asia/Kolkata" if tz_name == "IST" else "UTC"
+    return f"CAST(to_timestamp(TRY_CAST({_dq(req_time_col)} AS BIGINT)) AT TIME ZONE '{zone}' AS DATE)"
+
+
+@st.cache_data(show_spinner=False)
+def watch_summary_for_range(
+    files: List[str],
+    req_time_col: str,
+    start_epoch: int,
+    end_epoch: int,
+    tz_name: str,
+    device_source: str,
+    query_col: str,
+    device_col: str,
+    device_key: str = "device_id",
+    gap_cap_seconds: int = 60,
+    cliip_col: str = "",
+    session_key: str = "session_id",
+) -> Tuple[dict, pd.DataFrame]:
+    """
+    Recommended Veto watch-hour estimate from request logs.
+
+    Viewer identity:
+      1) real device_id when present
+      2) cliIP fallback when device_id is missing
+
+    Watch grouping:
+      viewer_id + session_id when session_id exists, otherwise viewer_id only.
+
+    Watch seconds:
+      next reqTimeSec gap inside the group, capped at gap_cap_seconds, then summed / 3600.
+    """
+    con = duckdb.connect(database=":memory:")
+    try:
+        con.execute("PRAGMA threads=4")
+        con.execute("PRAGMA enable_object_cache")
+    except Exception:
+        pass
+
+    parquet_sql = _path_list_sql(files)
+    q_ts = _dq(req_time_col)
+    time_filter = f"TRY_CAST({q_ts} AS BIGINT) BETWEEN {int(start_epoch)} AND {int(end_epoch)}"
+    device_sql = _device_expr(device_source, query_col, device_col, device_key)
+    session_sql = _query_key_expr(query_col, session_key) if query_col and session_key else "NULL"
+    ip_sql = f"CAST({_dq(cliip_col)} AS VARCHAR)" if cliip_col else "NULL"
+    event_date_sql = _display_date_expr(req_time_col, tz_name)
+    cap = int(gap_cap_seconds)
+
+    base_cte = f"""
+        WITH base AS (
+            SELECT
+                TRY_CAST({q_ts} AS BIGINT) AS event_ts,
+                {event_date_sql} AS event_date,
+                NULLIF(TRIM(COALESCE(CAST({device_sql} AS VARCHAR), '')), '') AS raw_device_id,
+                NULLIF(TRIM(COALESCE(CAST({ip_sql} AS VARCHAR), '')), '') AS raw_cliip,
+                NULLIF(TRIM(COALESCE(CAST({session_sql} AS VARCHAR), '')), '') AS raw_session_id
+            FROM read_parquet({parquet_sql}, union_by_name=true)
+            WHERE {time_filter}
+              AND TRY_CAST({q_ts} AS BIGINT) IS NOT NULL
+        ), identified AS (
+            SELECT
+                *,
+                CASE
+                    WHEN raw_device_id IS NOT NULL THEN raw_device_id
+                    WHEN raw_cliip IS NOT NULL THEN 'ip:' || raw_cliip
+                    ELSE NULL
+                END AS viewer_id,
+                CASE
+                    WHEN raw_device_id IS NOT NULL THEN 'device_id'
+                    WHEN raw_cliip IS NOT NULL THEN 'cliIP_fallback'
+                    ELSE 'missing'
+                END AS viewer_type,
+                COALESCE(raw_session_id, '') AS session_id
+            FROM base
+        ), filtered AS (
+            SELECT
+                *,
+                CASE
+                    WHEN session_id <> '' THEN viewer_id || '|session:' || session_id
+                    ELSE viewer_id
+                END AS watch_group_id
+            FROM identified
+            WHERE viewer_id IS NOT NULL
+        ), seq AS (
+            SELECT
+                *,
+                LEAD(event_ts) OVER (PARTITION BY watch_group_id ORDER BY event_ts) AS next_event_ts
+            FROM filtered
+        ), scored AS (
+            SELECT
+                *,
+                CASE
+                    WHEN next_event_ts IS NULL THEN 0
+                    WHEN next_event_ts - event_ts < 0 THEN 0
+                    WHEN next_event_ts - event_ts > {cap} THEN {cap}
+                    ELSE next_event_ts - event_ts
+                END AS watch_sec_est
+            FROM seq
+        )
+    """
+
+    summary_query = base_cte + """
+        SELECT
+            COUNT(*) AS rows_used_for_watch,
+            SUM(CASE WHEN viewer_type = 'device_id' THEN 1 ELSE 0 END) AS rows_with_device_id,
+            SUM(CASE WHEN viewer_type = 'cliIP_fallback' THEN 1 ELSE 0 END) AS rows_using_cliip_fallback,
+            COUNT(DISTINCT CASE WHEN viewer_type = 'device_id' THEN viewer_id END) AS total_device_ids,
+            COUNT(DISTINCT CASE WHEN viewer_type = 'cliIP_fallback' THEN viewer_id END) AS total_cliip_fallback_viewers,
+            COUNT(DISTINCT viewer_id) AS total_viewers,
+            COUNT(DISTINCT CASE WHEN session_id <> '' THEN session_id END) AS total_sessions,
+            ROUND(SUM(watch_sec_est) / 3600.0, 4) AS total_watch_hours,
+            ROUND(SUM(watch_sec_est) / 3600.0 / NULLIF(COUNT(DISTINCT viewer_id), 0), 4) AS watch_hours_per_viewer,
+            MIN(event_date) AS first_date,
+            MAX(event_date) AS last_date
+        FROM scored
+    """
+    row = con.execute(summary_query).fetchone()
+    summary = {
+        "Rows Used For Watch": int(row[0] or 0),
+        "Rows with Device_ID": int(row[1] or 0),
+        "Rows using cliIP fallback": int(row[2] or 0),
+        "Total Device_ID Count": int(row[3] or 0),
+        "Total cliIP Fallback Viewer Count": int(row[4] or 0),
+        "Total Viewer Count": int(row[5] or 0),
+        "Total Session Count": int(row[6] or 0),
+        "Total Watch Hours": float(row[7] or 0),
+        "Watch Minutes / Viewer": float(row[8] or 0),
+        "First Date": row[9],
+        "Last Date": row[10],
+    }
+
+    daily_query = base_cte + """
+        SELECT
+            event_date AS Date,
+            COUNT(*) AS Rows,
+            SUM(CASE WHEN viewer_type = 'device_id' THEN 1 ELSE 0 END) AS "Rows with Device_ID",
+            SUM(CASE WHEN viewer_type = 'cliIP_fallback' THEN 1 ELSE 0 END) AS "Rows using cliIP fallback",
+            COUNT(DISTINCT CASE WHEN viewer_type = 'device_id' THEN viewer_id END) AS "Total Device_ID Count",
+            COUNT(DISTINCT CASE WHEN viewer_type = 'cliIP_fallback' THEN viewer_id END) AS "cliIP Fallback Viewer Count",
+            COUNT(DISTINCT viewer_id) AS "Total Viewer Count",
+            COUNT(DISTINCT CASE WHEN session_id <> '' THEN session_id END) AS "Session Count",
+            ROUND(SUM(watch_sec_est) / 3600.0, 4) AS "Total Watch Hours",
+            ROUND(SUM(watch_sec_est) / 60.0 / NULLIF(COUNT(DISTINCT viewer_id), 0), 2) AS watch_minutes_per_viewer,
+        FROM scored
+        GROUP BY 1
+        ORDER BY 1
+    """
+    daily_df = con.execute(daily_query).df()
+    return summary, daily_df
+
+
+@st.cache_data(show_spinner=False)
+def compare_watch_summary_for_ranges(
+    files: List[str],
+    req_time_col: str,
+    a_start_epoch: int,
+    a_end_epoch: int,
+    b_start_epoch: int,
+    b_end_epoch: int,
+    tz_name: str,
+    device_source: str,
+    query_col: str,
+    device_col: str,
+    device_key: str = "device_id",
+    gap_cap_seconds: int = 60,
+    cliip_col: str = "",
+    session_key: str = "session_id",
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    a_summary, a_daily = watch_summary_for_range(files, req_time_col, a_start_epoch, a_end_epoch, tz_name, device_source, query_col, device_col, device_key, gap_cap_seconds, cliip_col, session_key)
+    b_summary, b_daily = watch_summary_for_range(files, req_time_col, b_start_epoch, b_end_epoch, tz_name, device_source, query_col, device_col, device_key, gap_cap_seconds, cliip_col, session_key)
+    metrics = [
+        "Rows Used For Watch",
+        "Rows with Device_ID",
+        "Rows using cliIP fallback",
+        "Total Device_ID Count",
+        "Total cliIP Fallback Viewer Count",
+        "Total Viewer Count",
+        "Total Session Count",
+        "Total Watch Hours",
+        "Watch Minutes / Viewer"
+    ]
+    rows = []
+    for metric in metrics:
+        av = a_summary.get(metric, 0) or 0
+        bv = b_summary.get(metric, 0) or 0
+        delta = bv - av
+        rows.append({
+            "Metric": metric,
+            "Range A": av,
+            "Range B": bv,
+            "Delta (B - A)": delta,
+            "Delta %": round(delta / av * 100, 2) if av else None,
+        })
+    return pd.DataFrame(rows), a_daily, b_daily
 
 
 def distinct_counts_for_columns_live(
@@ -507,8 +822,8 @@ def querystring_top_values(parsed_df: pd.DataFrame, key: str, top_n: int = 100) 
     return out
 
 
-st.title("🧮 Mini Parquet Explorer")
-st.caption("Folder/file selection is on the left. The available reqTimeSec date range appears at the top before running distinct counts.")
+st.title("📺 Veto Dashboard")
+st.caption("Folder/file selection is on the left. Available date range, selected files, columns, and comparison controls stay at the top.")
 
 if duckdb is None:
     st.error("DuckDB is required. Install it with: pip install duckdb")
@@ -595,8 +910,6 @@ r1.metric("Selected files", f"{len(selected_files):,}")
 r2.metric("Columns", f"{len(columns):,}")
 r3.metric("Available from", min_dt.strftime("%Y-%m-%d %H:%M:%S"))
 r4.metric("Available to", max_dt.strftime("%Y-%m-%d %H:%M:%S"))
-st.caption(f"Shown in {tz_mode}. Raw available epoch range: `{min_epoch}` → `{max_epoch}`.")
-
 st.markdown("### Choose date/time range")
 comparison_mode = st.toggle(
     "Comparison mode — compare two dates/date ranges on one screen",
@@ -680,90 +993,86 @@ with st.expander("Schema", expanded=False):
     st.dataframe(schema_df, use_container_width=True, hide_index=True)
 
 st.markdown("---")
-st.subheader("Distinct counts — lazy load")
-if comparison_mode:
-    st.caption("Click run and the table updates one column at a time with Range A, Range B, and delta values.")
-    run_query = st.button("▶️ Lazy load comparison distinct counts", type="primary")
-else:
-    st.caption("Click run and the table below updates one column at a time while the query is processing.")
-    run_query = st.button("▶️ Lazy load distinct counts for every column", type="primary")
+st.subheader("Distinct counts — click a column to load")
+st.caption(
+    "Each column is shown as a separate box. Click **Load** on the column you need. "
+    "While it runs, the box shows a loading spinner. Results are stored until files or date range changes."
+)
 
-if run_query:
-    if comparison_mode:
-        with st.spinner("Counting rows for comparison ranges ..."):
-            a_rows = count_rows(selected_files, req_time_col, a_start_epoch, a_end_epoch)
-            b_rows = count_rows(selected_files, req_time_col, b_start_epoch, b_end_epoch)
-        st.session_state["mini_total_rows"] = {"A": a_rows, "B": b_rows}
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Range A rows", f"{a_rows:,}")
-        m2.metric("Range B rows", f"{b_rows:,}")
-        m3.metric("Status", "Processing")
-
-        result_df = compare_distinct_counts_for_columns_live(
-            selected_files, columns, req_time_col,
-            a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch,
-        )
-        st.session_state["mini_result_df"] = result_df
-        st.session_state["mini_result_key"] = (
-            "compare", tuple(selected_files), req_time_col,
-            a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch,
-        )
-    else:
-        with st.spinner("Counting rows in selected date range ..."):
-            total_rows = count_rows(selected_files, req_time_col, start_epoch, end_epoch)
-        st.session_state["mini_total_rows"] = total_rows
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Rows in date range", f"{total_rows:,}")
-        m2.metric("Columns to process", f"{len(columns):,}")
-        m3.metric("Status", "Processing")
-
-        result_df = distinct_counts_for_columns_live(selected_files, columns, req_time_col, start_epoch, end_epoch)
-        st.session_state["mini_result_df"] = result_df
-        st.session_state["mini_result_key"] = ("single", tuple(selected_files), req_time_col, start_epoch, end_epoch)
-    st.rerun()
-
-result_df = st.session_state.get("mini_result_df")
-result_key = st.session_state.get("mini_result_key")
-current_key = (
+card_key = (
     "compare", tuple(selected_files), req_time_col, a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch,
 ) if comparison_mode else ("single", tuple(selected_files), req_time_col, start_epoch, end_epoch)
 
-if result_df is not None and result_key == current_key:
-    if comparison_mode:
-        totals = st.session_state.get("mini_total_rows", {"A": 0, "B": 0})
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Range A rows", f"{int(totals.get('A', 0)):,}")
-        m2.metric("Range B rows", f"{int(totals.get('B', 0)):,}")
-        m3.metric("Columns compared", f"{len(result_df):,}")
-        st.caption(f"Range A: {range_a_label}  |  Range B: {range_b_label}")
-    else:
-        total_rows = st.session_state.get("mini_total_rows", 0)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Rows in date range", f"{total_rows:,}")
-        m2.metric("Columns counted", f"{len(result_df):,}")
-        m3.metric("Completed", "Yes")
+if st.session_state.get("mini_distinct_card_key") != card_key:
+    st.session_state["mini_distinct_card_results"] = {}
+    st.session_state["mini_distinct_card_key"] = card_key
 
-    search = st.text_input("Search result columns", placeholder="type a column name ...", key="mini_distinct_search")
-    show_df = result_df.copy()
-    if search:
-        show_df = show_df[show_df["Column"].str.contains(search, case=False, na=False)]
+if st.button("🧹 Clear loaded distinct cards", key="mini_clear_distinct_cards"):
+    st.session_state["mini_distinct_card_results"] = {}
+    st.rerun()
 
-    st.dataframe(show_df, use_container_width=True, hide_index=True, height=560)
-    st.download_button(
-        "Download distinct counts CSV",
-        data=result_df.to_csv(index=False).encode("utf-8"),
-        file_name="mini_comparison_distinct_counts_by_column.csv" if comparison_mode else "mini_distinct_counts_by_column.csv",
-        mime="text/csv",
-    )
-elif result_df is not None and result_key != current_key:
-    st.info("Selections changed. Run lazy distinct counts again for the current file/date range.")
+card_search = st.text_input("Search columns to show as boxes", placeholder="type a column name ...", key="mini_distinct_card_search")
+visible_columns = columns
+if card_search:
+    visible_columns = [c for c in columns if card_search.lower() in c.lower()]
+
+st.caption(f"Showing {len(visible_columns):,} of {len(columns):,} column boxes.")
+results_store = st.session_state.setdefault("mini_distinct_card_results", {})
+
+for row_start in range(0, len(visible_columns), 3):
+    row_cols = st.columns(3)
+    for box, col in zip(row_cols, visible_columns[row_start:row_start + 3]):
+        with box:
+            with st.container(border=True):
+                st.markdown(f"**{col}**")
+                loaded = results_store.get(col)
+                if loaded is None:
+                    st.caption("Not loaded")
+                    if st.button("Load", key=f"mini_load_distinct_{hash((card_key, col))}"):
+                        with st.spinner(f"Loading `{col}` distinct count ..."):
+                            try:
+                                if comparison_mode:
+                                    loaded = compare_distinct_count_one_column(
+                                        selected_files, col, req_time_col,
+                                        a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch,
+                                    )
+                                else:
+                                    loaded = distinct_count_one_column(
+                                        selected_files, col, req_time_col, start_epoch, end_epoch,
+                                    )
+                            except Exception as exc:
+                                loaded = {"Column": col, "Error": str(exc)}
+                            results_store[col] = loaded
+                            st.session_state["mini_distinct_card_results"] = results_store
+                        st.rerun()
+                elif "Error" in loaded:
+                    st.error(loaded["Error"])
+                    if st.button("Retry", key=f"mini_retry_distinct_{hash((card_key, col))}"):
+                        results_store.pop(col, None)
+                        st.session_state["mini_distinct_card_results"] = results_store
+                        st.rerun()
+                elif comparison_mode:
+                    st.metric("Range A", f"{int(loaded.get('Range A Distinct', 0)):,}")
+                    st.metric("Range B", f"{int(loaded.get('Range B Distinct', 0)):,}", delta=f"{int(loaded.get('Delta (B - A)', 0)):,}")
+                    if loaded.get("Delta %") is not None:
+                        st.caption(f"Delta %: {loaded.get('Delta %')}%")
+                else:
+                    st.metric("Distinct", f"{int(loaded.get('Distinct Count', 0)):,}")
+                    st.caption(f"Filled rows: {int(loaded.get('Filled Rows', 0)):,} | Fill: {loaded.get('Fill %', 0)}%")
+
+if results_store:
+    loaded_df = pd.DataFrame(list(results_store.values()))
+    loaded_df = loaded_df[[c for c in loaded_df.columns if c != "Error"] + (["Error"] if "Error" in loaded_df.columns else [])]
+    with st.expander("Loaded distinct results table", expanded=False):
+        st.dataframe(loaded_df, use_container_width=True, hide_index=True, height=360)
+        st.download_button(
+            "Download loaded distinct cards CSV",
+            data=loaded_df.to_csv(index=False).encode("utf-8"),
+            file_name="veto_loaded_distinct_comparison.csv" if comparison_mode else "veto_loaded_distinct_counts.csv",
+            mime="text/csv",
+        )
 else:
-    if comparison_mode:
-        st.info("Click **Lazy load comparison distinct counts** to compare Range A vs Range B as each column finishes.")
-    else:
-        st.info("Click **Lazy load distinct counts for every column** to show results as each column finishes.")
+    st.info("No column distinct cards loaded yet. Click **Load** inside any column box.")
 
 
 st.markdown("---")
@@ -1082,375 +1391,207 @@ else:
 
 
 # ─────────────────────────────────────────────
-# Grafana-style output tables from the sample workbook
+# Watch-hour and device summary
 # ─────────────────────────────────────────────
 st.markdown("---")
-st.subheader("Grafana-style daily tables")
+st.subheader("Watch hours and viewer count")
 st.caption(
-    "This section follows your sample workbook: raw mapped rows, daily distinct IP/device summary, "
-    "80% consumption concentration, and content watched by IP/device. It uses the same master date range above."
+    "Recommended method: use device_id first, use cliIP only when device_id is missing, "
+    "then calculate watch time within viewer + session when session_id exists. Each request gap is capped at 60 seconds by default."
 )
 
-
-def _guess_option(options: List[str], guesses: List[str], allow_blank: bool = False) -> int:
-    opts = ([""] + options) if allow_blank else options
-    lowered = [str(x).lower() for x in opts]
-    for guess in guesses:
-        gl = guess.lower()
-        for idx, val in enumerate(lowered):
-            if val == gl:
-                return idx
-    for guess in guesses:
-        gl = guess.lower()
-        for idx, val in enumerate(lowered):
-            if gl and gl in val:
-                return idx
-    return 0
-
-
-def _varchar_expr(col: str) -> str:
-    return f"CAST({_dq(col)} AS VARCHAR)" if col else "NULL"
-
-
-def _numeric_expr(col: str) -> str:
-    return f"TRY_CAST({_dq(col)} AS DOUBLE)" if col else "0.0"
-
-
-def _qs_extract_expr(qs_col: str, key: str) -> str:
-    if not qs_col or not key:
-        return "NULL"
-    # Supports raw query strings with or without a leading ?. Values remain URL-encoded, same as the fast DuckDB path.
-    return f"regexp_extract(CAST({_dq(qs_col)} AS VARCHAR), '(?:^|[?&]){key}=([^&]+)', 1)"
-
-
-def _source_expr(source_type: str, source_col: str, qs_col: str, qs_key: str) -> str:
-    if source_type == "Parsed query-string key":
-        return _qs_extract_expr(qs_col, qs_key)
-    if source_type == "Direct column":
-        return _varchar_expr(source_col)
-    return "NULL"
-
-
-def _event_date_expr(req_time_col: str, tz_name: str) -> str:
-    zone = "Asia/Kolkata" if tz_name == "IST" else "UTC"
-    return f"CAST(to_timestamp(TRY_CAST({_dq(req_time_col)} AS BIGINT)) AT TIME ZONE '{zone}' AS DATE)"
-
-
-def _build_grafana_base_sql(
-    files: List[str],
-    req_time_col: str,
-    start_ep: int,
-    end_ep: int,
-    tz_name: str,
-    ip_col: str,
-    qs_col: str,
-    device_source: str,
-    device_col: str,
-    device_qs_key: str,
-    duration_col: str,
-    size_col: str,
-    market_col: str,
-    city_col: str,
-    country_col: str,
-    channel_source: str,
-    channel_col: str,
-    channel_qs_key: str,
-    content_source: str,
-    content_col: str,
-    content_qs_key: str,
-) -> str:
-    q_ts = _dq(req_time_col)
-    time_filter = f"TRY_CAST({q_ts} AS BIGINT) BETWEEN {int(start_ep)} AND {int(end_ep)}"
-    ip_expr = _varchar_expr(ip_col)
-    device_expr = _source_expr(device_source, device_col, qs_col, device_qs_key)
-    channel_expr = _source_expr(channel_source, channel_col, qs_col, channel_qs_key)
-    content_expr = _source_expr(content_source, content_col, qs_col, content_qs_key)
-    return f"""
-        WITH base AS (
-            SELECT
-                {_event_date_expr(req_time_col, tz_name)} AS event_date,
-                COALESCE(NULLIF(TRIM({ip_expr}), ''), '') AS ip,
-                COALESCE(NULLIF(TRIM({device_expr}), ''), '') AS device_id,
-                COALESCE({_numeric_expr(duration_col)}, 0.0) AS duration_sec,
-                COALESCE({_numeric_expr(size_col)}, 0.0) AS total_size,
-                COALESCE(NULLIF(TRIM({_varchar_expr(market_col)}), ''), '') AS market,
-                COALESCE(NULLIF(TRIM({_varchar_expr(city_col)}), ''), '') AS city,
-                COALESCE(NULLIF(TRIM({_varchar_expr(country_col)}), ''), '') AS country,
-                COALESCE(NULLIF(TRIM({channel_expr}), ''), '') AS channel_name,
-                COALESCE(NULLIF(TRIM({content_expr}), ''), NULLIF(TRIM({channel_expr}), ''), '') AS content_name
-            FROM read_parquet({_path_list_sql(files)}, union_by_name=true)
-            WHERE {time_filter}
-        )
-    """
-
-
-def _grafana_tables_for_range(base_sql: str, consumption_label: str) -> dict:
-    con = duckdb.connect(database=":memory:")
-    try:
-        con.execute("PRAGMA threads=4")
-        con.execute("PRAGMA enable_object_cache")
-    except Exception:
-        pass
-
-    raw_query = base_sql + """
-        SELECT
-            event_date AS Date,
-            ip AS IP,
-            device_id AS Device_ID,
-            duration_sec AS "Duration (S)",
-            total_size AS "Total Size",
-            market AS Market,
-            city AS City,
-            country AS Country,
-            channel_name AS "Channel Name",
-            content_name AS "Content Name"
-        FROM base
-        ORDER BY event_date
-        LIMIT 1000
-    """
-    daily_query = base_sql + """
-        SELECT
-            event_date AS Date,
-            COUNT(*) AS Rows,
-            COUNT(DISTINCT NULLIF(ip, '')) AS "Distinct Count IP",
-            COUNT(DISTINCT NULLIF(device_id, '')) AS "Distinct Count Device",
-            ROUND(SUM(duration_sec) / 3600.0, 4) AS "Total Watch Hour",
-            ROUND(SUM(duration_sec) / 3600.0 / NULLIF(COUNT(DISTINCT NULLIF(ip, '')), 0), 4) AS "Watch Hour / IP",
-            ROUND(SUM(duration_sec) / 3600.0 / NULLIF(COUNT(DISTINCT NULLIF(device_id, '')), 0), 4) AS "Watch Hour / Device",
-            ROUND(SUM(total_size), 2) AS "Total Size",
-            ROUND(SUM(total_size) / NULLIF(COUNT(DISTINCT NULLIF(device_id, '')), 0), 2) AS "Total Size / Device",
-            ROUND(SUM(total_size) / NULLIF(COUNT(DISTINCT NULLIF(ip, '')), 0), 2) AS "Total Size / IP"
-        FROM base
-        GROUP BY 1
-        ORDER BY 1
-    """
-    content_query = base_sql + """
-        SELECT
-            event_date AS Date,
-            COALESCE(NULLIF(content_name, ''), '(unknown)') AS "Content Name",
-            COUNT(*) AS Requests,
-            COUNT(DISTINCT NULLIF(ip, '')) AS "Distinct IP",
-            COUNT(DISTINCT NULLIF(device_id, '')) AS "Distinct Device",
-            ROUND(SUM(duration_sec) / 3600.0, 4) AS "Total Watch Hour",
-            ROUND(SUM(duration_sec) / 3600.0 / NULLIF(COUNT(DISTINCT NULLIF(ip, '')), 0), 4) AS "Watch Hour / IP",
-            ROUND(SUM(duration_sec) / 3600.0 / NULLIF(COUNT(DISTINCT NULLIF(device_id, '')), 0), 4) AS "Watch Hour / Device",
-            ROUND(SUM(total_size), 2) AS "Total Size"
-        FROM base
-        GROUP BY 1, 2
-        ORDER BY 1, "Total Watch Hour" DESC, Requests DESC
-        LIMIT 5000
-    """
-    by_ip_query = base_sql + """
-        SELECT ip AS entity, COUNT(*) AS requests, SUM(duration_sec) AS consumption_sec, SUM(total_size) AS total_size
-        FROM base
-        WHERE ip <> ''
-        GROUP BY 1
-        ORDER BY consumption_sec DESC, requests DESC
-    """
-    by_device_query = base_sql + """
-        SELECT device_id AS entity, COUNT(*) AS requests, SUM(duration_sec) AS consumption_sec, SUM(total_size) AS total_size
-        FROM base
-        WHERE device_id <> ''
-        GROUP BY 1
-        ORDER BY consumption_sec DESC, requests DESC
-    """
-
-    raw_df = con.execute(raw_query).df()
-    daily_df = con.execute(daily_query).df()
-    content_df = con.execute(content_query).df()
-    by_ip_df = con.execute(by_ip_query).df()
-    by_device_df = con.execute(by_device_query).df()
-
-    # If no duration column was mapped, consumption_sec will be zero. Fall back to request count for the 80% curve.
-    def _concentration(entity_df: pd.DataFrame, entity_name: str) -> dict:
-        if entity_df.empty:
-            return {"Entity": entity_name, "Total Entities": 0, f"Entities for 80% of {consumption_label}": 0, "% Entities for 80%": 0.0, "Total Consumption": 0.0}
-        work = entity_df.copy()
-        if float(work["consumption_sec"].sum() or 0) <= 0:
-            work["consumption"] = work["requests"].astype(float)
-            label_total = float(work["consumption"].sum())
-        else:
-            work["consumption"] = work["consumption_sec"].astype(float)
-            label_total = float(work["consumption"].sum()) / 3600.0
-        work = work.sort_values("consumption", ascending=False).reset_index(drop=True)
-        total = float(work["consumption"].sum() or 0)
-        if total <= 0:
-            n80 = 0
-        else:
-            n80 = int((work["consumption"].cumsum() < total * 0.8).sum() + 1)
-        return {
-            "Entity": entity_name,
-            "Total Entities": int(len(work)),
-            f"Entities for 80% of {consumption_label}": n80,
-            "% Entities for 80%": round(n80 / max(len(work), 1) * 100, 2),
-            "Total Consumption": round(label_total, 4),
-        }
-
-    concentration_df = pd.DataFrame([
-        _concentration(by_ip_df, "IP"),
-        _concentration(by_device_df, "Device_ID"),
-    ])
-
-    answer_rows = []
-    if not daily_df.empty:
-        total_ip = int(daily_df["Distinct Count IP"].sum())
-        total_device = int(daily_df["Distinct Count Device"].sum())
-        ip_watch = float(daily_df["Watch Hour / IP"].mean() or 0)
-        dev_watch = float(daily_df["Watch Hour / Device"].mean() or 0)
-        answer_rows.append({
-            "Question": "IP and Device consumption are same?",
-            "Answer": "Close" if abs(ip_watch - dev_watch) <= max(ip_watch, dev_watch, 1) * 0.05 else "Different",
-            "Notes": f"Avg watch hour/IP={ip_watch:.4f}; avg watch hour/device={dev_watch:.4f}; daily IP distinct sum={total_ip:,}; daily device distinct sum={total_device:,}.",
-        })
-        for _, row in concentration_df.iterrows():
-            answer_rows.append({
-                "Question": f"What % of {row['Entity']} consume 80% of {consumption_label}?",
-                "Answer": f"{row['% Entities for 80%']}%",
-                "Notes": f"{int(row[f'Entities for 80% of {consumption_label}']):,} of {int(row['Total Entities']):,} {row['Entity']} values account for 80%.",
-            })
-        answer_rows.append({
-            "Question": "Content watched by IP and Device",
-            "Answer": f"{len(content_df):,} date/content rows",
-            "Notes": "See the Content watched table below.",
-        })
-    answers_df = pd.DataFrame(answer_rows)
-
-    return {
-        "raw": raw_df,
-        "daily": daily_df,
-        "concentration": concentration_df,
-        "answers": answers_df,
-        "content": content_df,
-        "by_ip": by_ip_df.head(500),
-        "by_device": by_device_df.head(500),
-    }
-
-
-with st.expander("Build Grafana-style tables", expanded=False):
-    st.markdown("#### Column mapping")
-    st.caption("Map your parquet columns to the sample Excel fields. Blank optional fields are allowed.")
-
+with st.expander("Viewer identity and watch-hour settings", expanded=True):
+    default_qs = _default_query_string_column(columns)
+    default_device_col = _default_device_column(columns)
+    default_ip_col = _default_ip_column(columns)
     none_plus_cols = [""] + columns
-    g1, g2, g3 = st.columns(3)
-    with g1:
-        grafana_ip_col = st.selectbox("IP column", options=none_plus_cols, index=_guess_option(columns, ["cliIP", "client_ip", "ip"], True), key="grafana_ip_col")
-        grafana_duration_col = st.selectbox("Duration seconds column", options=none_plus_cols, index=_guess_option(columns, ["duration", "duration_sec", "watch_sec", "watchTime", "transferTimeMSec", "downloadTime"], True), key="grafana_duration_col", help="Use the field that represents watch duration in seconds. If blank/zero, 80% concentration falls back to request count.")
-        grafana_size_col = st.selectbox("Total size column", options=none_plus_cols, index=_guess_option(columns, ["total_size", "size", "bytes", "responseSize"], True), key="grafana_size_col")
-    with g2:
-        grafana_qs_col = st.selectbox("Query string column", options=none_plus_cols, index=_guess_option(columns, ["queryStr", "qrystr", "query_string"], True), key="grafana_qs_col")
-        grafana_device_source = st.radio("Device_ID source", ["Parsed query-string key", "Direct column", "None"], horizontal=True, key="grafana_device_source")
-        grafana_device_col = st.selectbox("Device_ID direct column", options=none_plus_cols, index=_guess_option(columns, ["device_id", "deviceId", "device"], True), key="grafana_device_col")
-        grafana_device_qs_key = st.text_input("Device_ID query-string key", value="device_id", key="grafana_device_qs_key")
-    with g3:
-        grafana_market_col = st.selectbox("Market column", options=none_plus_cols, index=_guess_option(columns, ["market"], True), key="grafana_market_col")
-        grafana_city_col = st.selectbox("City column", options=none_plus_cols, index=_guess_option(columns, ["city", "city_name"], True), key="grafana_city_col")
-        grafana_country_col = st.selectbox("Country column", options=none_plus_cols, index=_guess_option(columns, ["country", "country_code"], True), key="grafana_country_col")
+    source_default = 0 if default_qs else (1 if default_device_col else 0)
+    device_source = st.radio(
+        "Primary Device_ID source",
+        ["Parsed from query string", "Direct column"],
+        index=source_default,
+        horizontal=True,
+        key="watch_device_source",
+        help="Recommended: Parsed from query string when device_id is inside queryStr.",
+    )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        grafana_channel_source = st.radio("Channel Name source", ["Parsed query-string key", "Direct column", "None"], horizontal=True, key="grafana_channel_source")
-        grafana_channel_col = st.selectbox("Channel direct column", options=none_plus_cols, index=_guess_option(columns, ["channel", "channel_name", "Channel Name"], True), key="grafana_channel_col")
-        grafana_channel_qs_key = st.text_input("Channel query-string key", value="channel", key="grafana_channel_qs_key")
-    with c2:
-        grafana_content_source = st.radio("Content Name source", ["Parsed query-string key", "Direct column", "None"], horizontal=True, key="grafana_content_source")
-        grafana_content_col = st.selectbox("Content direct column", options=none_plus_cols, index=_guess_option(columns, ["content_title", "content_name", "title", "content"], True), key="grafana_content_col")
-        grafana_content_qs_key = st.text_input("Content query-string key", value="content_title", key="grafana_content_qs_key")
+    w1, w2, w3, w4 = st.columns(4)
+    with w1:
+        watch_qs_col = st.selectbox(
+            "Query string column",
+            options=none_plus_cols,
+            index=none_plus_cols.index(default_qs) if default_qs in none_plus_cols else 0,
+            key="watch_qs_col",
+            help="Used to extract device_id and session_id.",
+        )
+    with w2:
+        watch_device_key = st.text_input(
+            "Device_ID key",
+            value="device_id",
+            key="watch_device_key",
+            disabled=device_source != "Parsed from query string",
+        )
+    with w3:
+        watch_session_key = st.text_input(
+            "Session key",
+            value="session_id",
+            key="watch_session_key",
+            help="If present, watch gaps are calculated inside viewer + session. If missing in a row, viewer-only grouping is used.",
+        )
+    with w4:
+        watch_cliip_col = st.selectbox(
+            "cliIP fallback column",
+            options=none_plus_cols,
+            index=none_plus_cols.index(default_ip_col) if default_ip_col in none_plus_cols else 0,
+            key="watch_cliip_col",
+            help="Used only when device_id is missing. Your mapping test showed cliIP fallback is reasonably safe for most rows.",
+        )
 
-    consumption_label = "watch time" if grafana_duration_col else "requests"
-    run_grafana = st.button("▶️ Build sample-style tables", type="primary", key="grafana_run")
+    w5, w6 = st.columns(2)
+    with w5:
+        watch_device_col = st.selectbox(
+            "Device_ID direct column",
+            options=none_plus_cols,
+            index=none_plus_cols.index(default_device_col) if default_device_col in none_plus_cols else 0,
+            key="watch_device_col",
+            disabled=device_source != "Direct column",
+        )
+    with w6:
+        gap_cap = st.number_input(
+            "Max seconds counted between two requests",
+            min_value=10,
+            max_value=600,
+            value=60,
+            step=10,
+            key="watch_gap_cap",
+            help="60 seconds prevents idle gaps from becoming fake watch time.",
+        )
 
-    if run_grafana:
-        def _run_one_range(label: str, start_ep: int, end_ep: int):
-            base_sql = _build_grafana_base_sql(
-                selected_files,
-                req_time_col,
-                start_ep,
-                end_ep,
-                tz_mode,
-                grafana_ip_col,
-                grafana_qs_col,
-                grafana_device_source,
-                grafana_device_col,
-                grafana_device_qs_key,
-                grafana_duration_col,
-                grafana_size_col,
-                grafana_market_col,
-                grafana_city_col,
-                grafana_country_col,
-                grafana_channel_source,
-                grafana_channel_col,
-                grafana_channel_qs_key,
-                grafana_content_source,
-                grafana_content_col,
-                grafana_content_qs_key,
-            )
-            with st.spinner(f"Building Grafana-style tables for {label} ..."):
-                return _grafana_tables_for_range(base_sql, consumption_label)
+if device_source == "Parsed from query string" and not watch_qs_col:
+    st.warning("Select a query-string column to extract Device_ID/session_id.")
+elif device_source == "Direct column" and not watch_device_col:
+    st.warning("Select a direct Device_ID column to calculate watch hours.")
+elif not watch_cliip_col:
+    st.warning("Select cliIP fallback column. It is needed for rows where Device_ID is missing.")
+else:
+    if st.button("▶️ Calculate watch hours", type="primary", key="watch_run"):
+        with st.spinner("Calculating recommended viewer/session watch hours ..."):
+            if comparison_mode:
+                compare_df, daily_a, daily_b = compare_watch_summary_for_ranges(
+                    selected_files,
+                    req_time_col,
+                    a_start_epoch,
+                    a_end_epoch,
+                    b_start_epoch,
+                    b_end_epoch,
+                    tz_mode,
+                    device_source,
+                    watch_qs_col,
+                    watch_device_col,
+                    watch_device_key,
+                    int(gap_cap),
+                    watch_cliip_col,
+                    watch_session_key,
+                )
+                st.session_state["watch_payload"] = {
+                    "mode": "compare",
+                    "key": (tuple(selected_files), req_time_col, a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch, tz_mode, device_source, watch_qs_col, watch_device_col, watch_device_key, int(gap_cap), watch_cliip_col, watch_session_key),
+                    "compare": compare_df,
+                    "daily_a": daily_a,
+                    "daily_b": daily_b,
+                }
+            else:
+                summary, daily = watch_summary_for_range(
+                    selected_files,
+                    req_time_col,
+                    start_epoch,
+                    end_epoch,
+                    tz_mode,
+                    device_source,
+                    watch_qs_col,
+                    watch_device_col,
+                    watch_device_key,
+                    int(gap_cap),
+                    watch_cliip_col,
+                    watch_session_key,
+                )
+                st.session_state["watch_payload"] = {
+                    "mode": "single",
+                    "key": (tuple(selected_files), req_time_col, start_epoch, end_epoch, tz_mode, device_source, watch_qs_col, watch_device_col, watch_device_key, int(gap_cap), watch_cliip_col, watch_session_key),
+                    "summary": summary,
+                    "daily": daily,
+                }
 
-        if comparison_mode:
-            payload_a = _run_one_range("Range A", a_start_epoch, a_end_epoch)
-            payload_b = _run_one_range("Range B", b_start_epoch, b_end_epoch)
-            st.session_state["grafana_payload"] = {
-                "mode": "compare",
-                "key": (tuple(selected_files), req_time_col, a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch, tz_mode),
-                "A": payload_a,
-                "B": payload_b,
-            }
-        else:
-            payload = _run_one_range("selected range", start_epoch, end_epoch)
-            st.session_state["grafana_payload"] = {
-                "mode": "single",
-                "key": (tuple(selected_files), req_time_col, start_epoch, end_epoch, tz_mode),
-                "single": payload,
-            }
+    expected_watch_key = (
+        tuple(selected_files), req_time_col, a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch, tz_mode, device_source, watch_qs_col, watch_device_col, watch_device_key, int(gap_cap), watch_cliip_col, watch_session_key
+    ) if comparison_mode else (
+        tuple(selected_files), req_time_col, start_epoch, end_epoch, tz_mode, device_source, watch_qs_col, watch_device_col, watch_device_key, int(gap_cap), watch_cliip_col, watch_session_key
+    )
+    watch_payload = st.session_state.get("watch_payload")
 
-    grafana_payload = st.session_state.get("grafana_payload")
-    expected_key = (tuple(selected_files), req_time_col, a_start_epoch, a_end_epoch, b_start_epoch, b_end_epoch, tz_mode) if comparison_mode else (tuple(selected_files), req_time_col, start_epoch, end_epoch, tz_mode)
-    if grafana_payload and grafana_payload.get("key") == expected_key:
-        def _render_payload(payload: dict, prefix: str):
-            k1, k2, k3, k4 = st.columns(4)
-            daily = payload.get("daily", pd.DataFrame())
-            k1.metric("Dates", f"{daily['Date'].nunique():,}" if not daily.empty else "0")
-            k2.metric("Distinct IP sum", f"{int(daily['Distinct Count IP'].sum()):,}" if not daily.empty else "0")
-            k3.metric("Distinct Device sum", f"{int(daily['Distinct Count Device'].sum()):,}" if not daily.empty else "0")
-            k4.metric("Watch hours", f"{float(daily['Total Watch Hour'].sum()):,.2f}" if not daily.empty else "0")
-
-            st.markdown("##### Table 1 — Raw mapped rows preview")
-            st.dataframe(payload.get("raw", pd.DataFrame()), use_container_width=True, hide_index=True, height=260)
-            st.download_button("Download Table 1 raw CSV", data=payload.get("raw", pd.DataFrame()).to_csv(index=False).encode("utf-8"), file_name=f"{prefix}_table1_raw.csv", mime="text/csv", key=f"{prefix}_raw_dl")
-
-            st.markdown("##### Table 2 — Daily summary")
-            st.dataframe(payload.get("daily", pd.DataFrame()), use_container_width=True, hide_index=True, height=260)
-            st.download_button("Download Table 2 daily summary CSV", data=payload.get("daily", pd.DataFrame()).to_csv(index=False).encode("utf-8"), file_name=f"{prefix}_table2_daily_summary.csv", mime="text/csv", key=f"{prefix}_daily_dl")
-
-            st.markdown("##### Questions from sample")
-            st.dataframe(payload.get("answers", pd.DataFrame()), use_container_width=True, hide_index=True, height=180)
-            st.markdown("##### 80% consumption distribution")
-            st.dataframe(payload.get("concentration", pd.DataFrame()), use_container_width=True, hide_index=True, height=120)
-
-            st.markdown("##### Table 3 — Content watched by IP and Device")
-            st.dataframe(payload.get("content", pd.DataFrame()), use_container_width=True, hide_index=True, height=360)
-            st.download_button("Download Table 3 content watched CSV", data=payload.get("content", pd.DataFrame()).to_csv(index=False).encode("utf-8"), file_name=f"{prefix}_table3_content_watched.csv", mime="text/csv", key=f"{prefix}_content_dl")
-
-            with st.expander("Top IP and Device consumption details", expanded=False):
-                bi, bd = st.tabs(["Top IP", "Top Device_ID"])
-                with bi:
-                    st.dataframe(payload.get("by_ip", pd.DataFrame()), use_container_width=True, hide_index=True, height=300)
-                with bd:
-                    st.dataframe(payload.get("by_device", pd.DataFrame()), use_container_width=True, hide_index=True, height=300)
-
-        if grafana_payload.get("mode") == "compare":
-            tab_a, tab_b = st.tabs(["Range A sample tables", "Range B sample tables"])
-            with tab_a:
+    if watch_payload and watch_payload.get("key") == expected_watch_key:
+        if watch_payload.get("mode") == "compare":
+            comp = watch_payload["compare"]
+            metric_map = {row["Metric"]: row for _, row in comp.iterrows()}
+            left, right = st.columns(2)
+            with left:
+                st.markdown("#### Range A")
                 st.caption(range_a_label)
-                _render_payload(grafana_payload["A"], "range_a")
-            with tab_b:
+                st.metric("Total Viewer Count", f"{int(metric_map['Total Viewer Count']['Range A']):,}")
+                st.metric("Total Device_ID Count", f"{int(metric_map['Total Device_ID Count']['Range A']):,}")
+                st.metric("cliIP Fallback Viewers", f"{int(metric_map['Total cliIP Fallback Viewer Count']['Range A']):,}")
+                st.metric("Total Watch Hours", f"{float(metric_map['Total Watch Hours']['Range A']):,.2f}")
+                st.metric("Watch Minutes / Viewer", f"{float(metric_map['Watch Minutes / Viewer']['Range A']):,.2f}")
+                st.metric("Rows using cliIP fallback", f"{int(metric_map['Rows using cliIP fallback']['Range A']):,}")
+            with right:
+                st.markdown("#### Range B")
                 st.caption(range_b_label)
-                _render_payload(grafana_payload["B"], "range_b")
+                st.metric("Total Viewer Count", f"{int(metric_map['Total Viewer Count']['Range B']):,}", delta=f"{int(metric_map['Total Viewer Count']['Delta (B - A)']):,}")
+                st.metric("Total Device_ID Count", f"{int(metric_map['Total Device_ID Count']['Range B']):,}", delta=f"{int(metric_map['Total Device_ID Count']['Delta (B - A)']):,}")
+                st.metric("cliIP Fallback Viewers", f"{int(metric_map['Total cliIP Fallback Viewer Count']['Range B']):,}", delta=f"{int(metric_map['Total cliIP Fallback Viewer Count']['Delta (B - A)']):,}")
+                st.metric("Total Watch Hours", f"{float(metric_map['Total Watch Hours']['Range B']):,.2f}", delta=f"{float(metric_map['Total Watch Hours']['Delta (B - A)']):,.2f}")
+                st.metric("Watch Minutes / Viewer",f"{float(metric_map['Watch Minutes / Viewer']['Range B']):,.2f}",delta=f"{float(metric_map['Watch Minutes / Viewer']['Delta (B - A)']):,.2f}",)
+                st.metric("Rows using cliIP fallback", f"{int(metric_map['Rows using cliIP fallback']['Range B']):,}", delta=f"{int(metric_map['Rows using cliIP fallback']['Delta (B - A)']):,}")
+
+            st.markdown("#### Comparison table")
+            st.dataframe(comp, use_container_width=True, hide_index=True, height=330)
+            st.download_button(
+                "Download watch comparison CSV",
+                data=comp.to_csv(index=False).encode("utf-8"),
+                file_name="veto_recommended_watch_hour_comparison.csv",
+                mime="text/csv",
+            )
+
+            da, db = st.tabs(["Range A daily watch hours", "Range B daily watch hours"])
+            with da:
+                st.dataframe(watch_payload["daily_a"], use_container_width=True, hide_index=True, height=360)
+            with db:
+                st.dataframe(watch_payload["daily_b"], use_container_width=True, hide_index=True, height=360)
         else:
+            summary = watch_payload["summary"]
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Total Viewer Count", f"{int(summary.get('Total Viewer Count', 0)):,}")
+            k2.metric("Total Watch Hours", f"{float(summary.get('Total Watch Hours', 0)):,.2f}")
+            k3.metric("Total Device_ID Count", f"{int(summary.get('Total Device_ID Count', 0)):,}")
+            k4.metric("Watch Minutes / Viewer", f"{float(summary.get('Watch Minutes / Viewer', 0)):,.2f}")
+
+            j1, j2, j3, j4 = st.columns(4)
+            j1.metric("cliIP Fallback Viewers", f"{int(summary.get('Total cliIP Fallback Viewer Count', 0)):,}")
+            j2.metric("Rows with Device_ID", f"{int(summary.get('Rows with Device_ID', 0)):,}")
+            j3.metric("Rows using cliIP fallback", f"{int(summary.get('Rows using cliIP fallback', 0)):,}")
+            j4.metric("Session Count", f"{int(summary.get('Total Session Count', 0)):,}")
+
             st.caption(range_label)
-            _render_payload(grafana_payload["single"], "selected_range")
-    elif grafana_payload:
-        st.info("Selections changed. Build sample-style tables again for the current file/date range.")
-    else:
-        st.info("Click **Build sample-style tables** to create the raw, daily, 80%, and content tables from your Excel sample.")
+            st.markdown("#### Daily watch-hour summary")
+            daily = watch_payload["daily"]
+            st.dataframe(daily, use_container_width=True, hide_index=True, height=380)
+            st.download_button(
+                "Download daily watch-hour summary CSV",
+                data=daily.to_csv(index=False).encode("utf-8"),
+                file_name="veto_recommended_daily_watch_hours.csv",
+                mime="text/csv",
+            )
+    elif watch_payload:
+        st.info("Selections changed. Calculate watch hours again for the current files/date range.")
+
+        st.info("Click **Calculate watch hours** to show recommended viewer/session watch hours for the selected date range.")
