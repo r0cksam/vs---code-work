@@ -17,7 +17,7 @@ def duckdb_path(path_value):
 # -----------------------------
 root_path = st.text_input(
     "Enter ROOT folder path",
-    r"D:\Vs - Code Work\cleaned_output"
+    r"D:\Veto Logs Backup"
 )
 
 if not root_path:
