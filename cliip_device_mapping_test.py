@@ -276,3 +276,5 @@ if st.button("Run cliIP ↔ device_id test", type="primary"):
         st.warning("cliIP fallback is usable, but shared-IP distortion may be meaningful.")
     else:
         st.error("cliIP fallback is risky. Many rows are on shared IPs with multiple device IDs.")
+
+        
