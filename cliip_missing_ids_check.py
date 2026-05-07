@@ -157,8 +157,26 @@ clean AS (
         statusCode,
         NULLIF(TRIM(raw_device_id), '') AS device_id,
         NULLIF(TRIM(raw_session_id), '') AS session_id,
+
+        -- Key exists in queryStr, even if value is blank, e.g. device_id= or session_id=
+        CASE WHEN regexp_matches(COALESCE(queryStr, ''), '(^|&)device_id=') THEN 1 ELSE 0 END AS has_device_id_key,
+        CASE WHEN regexp_matches(COALESCE(queryStr, ''), '(^|&)session_id=') THEN 1 ELSE 0 END AS has_session_id_key,
+
+        -- Key has a real non-empty value
         CASE WHEN NULLIF(TRIM(raw_device_id), '') IS NOT NULL THEN 1 ELSE 0 END AS has_device_id,
-        CASE WHEN NULLIF(TRIM(raw_session_id), '') IS NOT NULL THEN 1 ELSE 0 END AS has_session_id
+        CASE WHEN NULLIF(TRIM(raw_session_id), '') IS NOT NULL THEN 1 ELSE 0 END AS has_session_id,
+
+        -- Key exists but value is empty, e.g. device_id=& or session_id=&
+        CASE
+            WHEN regexp_matches(COALESCE(queryStr, ''), '(^|&)device_id=')
+             AND NULLIF(TRIM(raw_device_id), '') IS NULL
+            THEN 1 ELSE 0
+        END AS device_id_key_blank,
+        CASE
+            WHEN regexp_matches(COALESCE(queryStr, ''), '(^|&)session_id=')
+             AND NULLIF(TRIM(raw_session_id), '') IS NULL
+            THEN 1 ELSE 0
+        END AS session_id_key_blank
     FROM base
 ),
 ip_summary AS (
@@ -199,8 +217,14 @@ overall AS (
         COUNT(*) AS raw_rows_with_cliip,
         COUNT(DISTINCT cliIP) AS distinct_cliip,
         SUM(CASE WHEN device_id IS NOT NULL THEN 1 ELSE 0 END) AS rows_with_device_id,
+        SUM(CASE WHEN device_id IS NULL THEN 1 ELSE 0 END) AS rows_without_device_id,
         SUM(CASE WHEN session_id IS NOT NULL THEN 1 ELSE 0 END) AS rows_with_session_id,
+        SUM(CASE WHEN session_id IS NULL THEN 1 ELSE 0 END) AS rows_without_session_id,
         SUM(CASE WHEN device_id IS NOT NULL AND session_id IS NOT NULL THEN 1 ELSE 0 END) AS rows_with_both_device_session,
+        SUM(device_id_key_blank) AS rows_device_id_key_blank,
+        SUM(session_id_key_blank) AS rows_session_id_key_blank,
+        SUM(CASE WHEN has_device_id_key = 0 THEN 1 ELSE 0 END) AS rows_device_id_key_absent,
+        SUM(CASE WHEN has_session_id_key = 0 THEN 1 ELSE 0 END) AS rows_session_id_key_absent,
         COUNT(DISTINCT device_id) AS distinct_device_id,
         COUNT(DISTINCT session_id) AS distinct_session_id
     FROM clean
@@ -233,8 +257,14 @@ SELECT
     o.raw_rows_with_cliip,
     o.distinct_cliip,
     o.rows_with_device_id,
+    o.rows_without_device_id,
     o.rows_with_session_id,
+    o.rows_without_session_id,
     o.rows_with_both_device_session,
+    o.rows_device_id_key_blank,
+    o.rows_session_id_key_blank,
+    o.rows_device_id_key_absent,
+    o.rows_session_id_key_absent,
     o.distinct_device_id,
     o.distinct_session_id,
     m.cliip_missing_both_count,
@@ -273,6 +303,20 @@ r1.metric("Total rows in data", f"{int(row['total_rows']):,}")
 r2.metric("Rows where cliIP is present", f"{int(row['raw_rows_with_cliip']):,}")
 r3.metric("Rows where device_id is present", f"{int(row['rows_with_device_id']):,}")
 r4.metric("Rows where session_id is present", f"{int(row['rows_with_session_id']):,}")
+
+st.markdown("#### device_id row breakdown")
+bd1, bd2, bd3, bd4 = st.columns(4)
+bd1.metric("Rows with device_id value", f"{int(row['rows_with_device_id']):,}")
+bd2.metric("Rows without device_id value", f"{int(row['rows_without_device_id']):,}")
+bd3.metric("Rows where device_id= is blank", f"{int(row['rows_device_id_key_blank'] or 0):,}")
+bd4.metric("Rows where device_id key absent", f"{int(row['rows_device_id_key_absent'] or 0):,}")
+
+st.markdown("#### session_id row breakdown")
+bs1, bs2, bs3, bs4 = st.columns(4)
+bs1.metric("Rows with session_id value", f"{int(row['rows_with_session_id']):,}")
+bs2.metric("Rows without session_id value", f"{int(row['rows_without_session_id']):,}")
+bs3.metric("Rows where session_id= is blank", f"{int(row['rows_session_id_key_blank'] or 0):,}")
+bs4.metric("Rows where session_id key absent", f"{int(row['rows_session_id_key_absent'] or 0):,}")
 
 st.markdown("#### Distinct counts")
 d1, d2, d3 = st.columns(3)
@@ -395,8 +439,16 @@ Files: {len(file_paths)}
 Total rows in data: {int(row['total_rows']):,}
 Raw rows with cliIP: {int(row['raw_rows_with_cliip']):,}
 Distinct cliIP: {int(row['distinct_cliip']):,}
-Rows with device_id: {int(row['rows_with_device_id']):,}
-Rows with session_id: {int(row['rows_with_session_id']):,}
+Rows with device_id value: {int(row['rows_with_device_id']):,}
+Rows without device_id value: {int(row['rows_without_device_id']):,}
+Rows where device_id= is blank: {int(row['rows_device_id_key_blank'] or 0):,}
+Rows where device_id key absent: {int(row['rows_device_id_key_absent'] or 0):,}
+
+Rows with session_id value: {int(row['rows_with_session_id']):,}
+Rows without session_id value: {int(row['rows_without_session_id']):,}
+Rows where session_id= is blank: {int(row['rows_session_id_key_blank'] or 0):,}
+Rows where session_id key absent: {int(row['rows_session_id_key_absent'] or 0):,}
+
 Rows with both device_id + session_id: {int(row['rows_with_both_device_session']):,}
 Distinct device_id: {int(row['distinct_device_id']):,}
 Distinct session_id: {int(row['distinct_session_id']):,}
