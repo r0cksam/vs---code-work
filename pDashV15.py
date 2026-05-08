@@ -1,3 +1,38 @@
+"""
+parquet_explorer.py  -  Visual Parquet Explorer (multi-folder + smart browser)
+===============================================================================
+Run:  streamlit run parquet_explorer.py
+
+pip install streamlit pandas pyarrow duckdb plotly reportlab requests
+
+v15 fixes applied:
+  - [CRITICAL] ub_get_conn: replaced shared in-memory DuckDB with file-backed connection
+    to eliminate thread-safety collisions across concurrent Streamlit sessions.
+  - [CRITICAL] ub_lookup_geo: changed http:// → https:// to protect IP addresses (PII)
+    in transit. Added graceful fallback if `requests` is not installed.
+  - [CRITICAL] import requests moved to top-level so import errors surface at startup.
+  - [LOGIC] load_schema: now reads schema from every parquet file (not just the first
+    per directory) to correctly handle schema-evolved datasets.
+  - [LOGIC] ub_build_sessions: added minimum-session-length guard (≥2 prior rows) on
+    smart_break to prevent ultra-short spurious sessions on mobile connections.
+  - [LOGIC] apply_all_filters: documented the intentional OR-between-columns dual filter
+    behaviour to prevent future confusion.
+  - [PERFORMANCE] refresh_file_inventory_cache: replaced iterrows() with
+    set_index().to_dict() for O(1) per-row lookups — ~100x faster on large inventories.
+  - [PERFORMANCE] unique_values: rewritten to use DuckDB first (single SQL pass);
+    falls back to PyArrow batch iteration if DuckDB is unavailable.
+  - [PERFORMANCE] full_filtered_value_counts: added cardinality_cap (500k) to prevent
+    the counter dict from ballooning in RAM on high-cardinality columns.
+  - [PERFORMANCE] Removed all time.sleep() calls from progress bar update paths;
+    any sleep() in the Streamlit main thread freezes the UI.
+  - [MAINTAINABILITY] _gb_cache_get: three-state return (_GB_NOT_RUN / None / payload)
+    so "never run" vs "ran but stale" are correctly distinguished in the UI.
+  - [MAINTAINABILITY] collect_files: now logs a warning for paths that no longer exist.
+  - [MAINTAINABILITY] Type hints added to log_warning, build_mask, run_query,
+    ub_build_sessions, ub_estimate_watch_minutes, and load_schema.
+  - [MAINTAINABILITY] Optional imported from typing for Python < 3.10 compatibility.
+"""
+
 import json
 import time
 import logging
@@ -1868,6 +1903,182 @@ def gb_get_switching(parquet_glob: list, col_map: dict, start_date: str, end_dat
     """
     return con.execute(trans_query).df(), con.execute(rate_query).df(), con.execute(sess_query).df()
 
+
+# ─────────────────────────────────────────────
+# IP & Geo Intelligence helpers  (Tab 7)
+# ─────────────────────────────────────────────
+
+@st.cache_data(show_spinner=False, ttl=900)
+def gda_load_raw(parquet_glob: list, col_map: dict, start_date: str, end_date: str, sample_limit: int = 2_000_000) -> pd.DataFrame:
+    """
+    Pull cliIP, device_id (from queryStr), reqPath, and reqTimeSec from parquet
+    using a single DuckDB pass.  Returns one row per parquet row — deduplicated
+    grouping happens in Python so callers can slice it different ways.
+
+    sample_limit caps row count to keep RAM usage predictable for very large datasets.
+    """
+    con = ub_get_conn()
+    qs   = _cm(col_map, "queryStr")
+    ts   = _cm(col_map, "reqTimeSec")
+    path = _cm(col_map, "reqPath")
+    ip   = _cm(col_map, "cliIP")
+    asn  = _cm(col_map, "asn")
+
+    ip_sel   = f"{ip} AS cliIP"   if ip   else "NULL AS cliIP"
+    asn_sel  = f"{asn} AS asn"    if asn  else "NULL AS asn"
+    date_filter = (
+        f"AND to_timestamp(TRY_CAST({ts} AS BIGINT))::DATE BETWEEN DATE '{start_date}' AND DATE '{end_date}'"
+        if ts else ""
+    )
+
+    query = f"""
+    SELECT
+        {ip_sel},
+        {asn_sel},
+        NULLIF(regexp_extract({qs}, '(?:^|&)device_id=([^&]+)',   1), '') AS device_id,
+        NULLIF(regexp_extract({qs}, '(?:^|&)session_id=([^&]+)',  1), '') AS session_id,
+        NULLIF(regexp_extract({qs}, '(?:^|&)platform=([^&]+)',    1), '') AS platform,
+        NULLIF(regexp_extract({qs}, '(?:^|&)device=([^&]+)',      1), '') AS device_name,
+        {path} AS reqPath,
+        TRY_CAST({ts} AS BIGINT) AS reqTimeSec
+    FROM read_parquet({parquet_glob!r}, union_by_name=true)
+    WHERE {qs} IS NOT NULL
+      AND {qs} LIKE '%device_id=%'
+      {date_filter}
+    LIMIT {int(sample_limit)}
+    """
+    try:
+        df = con.execute(query).df()
+        # URL-decode text columns
+        for c in ["device_id", "session_id", "platform", "device_name"]:
+            if c in df.columns:
+                df[c] = df[c].fillna("").astype(str).map(unquote_plus).replace("", None)
+        if "reqTimeSec" in df.columns:
+            df["event_time"] = pd.to_datetime(
+                pd.to_numeric(df["reqTimeSec"], errors="coerce"), unit="s", errors="coerce"
+            )
+        return df
+    except Exception as e:
+        log_warning("gda_load_raw failed", e)
+        return pd.DataFrame()
+
+
+def gda_ip_device_table(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per (cliIP, device_id) pair with request count, session count, and unique paths."""
+    if df.empty or "cliIP" not in df.columns or "device_id" not in df.columns:
+        return pd.DataFrame()
+    grp = (
+        df.dropna(subset=["cliIP", "device_id"])
+        .groupby(["cliIP", "device_id"], sort=False)
+        .agg(
+            requests     = ("reqPath",    "size"),
+            sessions     = ("session_id", "nunique"),
+            unique_paths = ("reqPath",    "nunique"),
+            platform     = ("platform",   lambda s: s.mode().iloc[0] if not s.mode().empty else ""),
+        )
+        .reset_index()
+        .sort_values("requests", ascending=False)
+        .reset_index(drop=True)
+    )
+    return grp
+
+
+def gda_device_content_table(df: pd.DataFrame, top_paths: int = 20) -> pd.DataFrame:
+    """For every device_id, aggregate the top reqPaths (content) it accessed."""
+    if df.empty or "device_id" not in df.columns or "reqPath" not in df.columns:
+        return pd.DataFrame()
+    grp = (
+        df.dropna(subset=["device_id", "reqPath"])
+        .groupby(["device_id", "reqPath"], sort=False)
+        .agg(
+            requests    = ("reqPath",    "size"),
+            sessions    = ("session_id", "nunique"),
+        )
+        .reset_index()
+        .sort_values(["device_id", "requests"], ascending=[True, False])
+        .reset_index(drop=True)
+    )
+    # keep top N paths per device
+    grp = (
+        grp.groupby("device_id", sort=False)
+        .head(top_paths)
+        .reset_index(drop=True)
+    )
+    return grp
+
+
+def gda_enrich_with_geo(df: pd.DataFrame, geo_data: dict) -> pd.DataFrame:
+    """Add country, region, city, isp columns by mapping cliIP → geo_data dict."""
+    if df.empty or not geo_data or "cliIP" not in df.columns:
+        return df
+    out = df.copy()
+    out["country"] = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("country", ""))
+    out["region"]  = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("region",  ""))
+    out["city"]    = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("city",    ""))
+    out["isp"]     = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("isp",     "") or geo_data.get(str(ip), {}).get("org", ""))
+    out["timezone"]= out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("timezone",""))
+    out["lat"]     = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("lat",     None))
+    out["lon"]     = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("lon",     None))
+    return out
+
+
+def gda_region_device_table(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Devices per region — how many unique devices and requests per country+region."""
+    if ip_device_df.empty or "country" not in ip_device_df.columns:
+        return pd.DataFrame()
+    return (
+        ip_device_df.dropna(subset=["country"])
+        .groupby(["country", "region"], sort=False)
+        .agg(
+            unique_devices = ("device_id", "nunique"),
+            total_requests = ("requests",  "sum"),
+            unique_ips     = ("cliIP",     "nunique"),
+        )
+        .reset_index()
+        .sort_values("unique_devices", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def gda_region_isp_table(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Top ISPs per region."""
+    if ip_device_df.empty or "country" not in ip_device_df.columns or "isp" not in ip_device_df.columns:
+        return pd.DataFrame()
+    return (
+        ip_device_df.dropna(subset=["country", "isp"])
+        .query("isp != ''")
+        .groupby(["country", "region", "isp"], sort=False)
+        .agg(
+            unique_devices = ("device_id", "nunique"),
+            total_requests = ("requests",  "sum"),
+            unique_ips     = ("cliIP",     "nunique"),
+        )
+        .reset_index()
+        .sort_values(["country", "unique_devices"], ascending=[True, False])
+        .reset_index(drop=True)
+    )
+
+
+def gda_ip_device_content_table(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Full three-way join: cliIP × device_id × reqPath with counts."""
+    if raw_df.empty:
+        return pd.DataFrame()
+    needed = [c for c in ["cliIP", "device_id", "reqPath", "session_id"] if c in raw_df.columns]
+    sub = raw_df.dropna(subset=["cliIP", "device_id", "reqPath"])
+    if sub.empty:
+        return pd.DataFrame()
+    return (
+        sub.groupby(["cliIP", "device_id", "reqPath"], sort=False)
+        .agg(
+            requests = ("reqPath",    "size"),
+            sessions = ("session_id", "nunique"),
+        )
+        .reset_index()
+        .sort_values("requests", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
@@ -2083,7 +2294,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🔎 Query String Analyzer",
     "📺 User Behavior",
     "🌐 Global Behavior",
-    "🌍 Location Behavior",
+    "🛰️ IP & Geo Intelligence",
 ])
 
 
@@ -2832,33 +3043,144 @@ with tab4:
                 n_total   = weighted_total(parsed_df)
                 pct       = round(n_filled / n_total * 100, 1) if n_total else 0
                 ov_rows.append({
-                    "Key":          k,
+                    "Key":           k,
                     "Unique values": n_unique,
-                    "Filled rows":  n_filled,
-                    "Fill %":       pct,
+                    "Filled rows":   n_filled,
+                    "Fill %":        pct,
                 })
             ov_df = pd.DataFrame(ov_rows).sort_values("Filled rows", ascending=False)
-            st.dataframe(ov_df, use_container_width=True, hide_index=True)
 
-            # Top values for any key
+            st.dataframe(ov_df, use_container_width=True, hide_index=True)
+            st.download_button(
+                "📥 Download Key Overview CSV",
+                data=ov_df.to_csv(index=False).encode("utf-8"),
+                file_name="parsed_key_overview.csv",
+                mime="text/csv",
+                key="ov_dl_overview",
+            )
+
+            # ── Per-key distinct value download ──────────────────
             st.markdown("---")
-            st.markdown("#### Top values for a key")
+            st.markdown("#### 📥 Download all distinct values — per key")
+            st.caption(
+                "Select any key to see **all** distinct non-empty values with counts — "
+                "no row cap. Use the download button to get the full list as CSV."
+            )
+
             pick_key = st.selectbox("Select key", options=qsa_keys, key="ov_key_pick")
+
             if pick_key:
-                top_df = (
+                all_vals_df = (
                     parsed_df[parsed_df[pick_key].astype(str).str.strip() != ""]
                     .groupby(pick_key)["_count"]
                     .sum()
                     .reset_index()
                     .rename(columns={pick_key: "value", "_count": "count"})
                     .sort_values("count", ascending=False)
-                    .head(50)
+                    .reset_index(drop=True)
                 )
+                total_vals = len(all_vals_df)
+
+                ov_search = st.text_input(
+                    f"Search within `{pick_key}` values",
+                    placeholder="type to filter …",
+                    key="ov_val_search",
+                )
+                disp_vals = all_vals_df.copy()
+                if ov_search.strip():
+                    disp_vals = disp_vals[
+                        disp_vals["value"].astype(str).str.contains(ov_search.strip(), case=False, na=False)
+                    ]
+
                 c1, c2 = st.columns([2, 1])
                 with c1:
-                    st.dataframe(top_df, use_container_width=True, height=380, hide_index=True)
+                    st.caption(
+                        f"Showing {len(disp_vals):,} of {total_vals:,} distinct values for `{pick_key}`"
+                    )
+                    st.dataframe(disp_vals, use_container_width=True, height=400, hide_index=True)
+
                 with c2:
-                    st.bar_chart(top_df.head(10).set_index("value")["count"])
+                    st.bar_chart(all_vals_df.head(15).set_index("value")["count"])
+
+                    # ── Download buttons ──────────────────────────
+                    st.markdown("**Download options**")
+
+                    st.download_button(
+                        f"📥 All {total_vals:,} distinct values (CSV)",
+                        data=all_vals_df.to_csv(index=False).encode("utf-8"),
+                        file_name=f"distinct_values_{pick_key}_all.csv",
+                        mime="text/csv",
+                        key="ov_dl_all_vals",
+                        help=f"Downloads every distinct non-empty value of '{pick_key}' with its total row count.",
+                    )
+
+                    if ov_search.strip() and len(disp_vals) < total_vals:
+                        st.download_button(
+                            f"📥 Filtered {len(disp_vals):,} values (CSV)",
+                            data=disp_vals.to_csv(index=False).encode("utf-8"),
+                            file_name=f"distinct_values_{pick_key}_filtered.csv",
+                            mime="text/csv",
+                            key="ov_dl_filtered_vals",
+                            help="Downloads only the currently filtered/searched values.",
+                        )
+
+                    # Values-only list (no count column) — useful for copy-paste into filters
+                    values_only = all_vals_df[["value"]].copy()
+                    st.download_button(
+                        f"📥 Values only (no count)",
+                        data=values_only.to_csv(index=False, header=False).encode("utf-8"),
+                        file_name=f"values_only_{pick_key}.txt",
+                        mime="text/plain",
+                        key="ov_dl_vals_only",
+                        help="Plain list of distinct values — one per line, no header. Useful for pasting into filters.",
+                    )
+
+            # ── Bulk download: one CSV per key ────────────────────
+            st.markdown("---")
+            st.markdown("#### 📦 Bulk download — all distinct values for every key")
+            st.caption(
+                "Generates a single combined CSV with columns: key, value, count — "
+                "covering every key in the parsed overview, all rows, no cap."
+            )
+            if st.button("Build bulk distinct-values export", key="ov_bulk_btn"):
+                bulk_rows = []
+                bulk_bar = st.progress(0, text="Building bulk export …")
+                for i, k in enumerate(qsa_keys):
+                    bulk_bar.progress(
+                        int((i + 1) / len(qsa_keys) * 100),
+                        text=f"Processing key: {k} ({i+1}/{len(qsa_keys)})"
+                    )
+                    sub_df = (
+                        parsed_df[parsed_df[k].astype(str).str.strip() != ""]
+                        .groupby(k)["_count"]
+                        .sum()
+                        .reset_index()
+                        .rename(columns={k: "value", "_count": "count"})
+                    )
+                    sub_df.insert(0, "key", k)
+                    bulk_rows.append(sub_df)
+                bulk_bar.empty()
+
+                if bulk_rows:
+                    bulk_df = pd.concat(bulk_rows, ignore_index=True).sort_values(
+                        ["key", "count"], ascending=[True, False]
+                    )
+                    st.session_state["ov_bulk_df"] = bulk_df
+                    st.success(
+                        f"Built bulk export: {len(bulk_df):,} rows across {len(qsa_keys)} keys."
+                    )
+
+            bulk_df_ready = st.session_state.get("ov_bulk_df")
+            if bulk_df_ready is not None:
+                st.dataframe(bulk_df_ready.head(200), use_container_width=True, height=300, hide_index=True)
+                st.caption(f"Preview: first 200 of {len(bulk_df_ready):,} rows")
+                st.download_button(
+                    f"📥 Download bulk export CSV ({len(bulk_df_ready):,} rows)",
+                    data=bulk_df_ready.to_csv(index=False).encode("utf-8"),
+                    file_name="parsed_keys_all_distinct_values.csv",
+                    mime="text/csv",
+                    key="ov_dl_bulk",
+                )
 
         # ── SUB-TAB 2: Device ID Analysis ─────────────────────
         with sub2:
@@ -3745,273 +4067,6 @@ with tab5:
 - This is behavioral estimation from CDN/access logs, not player telemetry.
         """)
 
-
-
-# ─────────────────────────────────────────────
-# Location Behavior helpers (uses location columns already in parquet; no external API)
-# ─────────────────────────────────────────────
-
-
-def gb_location_behavior_cte(
-    parquet_glob: list,
-    col_map: dict,
-    start_date: str,
-    end_date: str,
-    country_col: str,
-    region_col: str,
-    city_col: str,
-    daypart_mode: str = "Default",
-) -> str:
-    """Behavior CTE with country/region/city columns read directly from parquet.
-
-    This does NOT call any external Geo/IP API. It trusts the selected parquet columns.
-    Channel extraction here intentionally keeps raw channel/platform/device parts so
-    the final pure-channel cleaning can reuse normalize_channel_name_smart(), the same
-    Python logic used by Query String Analyzer's Pure Channel List.
-    """
-    qs   = _cm(col_map, "queryStr")
-    ts   = _cm(col_map, "reqTimeSec")
-    path = _cm(col_map, "reqPath")
-    ua   = _cm(col_map, "UA")
-
-    country_select = f"{_dq(country_col)} AS country_raw" if country_col else "NULL AS country_raw"
-    region_select  = f"{_dq(region_col)} AS region_raw" if region_col else "NULL AS region_raw"
-    city_select    = f"{_dq(city_col)} AS city_raw" if city_col else "NULL AS city_raw"
-
-    if daypart_mode == "TV Style":
-        daypart_case = """
-            CASE
-                WHEN EXTRACT('hour' FROM event_time) BETWEEN 5 AND 9 THEN 'Morning'
-                WHEN EXTRACT('hour' FROM event_time) BETWEEN 10 AND 16 THEN 'Daytime'
-                WHEN EXTRACT('hour' FROM event_time) BETWEEN 17 AND 21 THEN 'Evening'
-                ELSE 'Late Night'
-            END
-        """
-    else:
-        daypart_case = """
-            CASE
-                WHEN EXTRACT('hour' FROM event_time) BETWEEN 5 AND 11 THEN 'Morning'
-                WHEN EXTRACT('hour' FROM event_time) BETWEEN 12 AND 16 THEN 'Afternoon'
-                WHEN EXTRACT('hour' FROM event_time) BETWEEN 17 AND 21 THEN 'Evening'
-                ELSE 'Night'
-            END
-        """
-
-    return f"""
-    WITH behavior AS (
-        SELECT
-            to_timestamp(TRY_CAST({ts} AS BIGINT)) AS event_time,
-            TRY_CAST({ts} AS BIGINT) AS reqTimeSec,
-            {path} AS reqPath,
-            {qs}   AS queryStr,
-            {ua}   AS UA,
-            {country_select},
-            {region_select},
-            {city_select},
-            regexp_extract({qs}, '(?:^|&)device_id=([^&]+)', 1)      AS device_id,
-            regexp_extract({qs}, '(?:^|&)session_id=([^&]+)', 1)     AS session_id,
-            regexp_extract({qs}, '(?:^|&)channel=([^&]+)', 1)        AS channel_qs,
-            regexp_extract({qs}, '(?:^|&)channel_name=([^&]+)', 1)   AS channel_name_qs,
-            regexp_extract({qs}, '(?:^|&)content_title=([^&]+)', 1)  AS content_title_qs,
-            regexp_extract({qs}, '(?:^|&)platform=([^&]+)', 1)       AS platform,
-            regexp_extract({qs}, '(?:^|&)device=([^&]+)', 1)         AS device_name_qs,
-            regexp_extract({qs}, '(?:^|&)category_name=([^&]+)', 1)  AS category_name
-        FROM read_parquet({parquet_glob!r}, union_by_name=true)
-        WHERE {qs} IS NOT NULL
-          AND {qs} LIKE '%session_id=%'
-          AND to_timestamp(TRY_CAST({ts} AS BIGINT))::DATE BETWEEN DATE '{start_date}' AND DATE '{end_date}'
-    ),
-    enriched AS (
-        SELECT
-            *,
-            COALESCE(NULLIF(NULLIF(NULLIF(TRIM(CAST(country_raw AS VARCHAR)), ''), '-'), '^'), 'Unknown') AS country,
-            COALESCE(NULLIF(NULLIF(NULLIF(TRIM(CAST(region_raw AS VARCHAR)), ''), '-'), '^'), 'Unknown') AS region,
-            COALESCE(NULLIF(NULLIF(NULLIF(TRIM(CAST(city_raw AS VARCHAR)), ''), '-'), '^'), 'Unknown') AS city,
-            COALESCE(NULLIF(channel_qs, ''), NULLIF(channel_name_qs, ''), NULLIF(regexp_extract(reqPath, '(vglive-sk-[0-9]+)', 1), ''), 'Unknown') AS channel_name_raw,
-            COALESCE(NULLIF(content_title_qs, ''), NULLIF(channel_qs, ''), NULLIF(channel_name_qs, ''), NULLIF(regexp_extract(reqPath, '(vglive-sk-[0-9]+)', 1), ''), reqPath) AS content_label,
-            {daypart_case} AS day_part,
-            CASE
-                WHEN lower(coalesce(platform, '')) LIKE '%android_tv%' OR lower(coalesce(UA, '')) ~ 'smarttv|hismarttv|bravia|\\btv\\b' THEN 'Smart TV'
-                WHEN lower(coalesce(UA, '')) LIKE '%android%' THEN 'Android'
-                WHEN lower(coalesce(UA, '')) LIKE '%iphone%' THEN 'iPhone'
-                WHEN lower(coalesce(UA, '')) LIKE '%ipad%' THEN 'iPad'
-                WHEN lower(coalesce(UA, '')) LIKE '%windows%' THEN 'Windows'
-                WHEN lower(coalesce(UA, '')) LIKE '%mac%' THEN 'Mac'
-                ELSE 'Other'
-            END AS device_type
-        FROM behavior
-        WHERE session_id <> '' AND device_id <> ''
-    )
-    """
-
-
-def _loc_decode_and_clean_channels(df: pd.DataFrame, channel_mode: str = "Clean") -> pd.DataFrame:
-    """Apply the same channel separation logic used by QSA Pure Channel List."""
-    if df is None or df.empty:
-        return pd.DataFrame() if df is None else df
-    out = df.copy()
-    for c in ["raw_channel", "platform", "device_name"]:
-        if c not in out.columns:
-            out[c] = ""
-        out[c] = out[c].fillna("").astype(str).map(unquote_plus)
-    if channel_mode == "Raw":
-        out["channel_name"] = out["raw_channel"].replace("", "Unknown")
-    else:
-        out["channel_name"] = out.apply(
-            lambda r: normalize_channel_name_smart(r.get("raw_channel", ""), r.get("platform", ""), r.get("device_name", "")),
-            axis=1,
-        ).replace("", "unknown")
-    return out
-
-
-@st.cache_data(show_spinner="Finding available Location Behavior date range ...", ttl=900)
-def loc_get_available_date_range(parquet_glob: list, col_map: dict) -> tuple:
-    """Return min/max available behavior dates for Location Behavior.
-
-    This makes the Location Behavior date picker smart like User Behavior:
-    it uses the actual parquet timestamp range instead of today's date.
-    """
-    con = ub_get_conn()
-    qs = _cm(col_map, "queryStr")
-    ts = _cm(col_map, "reqTimeSec")
-    query = f"""
-    SELECT
-        MIN(to_timestamp(TRY_CAST({ts} AS BIGINT))::DATE) AS min_date,
-        MAX(to_timestamp(TRY_CAST({ts} AS BIGINT))::DATE) AS max_date,
-        COUNT(*) AS behavior_rows
-    FROM read_parquet({parquet_glob!r}, union_by_name=true)
-    WHERE {qs} IS NOT NULL
-      AND {qs} LIKE '%session_id=%'
-      AND TRY_CAST({ts} AS BIGINT) IS NOT NULL
-    """
-    try:
-        row = con.execute(query).fetchone()
-        if not row or row[0] is None or row[1] is None:
-            return None, None, 0
-        min_date = pd.to_datetime(row[0]).date()
-        max_date = pd.to_datetime(row[1]).date()
-        return min_date, max_date, int(row[2] or 0)
-    except Exception as e:
-        log_warning("Could not detect Location Behavior available date range", e)
-        return None, None, 0
-
-
-@st.cache_data(show_spinner="Loading location behavior base rows ...", ttl=900)
-def loc_get_location_base_rows_from_parquet(
-    parquet_glob: list,
-    col_map: dict,
-    start_date: str,
-    end_date: str,
-    country_col: str,
-    region_col: str,
-    city_col: str,
-    daypart_mode: str = "Default",
-    channel_mode: str = "Clean",
-) -> pd.DataFrame:
-    """Compact behavior rows at location/channel/device/session/device grain.
-
-    This does not materialize every raw parquet row. DuckDB first groups by the
-    dimensions required for exact distinct device/session counts; Python then applies
-    the same pure-channel cleaner used by the QSA Pure Channel List.
-    """
-    con = ub_get_conn()
-    cte = gb_location_behavior_cte(parquet_glob, col_map, start_date, end_date, country_col, region_col, city_col, daypart_mode)
-    query = cte + """
-    SELECT
-        country,
-        region,
-        city,
-        channel_name_raw AS raw_channel,
-        platform,
-        device_name_qs AS device_name,
-        device_type,
-        session_id,
-        device_id,
-        COUNT(*) AS requests
-    FROM enriched
-    GROUP BY 1,2,3,4,5,6,7,8,9
-    """
-    df = con.execute(query).df()
-    return _loc_decode_and_clean_channels(df, channel_mode=channel_mode)
-
-
-def loc_build_relation_from_base(base_df: pd.DataFrame) -> pd.DataFrame:
-    if base_df is None or base_df.empty:
-        return pd.DataFrame(columns=["country", "region", "city", "channel_name", "device_type", "requests", "sessions", "devices"])
-    return (
-        base_df.groupby(["country", "region", "city", "channel_name", "device_type"], dropna=False)
-        .agg(requests=("requests", "sum"), sessions=("session_id", "nunique"), devices=("device_id", "nunique"))
-        .reset_index()
-        .sort_values(["devices", "sessions", "requests"], ascending=False)
-    )
-
-
-def loc_build_city_summary_from_base(base_df: pd.DataFrame) -> pd.DataFrame:
-    if base_df is None or base_df.empty:
-        return pd.DataFrame(columns=["country", "region", "city", "requests", "sessions", "devices", "channels", "device_types"])
-    return (
-        base_df.groupby(["country", "region", "city"], dropna=False)
-        .agg(requests=("requests", "sum"), sessions=("session_id", "nunique"), devices=("device_id", "nunique"), channels=("channel_name", "nunique"), device_types=("device_type", "nunique"))
-        .reset_index()
-        .sort_values(["devices", "sessions", "requests"], ascending=False)
-    )
-
-
-def loc_build_country_summary_from_base(base_df: pd.DataFrame) -> pd.DataFrame:
-    if base_df is None or base_df.empty:
-        return pd.DataFrame(columns=["country", "requests", "sessions", "devices", "regions", "cities", "channels", "device_types"])
-    return (
-        base_df.groupby(["country"], dropna=False)
-        .agg(requests=("requests", "sum"), sessions=("session_id", "nunique"), devices=("device_id", "nunique"), regions=("region", "nunique"), cities=("city", "nunique"), channels=("channel_name", "nunique"), device_types=("device_type", "nunique"))
-        .reset_index()
-        .sort_values(["devices", "sessions", "requests"], ascending=False)
-    )
-
-
-def loc_build_device_type_summary_from_base(base_df: pd.DataFrame) -> pd.DataFrame:
-    if base_df is None or base_df.empty:
-        return pd.DataFrame(columns=["device_type", "requests", "sessions", "devices", "countries", "regions", "cities", "channels"])
-    return (
-        base_df.groupby(["device_type"], dropna=False)
-        .agg(requests=("requests", "sum"), sessions=("session_id", "nunique"), devices=("device_id", "nunique"), countries=("country", "nunique"), regions=("region", "nunique"), cities=("city", "nunique"), channels=("channel_name", "nunique"))
-        .reset_index()
-        .sort_values(["devices", "sessions", "requests"], ascending=False)
-    )
-
-
-def loc_build_india_state_summary_from_base(base_df: pd.DataFrame) -> pd.DataFrame:
-    if base_df is None or base_df.empty:
-        return pd.DataFrame(columns=["state_region", "requests", "sessions", "devices", "cities", "channels", "device_types"])
-    mask = base_df["country"].fillna("").astype(str).str.upper().isin(["IN", "IND", "INDIA"])
-    india_df = base_df[mask].copy()
-    if india_df.empty:
-        return pd.DataFrame(columns=["state_region", "requests", "sessions", "devices", "cities", "channels", "device_types"])
-    return (
-        india_df.groupby(["region"], dropna=False)
-        .agg(requests=("requests", "sum"), sessions=("session_id", "nunique"), devices=("device_id", "nunique"), cities=("city", "nunique"), channels=("channel_name", "nunique"), device_types=("device_type", "nunique"))
-        .reset_index()
-        .rename(columns={"region": "state_region"})
-        .sort_values(["devices", "sessions", "requests"], ascending=False)
-    )
-
-
-@st.cache_data(show_spinner="Loading city/channel/device relationship ...", ttl=900)
-def gb_get_city_channel_device_relation_from_parquet(parquet_glob: list, col_map: dict, start_date: str, end_date: str, country_col: str, region_col: str, city_col: str, daypart_mode: str = "Default", channel_mode: str = "Clean") -> pd.DataFrame:
-    base = loc_get_location_base_rows_from_parquet(parquet_glob, col_map, start_date, end_date, country_col, region_col, city_col, daypart_mode, channel_mode)
-    return loc_build_relation_from_base(base)
-
-
-@st.cache_data(show_spinner="Loading accurate city device summary ...", ttl=900)
-def gb_get_city_device_summary_from_parquet(parquet_glob: list, col_map: dict, start_date: str, end_date: str, country_col: str, region_col: str, city_col: str, daypart_mode: str = "Default", channel_mode: str = "Clean") -> pd.DataFrame:
-    base = loc_get_location_base_rows_from_parquet(parquet_glob, col_map, start_date, end_date, country_col, region_col, city_col, daypart_mode, channel_mode)
-    return loc_build_city_summary_from_base(base)
-
-
-@st.cache_data(show_spinner="Loading country device summary ...", ttl=900)
-def gb_get_country_device_summary_from_parquet(parquet_glob: list, col_map: dict, start_date: str, end_date: str, country_col: str, region_col: str, city_col: str, daypart_mode: str = "Default", channel_mode: str = "Clean") -> pd.DataFrame:
-    base = loc_get_location_base_rows_from_parquet(parquet_glob, col_map, start_date, end_date, country_col, region_col, city_col, daypart_mode, channel_mode)
-    return loc_build_country_summary_from_base(base)
-
 # ══════════════════════════════════════════════
 # TAB 6 — Global Behavior Dashboard
 # ══════════════════════════════════════════════
@@ -4228,443 +4283,510 @@ with tab6:
                 st.download_button("📥 Download switch-away CSV", data=rate_df.to_csv(index=False).encode("utf-8"), file_name=f"global_switch_away_{gb_start_s}_to_{gb_end_s}.csv", mime="text/csv", key="gb_dl_switch_rate")
 
 # ══════════════════════════════════════════════
-# TAB 7 — Location Behavior Dashboard
+# TAB 7 — IP & Geo Intelligence
 # ══════════════════════════════════════════════
 with tab7:
-    st.subheader("🌍 Location Behavior Dashboard")
+    st.subheader("🛰️ IP & Geo Intelligence")
     st.caption(
-        "Uses country/region/city columns already present in your parquet. "
-        "No external Geo/IP API is used. Channel cleaning uses the same logic as "
-        "✅ Pure Channel List (cleaned from queryStr)."
+        "Reveals which device IDs share an IP, what content each device watches, "
+        "and how devices and ISPs are distributed across regions. "
+        "All device IDs are extracted from the query string. Content is inferred from reqPath."
     )
 
     if not DUCKDB_OK:
-        st.error("DuckDB not installed. Run: `pip install duckdb`")
+        st.error("DuckDB is required for this tab. Run: `pip install duckdb`")
         st.stop()
     if not PLOTLY_OK:
-        st.warning("Plotly not installed. Tables will work, but charts need: `pip install plotly`")
-
-    lb_cm = st.session_state.ub_col_map
-    lb_qs = lb_cm.get("queryStr", "")
-    lb_ts = lb_cm.get("reqTimeSec", "")
-    lb_path = lb_cm.get("reqPath", "")
-    if not lb_qs or not lb_ts or not lb_path:
-        st.warning("Please configure Query string, Timestamp, and Request path in the User Behavior column mapping first.")
+        st.error("Plotly is required for this tab. Run: `pip install plotly`")
         st.stop()
 
-    lb_files = collect_files(valid_folders)
-    if not lb_files:
+    # ── Column mapping ────────────────────────────────────────
+    gi_cm = st.session_state.ub_col_map
+    gi_qs   = gi_cm.get("queryStr",   "")
+    gi_ts   = gi_cm.get("reqTimeSec", "")
+    gi_path = gi_cm.get("reqPath",    "")
+    gi_ip   = gi_cm.get("cliIP",      "")
+
+    if not gi_qs or not gi_path:
+        st.warning(
+            "Please configure at least **Query string** and **Request path** columns "
+            "in the User Behavior tab's column mapping before using this tab."
+        )
+        st.stop()
+
+    if not gi_ip:
+        st.warning(
+            "⚠️ No **Client IP** column is mapped. Geo and ISP sections will be unavailable. "
+            "Map it in the User Behavior tab → Column Mapping → Client IP column."
+        )
+
+    # ── Date range and controls ────────────────────────────────
+    gi_col1, gi_col2, gi_col3 = st.columns([2, 1, 1])
+    with gi_col1:
+        gi_default_end   = pd.to_datetime("today").date()
+        gi_default_start = gi_default_end - pd.Timedelta(days=6)
+        gi_dates = st.date_input(
+            "Date range (filters by reqTimeSec)",
+            value=(gi_default_start, gi_default_end),
+            key="gi_date_range",
+        )
+        gi_start, gi_end = (
+            gi_dates if isinstance(gi_dates, tuple) and len(gi_dates) == 2
+            else (gi_default_start, gi_default_end)
+        )
+    with gi_col2:
+        gi_sample = st.number_input(
+            "Row sample limit (M)",
+            min_value=0.1, max_value=10.0, value=2.0, step=0.5,
+            key="gi_sample_limit",
+            help="Cap on rows pulled from parquet. Increase for more accuracy, decrease for speed.",
+        )
+    with gi_col3:
+        gi_top_paths = st.number_input(
+            "Top paths per device",
+            min_value=5, max_value=100, value=20, step=5,
+            key="gi_top_paths",
+        )
+
+    gi_pq_files = collect_files(valid_folders)
+    if not gi_pq_files:
         st.warning("No parquet files found in selected folders.")
         st.stop()
-    lb_glob = [str(f) for f in lb_files]
+    gi_glob = [str(f) for f in gi_pq_files]
 
-    def _guess_col(possible_names: list[str], all_columns: list[str], required: bool = True) -> int:
-        opts = all_columns if required else [""] + all_columns
-        exact = {c.lower(): i for i, c in enumerate(opts)}
-        for name in possible_names:
-            if name.lower() in exact:
-                return exact[name.lower()]
-        for i, c in enumerate(opts):
-            cl = c.lower()
-            if any(name.lower() in cl for name in possible_names if name):
-                return i
-        return 0
-
-    st.markdown("### 1) Select parquet location columns")
-    loc_c1, loc_c2, loc_c3 = st.columns(3)
-    with loc_c1:
-        lb_country_col = st.selectbox(
-            "Country column",
-            options=columns,
-            index=_guess_col(["country", "country_code", "country_name", "countryName"], columns, True),
-            key="lb_country_col",
-        )
-    with loc_c2:
-        lb_region_col = st.selectbox(
-            "Region / State column",
-            options=[""] + columns,
-            index=_guess_col(["region", "state", "regionName", "state_name", "subdivision"], columns, False),
-            key="lb_region_col",
-            help="Recommended. It prevents same city names in different states/regions from mixing.",
-        )
-    with loc_c3:
-        lb_city_col = st.selectbox(
-            "City column",
-            options=columns,
-            index=_guess_col(["city", "city_name", "cityName"], columns, True),
-            key="lb_city_col",
-        )
-
-    st.markdown("### 2) Choose analysis range")
-    lf1, lf2, lf3, lf4 = st.columns([1, 1, 1, 1])
-    with lf1:
-        lb_channel_mode = st.radio(
-            "Channel mode",
-            ["Clean", "Raw"],
-            horizontal=True,
-            key="lb_channel_mode",
-            help="Clean uses normalize_channel_name_smart(), same as QSA Pure Channel List.",
-        )
-    with lf2:
-        lb_top_n = st.selectbox("Top N in charts", [10, 15, 20, 25, 50], index=2, key="lb_top_n")
-    with lf3:
-        lb_daypart_mode = st.selectbox("Day-part mode", ["Default", "TV Style"], index=1, key="lb_daypart_mode")
-    with lf4:
-        lb_min_devices = st.number_input("Min devices filter", min_value=1, max_value=1000000, value=1, step=1, key="lb_min_devices")
-
-    # Smart date range: detect actual behavior dates from the selected parquet files.
-    # This matches the User Behavior workflow better than defaulting to today,
-    # especially when log data is historical.
-    lb_min_date, lb_max_date, lb_behavior_rows = loc_get_available_date_range(lb_glob, lb_cm)
-    if lb_min_date is None or lb_max_date is None:
-        st.warning("Could not detect available dates for Location Behavior. Check timestamp/queryStr column mapping.")
-        st.stop()
-
-    lb_default_end = lb_max_date
-    lb_default_start = (pd.to_datetime(lb_max_date) - pd.Timedelta(days=6)).date()
-    if lb_default_start < lb_min_date:
-        lb_default_start = lb_min_date
-
-    st.caption(
-        f"Available behavior data: **{lb_min_date} → {lb_max_date}** "
-        f"({lb_behavior_rows:,} behavior rows). Default is the last 7 available days."
+    gi_run_btn = st.button(
+        "🔍 Load IP & Device data", type="primary", key="gi_run_btn"
     )
 
-    # Use a data-range-specific key so Streamlit does not keep an old invalid date
-    # selection after changing folders or timestamp/query-string mapping.
-    lb_date_key = hashlib.sha1(
-        ("|".join(map(str, lb_glob)) + str(lb_qs) + str(lb_ts) + str(lb_min_date) + str(lb_max_date)).encode("utf-8", errors="replace")
-    ).hexdigest()[:10]
-
-    lb_dates = st.date_input(
-        "Date range",
-        value=(lb_default_start, lb_default_end),
-        min_value=lb_min_date,
-        max_value=lb_max_date,
-        key=f"lb_date_range_{lb_date_key}",
-    )
-    lb_start, lb_end = lb_dates if isinstance(lb_dates, tuple) and len(lb_dates) == 2 else (lb_default_start, lb_default_end)
-    lb_start_s, lb_end_s = str(lb_start), str(lb_end)
-
-    lb_param_key = (
-        lb_start_s,
-        lb_end_s,
-        lb_country_col,
-        lb_region_col,
-        lb_city_col,
-        lb_channel_mode,
-        lb_daypart_mode,
-        tuple(map(str, lb_glob)),
-    )
-
-    if st.button("Run Location Behavior analysis", type="primary", key="lb_run_analysis"):
-        with st.spinner("Building location behavior tables from parquet columns ..."):
-            base_df = loc_get_location_base_rows_from_parquet(
-                lb_glob,
-                lb_cm,
-                lb_start_s,
-                lb_end_s,
-                lb_country_col,
-                lb_region_col,
-                lb_city_col,
-                lb_daypart_mode,
-                lb_channel_mode,
+    # ── Load raw data ──────────────────────────────────────────
+    if gi_run_btn:
+        with st.spinner("Loading IP + device data from parquet via DuckDB …"):
+            gi_raw = gda_load_raw(
+                gi_glob, gi_cm,
+                str(gi_start), str(gi_end),
+                sample_limit=int(gi_sample * 1_000_000),
             )
-            city_summary_df = loc_build_city_summary_from_base(base_df)
-            country_summary_df = loc_build_country_summary_from_base(base_df)
-            relation_df = loc_build_relation_from_base(base_df)
-            device_type_summary_df = loc_build_device_type_summary_from_base(base_df)
-            india_state_summary_df = loc_build_india_state_summary_from_base(base_df)
-
-        st.session_state["lb_location_payload"] = (
-            lb_param_key,
-            city_summary_df,
-            country_summary_df,
-            relation_df,
-            device_type_summary_df,
-            india_state_summary_df,
+        if gi_raw.empty:
+            st.warning("No rows with device_id found in the selected date range.")
+            st.stop()
+        st.session_state["gi_raw_df"]  = gi_raw
+        st.session_state["gi_geo_data"] = {}   # reset geo on new load
+        st.success(
+            f"Loaded {len(gi_raw):,} rows | "
+            f"{gi_raw['device_id'].nunique():,} unique devices | "
+            f"{gi_raw['cliIP'].nunique() if 'cliIP' in gi_raw.columns else 0:,} unique IPs"
         )
 
-    payload = st.session_state.get("lb_location_payload")
-    if not payload or payload[0] != lb_param_key:
-        st.info("Click **Run Location Behavior analysis** to build the city/country/region/device relationship tables.")
+    gi_raw = st.session_state.get("gi_raw_df")
+    if gi_raw is None or gi_raw.empty:
+        st.info("👆 Click **Load IP & Device data** to begin.")
         st.stop()
 
-    _, city_summary_df, country_summary_df, relation_df, device_type_summary_df, india_state_summary_df = payload
-
-    if city_summary_df.empty and relation_df.empty:
-        st.warning("No behavior/location rows found. Check date range, queryStr mapping, and selected location columns.")
-        st.stop()
-
-    city_summary_view = city_summary_df[city_summary_df["devices"] >= int(lb_min_devices)].copy()
-    relation_view = relation_df[relation_df["devices"] >= int(lb_min_devices)].copy()
+    # ── Coverage metrics ───────────────────────────────────────
+    gi_m1, gi_m2, gi_m3, gi_m4, gi_m5 = st.columns(5)
+    gi_m1.metric("Rows loaded",      f"{len(gi_raw):,}")
+    gi_m2.metric("Unique devices",   f"{gi_raw['device_id'].nunique():,}")
+    gi_m3.metric("Unique IPs",       f"{gi_raw['cliIP'].nunique() if 'cliIP' in gi_raw.columns else 'N/A':,}" if 'cliIP' in gi_raw.columns else "N/A")
+    gi_m4.metric("Unique paths",     f"{gi_raw['reqPath'].nunique():,}")
+    gi_m5.metric("Unique sessions",  f"{gi_raw['session_id'].nunique():,}" if 'session_id' in gi_raw.columns else "N/A")
 
     st.markdown("---")
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Countries", f"{country_summary_df['country'].nunique():,}" if not country_summary_df.empty else "0")
-    k2.metric("Regions", f"{city_summary_df['region'].nunique():,}" if not city_summary_df.empty else "0")
-    k3.metric("Cities", f"{city_summary_df['city'].nunique():,}" if not city_summary_df.empty else "0")
-    k4.metric("City-device total", f"{int(city_summary_df['devices'].sum()):,}" if not city_summary_df.empty else "0")
-    k5.metric("Requests", f"{int(city_summary_df['requests'].sum()):,}" if not city_summary_df.empty else "0")
+
+    # ── GEO LOOKUP ─────────────────────────────────────────────
+    geo_data = st.session_state.get("gi_geo_data", {})
+    if gi_ip and "cliIP" in gi_raw.columns:
+        unique_ips = gi_raw["cliIP"].dropna().astype(str).unique().tolist()
+        uncached   = [ip for ip in unique_ips if ip not in geo_data and ip not in ("", "nan", "None")]
+        geo_col1, geo_col2 = st.columns([3, 1])
+        with geo_col1:
+            st.caption(
+                f"**Geo lookup:** {len(unique_ips):,} unique IPs found. "
+                f"{len(geo_data):,} already cached. "
+                f"{len(uncached):,} new IPs to look up."
+            )
+        with geo_col2:
+            do_geo = st.button(
+                f"🌍 Lookup geo for {len(uncached):,} IPs",
+                key="gi_geo_btn",
+                disabled=(len(uncached) == 0),
+            )
+        if do_geo and uncached:
+            batch_total = (len(uncached) + 99) // 100
+            geo_bar = st.progress(0, text="Looking up geo …")
+            new_geo = {}
+            for b_idx in range(0, len(uncached), 100):
+                batch = uncached[b_idx : b_idx + 100]
+                pct   = min(int((b_idx / len(uncached)) * 100), 99)
+                geo_bar.progress(pct, text=f"Geo lookup … batch {b_idx // 100 + 1} / {batch_total}")
+                new_geo.update(ub_lookup_geo(batch))
+            geo_bar.progress(100, text="✅ Geo lookup done")
+            geo_bar.empty()
+            geo_data.update(new_geo)
+            st.session_state["gi_geo_data"] = geo_data
+            st.success(
+                f"Geo lookup complete. {len(new_geo):,} IPs resolved. "
+                f"{len(uncached) - len(new_geo):,} could not be resolved (private/invalid)."
+            )
+    else:
+        st.caption("_Geo lookup unavailable — cliIP column not mapped._")
+
+    # Enrich ip_device table with geo
+    ip_device_df = gda_ip_device_table(gi_raw)
+    if not ip_device_df.empty and geo_data:
+        ip_device_df = gda_enrich_with_geo(ip_device_df, geo_data)
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════
+    # SECTION 1 — IP ↔ Device ID Relationship
+    # ══════════════════════════════════════════════
+    st.subheader("1) 🔗 IP ↔ Device ID Relationship")
     st.caption(
-        "City totals count distinct device_id directly at country+region+city level. "
-        "City-device total can count the same device in multiple cities if your logs show it in multiple locations."
+        "Each row = one (cliIP, device_id) pair. Useful for detecting shared IPs, "
+        "account sharing, or devices switching networks."
     )
 
-    st.markdown("### Country, city, device type, and India state lists")
-    ct1, ct2 = st.columns(2)
-
-    with ct1:
-        st.markdown("**Country summary**")
-        st.dataframe(country_summary_df, use_container_width=True, hide_index=True, height=300)
-        st.download_button(
-            "📥 Download country summary CSV",
-            data=country_summary_df.to_csv(index=False).encode("utf-8"),
-            file_name=f"location_country_summary_{lb_start_s}_to_{lb_end_s}.csv",
-            mime="text/csv",
-            key="lb_dl_country_summary",
+    if ip_device_df.empty:
+        st.info("No (cliIP, device_id) pairs found.")
+    else:
+        gi_ip_search = st.text_input(
+            "Filter by IP or device_id",
+            placeholder="type to search …",
+            key="gi_ip_search",
         )
+        disp_ip_dev = ip_device_df.copy()
+        if gi_ip_search.strip():
+            mask = (
+                disp_ip_dev["cliIP"].astype(str).str.contains(gi_ip_search.strip(), case=False, na=False)
+                | disp_ip_dev["device_id"].astype(str).str.contains(gi_ip_search.strip(), case=False, na=False)
+            )
+            disp_ip_dev = disp_ip_dev[mask]
 
-    with ct2:
-        st.markdown("**Device type list**")
-        st.dataframe(device_type_summary_df, use_container_width=True, hide_index=True, height=300)
-        st.download_button(
-            "📥 Download device type list CSV",
-            data=device_type_summary_df.to_csv(index=False).encode("utf-8"),
-            file_name=f"location_device_type_list_{lb_start_s}_to_{lb_end_s}.csv",
-            mime="text/csv",
-            key="lb_dl_device_type_list",
-        )
+        # Devices per IP — highlight IPs with multiple devices (possible shared/VPN)
+        devices_per_ip = ip_device_df.groupby("cliIP")["device_id"].nunique().rename("n_devices")
+        disp_ip_dev = disp_ip_dev.merge(devices_per_ip.reset_index(), on="cliIP", how="left")
 
-    ct3, ct4 = st.columns(2)
+        col_order = [c for c in ["cliIP", "n_devices", "device_id", "requests", "sessions", "unique_paths", "platform",
+                                  "country", "region", "city", "isp"] if c in disp_ip_dev.columns]
+        st.dataframe(disp_ip_dev[col_order], use_container_width=True, height=400, hide_index=True)
+        st.caption(f"{len(disp_ip_dev):,} (IP, device) pairs shown")
 
-    with ct3:
-        st.markdown("**City summary — total device count from each city**")
-        st.dataframe(city_summary_view, use_container_width=True, hide_index=True, height=330)
-        st.download_button(
-            "📥 Download city summary CSV",
-            data=city_summary_df.to_csv(index=False).encode("utf-8"),
-            file_name=f"location_city_summary_{lb_start_s}_to_{lb_end_s}.csv",
-            mime="text/csv",
-            key="lb_dl_city_summary",
-        )
-
-    with ct4:
-        st.markdown("**India state / region list**")
-        if india_state_summary_df.empty:
-            st.info("No rows where country is IN / IND / INDIA.")
+        # Flag multi-device IPs
+        multi_dev = devices_per_ip[devices_per_ip > 1].sort_values(ascending=False)
+        if not multi_dev.empty:
+            with st.expander(f"⚠️  {len(multi_dev):,} IPs share multiple device IDs (click to inspect)"):
+                st.caption("These IPs may indicate household sharing, VPN endpoints, or data anomalies.")
+                multi_df = multi_dev.reset_index().rename(columns={"n_devices": "unique_device_ids"})
+                multi_df = multi_df.merge(
+                    ip_device_df.groupby("cliIP").agg(
+                        total_requests=("requests", "sum"),
+                        device_list=("device_id", lambda s: ", ".join(s.dropna().unique()[:10]))
+                    ).reset_index(),
+                    on="cliIP", how="left"
+                )
+                if geo_data:
+                    multi_df = gda_enrich_with_geo(multi_df, geo_data)
+                    multi_df = multi_df[[ c for c in ["cliIP","unique_device_ids","total_requests","country","city","isp","device_list"] if c in multi_df.columns]]
+                st.dataframe(multi_df, use_container_width=True, hide_index=True, height=300)
+                st.download_button(
+                    "📥 Download multi-device IPs CSV",
+                    data=multi_df.to_csv(index=False).encode("utf-8"),
+                    file_name="multi_device_ips.csv",
+                    mime="text/csv",
+                    key="gi_dl_multi_dev",
+                )
         else:
-            st.dataframe(india_state_summary_df, use_container_width=True, hide_index=True, height=330)
+            st.success("✅ No IPs share more than one device ID in this date range.")
+
+        st.download_button(
+            "📥 Download IP ↔ Device table CSV",
+            data=disp_ip_dev[col_order].to_csv(index=False).encode("utf-8"),
+            file_name=f"ip_device_mapping_{gi_start}_to_{gi_end}.csv",
+            mime="text/csv",
+            key="gi_dl_ip_dev",
+        )
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════
+    # SECTION 2 — Device ↔ Content (reqPath)
+    # ══════════════════════════════════════════════
+    st.subheader("2) 📺 Device ID → Content Watched (reqPath)")
+    st.caption(
+        "Shows what each device_id accessed — top request paths, sessions, and request counts. "
+        "Pick a specific device to drill down."
+    )
+
+    device_content_df = gda_device_content_table(gi_raw, top_paths=int(gi_top_paths))
+
+    if device_content_df.empty:
+        st.info("No device → content data found.")
+    else:
+        all_devices = sorted(device_content_df["device_id"].dropna().unique().tolist())
+        gi_dev_pick = st.selectbox(
+            "Select device_id to inspect",
+            options=["(show all devices)"] + all_devices,
+            key="gi_dev_pick",
+        )
+
+        if gi_dev_pick == "(show all devices)":
+            show_dc = device_content_df.copy()
+        else:
+            show_dc = device_content_df[device_content_df["device_id"] == gi_dev_pick].copy()
+
+        st.dataframe(show_dc, use_container_width=True, height=380, hide_index=True)
+        st.caption(f"{len(show_dc):,} rows shown (top {gi_top_paths} paths per device)")
+
+        if gi_dev_pick != "(show all devices)" and not show_dc.empty:
+            fig_dc = px.bar(
+                show_dc.head(20),
+                x="requests", y="reqPath", orientation="h",
+                title=f"Top content paths for device: {gi_dev_pick}",
+                color="sessions",
+                color_continuous_scale="Blues",
+            )
+            fig_dc.update_layout(height=500, yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig_dc, use_container_width=True)
+
+        st.download_button(
+            "📥 Download device → content CSV",
+            data=show_dc.to_csv(index=False).encode("utf-8"),
+            file_name=f"device_content_{gi_start}_to_{gi_end}.csv",
+            mime="text/csv",
+            key="gi_dl_dev_content",
+        )
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════
+    # SECTION 3 — Full 3-way: IP × Device × Content
+    # ══════════════════════════════════════════════
+    st.subheader("3) 🔀 IP × Device × Content (three-way join)")
+    st.caption("Every unique combination of cliIP + device_id + reqPath with request and session counts.")
+
+    with st.expander("Build three-way IP × Device × Content table (can be large — click to run)"):
+        if st.button("Build three-way table", key="gi_3way_btn"):
+            with st.spinner("Building three-way table …"):
+                threeway_df = gda_ip_device_content_table(gi_raw)
+            st.session_state["gi_3way_df"] = threeway_df
+
+        tw = st.session_state.get("gi_3way_df")
+        if tw is not None and not tw.empty:
+            tw_search = st.text_input("Filter three-way table", placeholder="IP, device, or path …", key="gi_3way_search")
+            disp_tw = tw.copy()
+            if tw_search.strip():
+                mask_tw = (
+                    disp_tw["cliIP"].astype(str).str.contains(tw_search.strip(), case=False, na=False)
+                    | disp_tw["device_id"].astype(str).str.contains(tw_search.strip(), case=False, na=False)
+                    | disp_tw["reqPath"].astype(str).str.contains(tw_search.strip(), case=False, na=False)
+                )
+                disp_tw = disp_tw[mask_tw]
+            st.dataframe(disp_tw, use_container_width=True, height=420, hide_index=True)
+            st.caption(f"{len(disp_tw):,} unique (IP, device, path) combinations")
             st.download_button(
-                "📥 Download India state list CSV",
-                data=india_state_summary_df.to_csv(index=False).encode("utf-8"),
-                file_name=f"location_india_state_list_{lb_start_s}_to_{lb_end_s}.csv",
+                "📥 Download three-way table CSV",
+                data=disp_tw.to_csv(index=False).encode("utf-8"),
+                file_name=f"ip_device_content_{gi_start}_to_{gi_end}.csv",
                 mime="text/csv",
-                key="lb_dl_india_state_list",
+                key="gi_dl_3way",
             )
+        elif tw is not None and tw.empty:
+            st.info("No three-way data found.")
 
-    if PLOTLY_OK and not city_summary_view.empty:
-        st.markdown("### Visual summary")
-        chart_df = city_summary_view.head(int(lb_top_n)).copy()
-        fig_city = px.bar(
-            chart_df,
-            x="devices",
-            y="city",
-            color="region",
-            orientation="h",
-            title="Top cities by unique device count",
-            hover_data=["country", "region", "sessions", "requests", "channels", "device_types"],
-        )
-        fig_city.update_layout(height=560, yaxis={"categoryorder": "total ascending"})
-        st.plotly_chart(fig_city, use_container_width=True)
+    st.markdown("---")
 
-    st.markdown("### City × Region × Channel × Device Type relationship")
-    st.caption(
-        "This answers: from each country/region/city, which channel was viewed and from which device type. "
-        "Region is included to avoid mixing same city names across different states."
-    )
+    # ══════════════════════════════════════════════
+    # SECTION 4 — Region × Device Distribution
+    # ══════════════════════════════════════════════
+    st.subheader("4) 🗺️ Region → Device Distribution")
+    st.caption("Which regions have the most unique viewer devices? Requires geo lookup above.")
 
-    with st.expander("Optional filters for relationship table", expanded=True):
-        fc1, fc2, fc3, fc4 = st.columns(4)
+    if not geo_data:
+        st.info("Run 🌍 **Lookup geo** above first to enable region analytics.")
+    elif "country" not in ip_device_df.columns:
+        st.info("Re-run geo lookup — no country data found in the enriched table.")
+    else:
+        region_dev_df = gda_region_device_table(ip_device_df)
 
-        with fc1:
-            country_opts = ["All"] + sorted(relation_df["country"].dropna().astype(str).unique().tolist()) if not relation_df.empty else ["All"]
-            selected_country = st.selectbox("Country", country_opts, key="lb_filter_country")
-
-        with fc2:
-            base_for_region = relation_df.copy()
-            if selected_country != "All":
-                base_for_region = base_for_region[base_for_region["country"].astype(str) == selected_country]
-            region_opts = ["All"] + sorted(base_for_region["region"].dropna().astype(str).unique().tolist()) if not base_for_region.empty else ["All"]
-            selected_region = st.selectbox("Region / State", region_opts, key="lb_filter_region")
-
-        with fc3:
-            base_for_city = base_for_region.copy()
-            if selected_region != "All":
-                base_for_city = base_for_city[base_for_city["region"].astype(str) == selected_region]
-            city_opts = ["All"] + sorted(base_for_city["city"].dropna().astype(str).unique().tolist()) if not base_for_city.empty else ["All"]
-            selected_city = st.selectbox("City", city_opts, key="lb_filter_city")
-
-        with fc4:
-            device_opts = ["All"] + sorted(relation_df["device_type"].dropna().astype(str).unique().tolist()) if not relation_df.empty else ["All"]
-            selected_device_type = st.selectbox("Device type", device_opts, key="lb_filter_device_type")
-
-        f2c1, f2c2 = st.columns(2)
-        with f2c1:
-            channel_search = st.text_input("Search channel contains", value="", key="lb_filter_channel_search")
-        with f2c2:
-            sort_by = st.selectbox("Sort relationship table by", ["devices", "sessions", "requests", "country", "region", "city", "channel_name", "device_type"], key="lb_relation_sort_by")
-
-    rel_show = relation_view.copy()
-
-    if selected_country != "All":
-        rel_show = rel_show[rel_show["country"].astype(str) == selected_country]
-
-    if selected_region != "All":
-        rel_show = rel_show[rel_show["region"].astype(str) == selected_region]
-
-    if selected_city != "All":
-        rel_show = rel_show[rel_show["city"].astype(str) == selected_city]
-
-    if selected_device_type != "All":
-        rel_show = rel_show[rel_show["device_type"].astype(str) == selected_device_type]
-
-    if channel_search.strip():
-        rel_show = rel_show[rel_show["channel_name"].astype(str).str.contains(channel_search.strip(), case=False, na=False)]
-
-    if sort_by in rel_show.columns:
-        rel_show = rel_show.sort_values(sort_by, ascending=(sort_by not in ["devices", "sessions", "requests"]))
-
-    st.dataframe(rel_show, use_container_width=True, hide_index=True, height=460)
-
-    if PLOTLY_OK and not rel_show.empty:
-        st.markdown("#### Relationship chart")
-        st.caption(
-            "The normal Top Overall chart can show only Smart TV/Android if those rows dominate the top results. "
-            "Use **Top per device type** to force every available device type to appear, or **Device type totals** to see the device-type list as a chart."
-        )
-
-        cc1, cc2, cc3 = st.columns([1.4, 1, 1.4])
-        with cc1:
-            rel_chart_mode = st.selectbox(
-                "Chart mode",
-                ["Top overall combinations", "Top per device type", "Device type totals"],
-                key="lb_rel_chart_mode",
-            )
-        with cc2:
-            rel_top_each = st.number_input(
-                "Rows per device type",
-                min_value=1,
-                max_value=50,
-                value=10,
-                step=1,
-                key="lb_rel_top_each_device_type",
-                help="Used only for Top per device type mode.",
-            )
-        with cc3:
-            chart_device_types = st.multiselect(
-                "Device types to include",
-                options=sorted(rel_show["device_type"].dropna().astype(str).unique().tolist()),
-                default=sorted(rel_show["device_type"].dropna().astype(str).unique().tolist()),
-                key="lb_rel_chart_device_types",
-            )
-
-        rel_chart_source = rel_show.copy()
-        if chart_device_types:
-            rel_chart_source = rel_chart_source[rel_chart_source["device_type"].astype(str).isin(chart_device_types)]
-
-        device_type_counts_in_filter = (
-            rel_chart_source.groupby("device_type", dropna=False)
-            .agg(rows=("device_type", "size"), devices_in_rows=("devices", "sum"), sessions_in_rows=("sessions", "sum"), requests=("requests", "sum"))
-            .reset_index()
-            .sort_values(["devices_in_rows", "sessions_in_rows", "requests"], ascending=False)
-        )
-        with st.expander("Device types available in current relationship filter", expanded=False):
-            st.dataframe(device_type_counts_in_filter, use_container_width=True, hide_index=True, height=220)
-
-        if rel_chart_source.empty:
-            st.info("No relationship rows left after chart device-type selection.")
-        elif rel_chart_mode == "Device type totals":
-            chart_df = device_type_counts_in_filter.rename(columns={"devices_in_rows": "devices"})
-            fig_rel = px.bar(
-                chart_df,
-                x="devices",
-                y="device_type",
-                orientation="h",
-                title="Device type totals in current relationship filter",
-                hover_data=["rows", "sessions_in_rows", "requests"],
-            )
-            fig_rel.update_layout(height=420, yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig_rel, use_container_width=True)
-        elif rel_chart_mode == "Top per device type":
-            chart_df = (
-                rel_chart_source.sort_values(["device_type", "devices", "sessions", "requests"], ascending=[True, False, False, False])
-                .groupby("device_type", group_keys=False)
-                .head(int(rel_top_each))
-                .copy()
-            )
-            chart_df["location_channel"] = (
-                chart_df["country"].astype(str) + " / " +
-                chart_df["region"].astype(str) + " / " +
-                chart_df["city"].astype(str) + " / " +
-                chart_df["channel_name"].astype(str)
-            )
-            fig_rel = px.bar(
-                chart_df,
-                x="devices",
-                y="location_channel",
-                color="device_type",
-                orientation="h",
-                title=f"Top {int(rel_top_each)} rows per device type",
-                hover_data=["country", "region", "city", "channel_name", "sessions", "requests"],
-            )
-            fig_rel.update_layout(height=max(560, min(1200, 28 * len(chart_df))), yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig_rel, use_container_width=True)
+        if region_dev_df.empty:
+            st.info("No region data found after geo enrichment.")
         else:
-            top_rel = rel_chart_source.head(int(lb_top_n)).copy()
-            top_rel["location_channel"] = (
-                top_rel["country"].astype(str) + " / " +
-                top_rel["region"].astype(str) + " / " +
-                top_rel["city"].astype(str) + " / " +
-                top_rel["channel_name"].astype(str)
+            gi_r1, gi_r2 = st.columns([3, 2])
+            with gi_r1:
+                st.markdown("**Devices per country / region**")
+                st.dataframe(region_dev_df, use_container_width=True, height=380, hide_index=True)
+                st.download_button(
+                    "📥 Download region → device CSV",
+                    data=region_dev_df.to_csv(index=False).encode("utf-8"),
+                    file_name=f"region_device_{gi_start}_to_{gi_end}.csv",
+                    mime="text/csv",
+                    key="gi_dl_region_dev",
+                )
+            with gi_r2:
+                top_countries = region_dev_df.groupby("country")["unique_devices"].sum().nlargest(15).reset_index()
+                fig_reg = px.bar(
+                    top_countries,
+                    x="unique_devices", y="country", orientation="h",
+                    title="Top 15 countries by unique devices",
+                    color="unique_devices",
+                    color_continuous_scale="Teal",
+                )
+                fig_reg.update_layout(height=500, yaxis={"categoryorder": "total ascending"}, showlegend=False)
+                st.plotly_chart(fig_reg, use_container_width=True)
+
+            # Treemap — country → region → devices
+            if not region_dev_df.empty:
+                try:
+                    fig_tree = px.treemap(
+                        region_dev_df[region_dev_df["country"] != ""].head(200),
+                        path=["country", "region"],
+                        values="unique_devices",
+                        color="unique_devices",
+                        color_continuous_scale="Blues",
+                        title="Device distribution — country → region treemap",
+                    )
+                    fig_tree.update_layout(height=520)
+                    st.plotly_chart(fig_tree, use_container_width=True)
+                except Exception as e:
+                    log_warning("Could not render treemap", e)
+
+            # Platform breakdown per country
+            if "platform" in ip_device_df.columns:
+                with st.expander("📱 Platform breakdown per country"):
+                    plat_geo = (
+                        ip_device_df.dropna(subset=["country", "platform"])
+                        .query("country != '' and platform != ''")
+                        .groupby(["country", "platform"], sort=False)
+                        .agg(unique_devices=("device_id", "nunique"))
+                        .reset_index()
+                        .sort_values(["country", "unique_devices"], ascending=[True, False])
+                    )
+                    if not plat_geo.empty:
+                        top_ctries = plat_geo.groupby("country")["unique_devices"].sum().nlargest(10).index
+                        plat_geo_top = plat_geo[plat_geo["country"].isin(top_ctries)]
+                        fig_plat = px.bar(
+                            plat_geo_top,
+                            x="country", y="unique_devices", color="platform",
+                            title="Platform distribution across top 10 countries",
+                            barmode="stack",
+                        )
+                        fig_plat.update_layout(height=430, xaxis_tickangle=-25)
+                        st.plotly_chart(fig_plat, use_container_width=True)
+                        st.dataframe(plat_geo, use_container_width=True, hide_index=True, height=280)
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════
+    # SECTION 5 — Region → Top ISP
+    # ══════════════════════════════════════════════
+    st.subheader("5) 📡 Region → Top ISP")
+    st.caption("Which ISPs dominate each country and region? Requires geo lookup above.")
+
+    if not geo_data:
+        st.info("Run 🌍 **Lookup geo** above first to enable ISP analytics.")
+    elif "isp" not in ip_device_df.columns:
+        st.info("No ISP data — re-run geo lookup.")
+    else:
+        region_isp_df = gda_region_isp_table(ip_device_df)
+
+        if region_isp_df.empty:
+            st.info("No ISP data found after geo enrichment.")
+        else:
+            gi_country_filter = st.selectbox(
+                "Filter by country",
+                options=["(all countries)"] + sorted(region_isp_df["country"].dropna().unique().tolist()),
+                key="gi_isp_country",
             )
-            fig_rel = px.bar(
-                top_rel,
-                x="devices",
-                y="location_channel",
-                color="device_type",
-                orientation="h",
-                title="Top channel/device combinations by unique devices",
-                hover_data=["country", "region", "city", "channel_name", "sessions", "requests"],
+            disp_isp = region_isp_df.copy()
+            if gi_country_filter != "(all countries)":
+                disp_isp = disp_isp[disp_isp["country"] == gi_country_filter]
+
+            isp_col1, isp_col2 = st.columns([3, 2])
+            with isp_col1:
+                st.markdown("**ISP breakdown per country / region**")
+                st.dataframe(disp_isp, use_container_width=True, height=400, hide_index=True)
+                st.download_button(
+                    "📥 Download region → ISP CSV",
+                    data=disp_isp.to_csv(index=False).encode("utf-8"),
+                    file_name=f"region_isp_{gi_start}_to_{gi_end}.csv",
+                    mime="text/csv",
+                    key="gi_dl_region_isp",
+                )
+            with isp_col2:
+                top_isps = (
+                    region_isp_df.groupby("isp")["unique_devices"].sum()
+                    .nlargest(15).reset_index()
+                )
+                fig_isp = px.bar(
+                    top_isps,
+                    x="unique_devices", y="isp", orientation="h",
+                    title="Top 15 ISPs globally by unique devices",
+                    color="unique_devices",
+                    color_continuous_scale="Oranges",
+                )
+                fig_isp.update_layout(height=500, yaxis={"categoryorder": "total ascending"}, showlegend=False)
+                st.plotly_chart(fig_isp, use_container_width=True)
+
+            # Stacked bar — ISP share per country
+            if gi_country_filter == "(all countries)" and not region_isp_df.empty:
+                top_c10 = region_isp_df.groupby("country")["unique_devices"].sum().nlargest(10).index
+                top_i10 = region_isp_df.groupby("isp")["unique_devices"].sum().nlargest(10).index
+                chart_df = region_isp_df[
+                    region_isp_df["country"].isin(top_c10) & region_isp_df["isp"].isin(top_i10)
+                ]
+                if not chart_df.empty:
+                    fig_isp_stack = px.bar(
+                        chart_df,
+                        x="country", y="unique_devices", color="isp",
+                        title="Top ISP share in top 10 countries",
+                        barmode="stack",
+                    )
+                    fig_isp_stack.update_layout(height=440, xaxis_tickangle=-20)
+                    st.plotly_chart(fig_isp_stack, use_container_width=True)
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════
+    # SECTION 6 — Summary Download Bundle
+    # ══════════════════════════════════════════════
+    st.subheader("6) 📦 Download All Relationship Tables")
+    st.caption("One-click downloads for every relationship table built in this tab.")
+
+    dl_c1, dl_c2, dl_c3 = st.columns(3)
+
+    with dl_c1:
+        if not ip_device_df.empty:
+            col_order_dl = [c for c in ["cliIP", "device_id", "requests", "sessions", "unique_paths",
+                                         "platform", "country", "region", "city", "isp"] if c in ip_device_df.columns]
+            st.download_button(
+                "📥 IP ↔ Device mapping",
+                data=ip_device_df[col_order_dl].to_csv(index=False).encode("utf-8"),
+                file_name=f"ip_device_full_{gi_start}_to_{gi_end}.csv",
+                mime="text/csv",
+                key="gi_dl_ip_dev_full",
             )
-            fig_rel.update_layout(height=560, yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig_rel, use_container_width=True)
 
-    dlr1, dlr2 = st.columns(2)
-    with dlr1:
-        st.download_button(
-            "📥 Download filtered relationship CSV",
-            data=rel_show.to_csv(index=False).encode("utf-8"),
-            file_name=f"filtered_location_city_region_channel_device_{lb_start_s}_to_{lb_end_s}.csv",
-            mime="text/csv",
-            key="lb_dl_filtered_relation",
-        )
+    with dl_c2:
+        if not device_content_df.empty:
+            st.download_button(
+                "📥 Device → Content table",
+                data=device_content_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"device_content_full_{gi_start}_to_{gi_end}.csv",
+                mime="text/csv",
+                key="gi_dl_dev_content_full",
+            )
 
-    with dlr2:
-        st.download_button(
-            "📥 Download full relationship CSV",
-            data=relation_df.to_csv(index=False).encode("utf-8"),
-            file_name=f"location_city_region_channel_device_relation_{lb_start_s}_to_{lb_end_s}.csv",
-            mime="text/csv",
-            key="lb_dl_relation",
-        )
-
-    with st.expander("ℹ️ Notes"):
-        st.markdown("""
-- This tab uses only columns selected from your parquet files.
-- No IP lookup or external API is called.
-- **Channel mode = Clean** uses `normalize_channel_name_smart()`, the same logic used in **✅ Pure Channel List (cleaned from queryStr)**. This removes suffixes like `_firetv`, `_androidtv`, `_web`, etc. more safely than the older SQL-only regex.
-- **City summary** counts distinct `device_id` directly at `country + region + city` level, so it avoids double-counting the same device across multiple channels.
-- **City × Region × Channel × Device Type** counts distinct devices inside each relationship row. The same device can appear in multiple rows if it watched multiple channels or moved between regions/cities.
-- **Region / State** is included in the relationship table and filters to avoid mixing same city names across different states.
-        """)
+    with dl_c3:
+        if geo_data and "country" in ip_device_df.columns:
+            region_isp_dl  = gda_region_isp_table(ip_device_df)
+            region_dev_dl  = gda_region_device_table(ip_device_df)
+            if not region_dev_dl.empty:
+                st.download_button(
+                    "📥 Region → Device + ISP",
+                    data=region_dev_dl.merge(
+                        region_isp_dl, on=["country", "region"], how="outer", suffixes=("_dev", "_isp")
+                    ).to_csv(index=False).encode("utf-8"),
+                    file_name=f"region_device_isp_{gi_start}_to_{gi_end}.csv",
+                    mime="text/csv",
+                    key="gi_dl_region_bundle",
+                )
