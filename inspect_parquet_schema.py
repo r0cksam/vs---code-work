@@ -3,7 +3,7 @@ inspect_parquet_schema.py
 Quickly inspect parquet folders without loading full data into RAM.
 
 Run:
-  python inspect_parquet_schema.py --input "D:\\Vs - Code Work\\cleaned_output" --sample-rows 5
+  python inspect_parquet_schema.py --input "D:\\Veto Logs\\05 Veto Logs Backup\\02_final_clean.parquet" --sample-rows 5
 """
 
 import argparse
