@@ -3,14 +3,13 @@
 lake_report_final.py
 ═══════════════════════════════════════════════════════════════════════
 Generates Excel report with matrices (top values × recent dates).
-- Overview: metadata + daily breakdown (rows, distinct IPs, session/device presence)
-- Channel × Platform pivot
-- Matrix sheets for: UA, ASN, City, State, Country, reqHost,
-  Channel, Platform, Device, Category, Content (all from queryString)
+Fully auto‑scaling, OOM‑safe, includes missing device/session counts.
 """
 
 import sys
 import re
+import psutil
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -19,15 +18,39 @@ import pandas as pd
 import xlsxwriter
 
 # ═══════════════════════════════════════════════════════════════
-# CONFIGURATION
+# AUTO‑CONFIGURATION (based on system resources)
+# ═══════════════════════════════════════════════════════════════
+
+def get_system_config():
+    mem = psutil.virtual_memory()
+    total_gb = mem.total / (1024**3)
+    free_gb = mem.available / (1024**3)
+
+    # Use 80% of free RAM, max 20 GB (to avoid swapping)
+    mem_limit_gb = max(4, int(free_gb * 0.8))
+    mem_limit_gb = min(mem_limit_gb, 20)
+
+    # Very low threads to keep memory per thread manageable
+    cpu_count = os.cpu_count() or 4
+    threads = max(1, min(cpu_count // 4, 2))
+
+    matrix_top_n = 40000   # stable for large matrices
+    matrix_max_days = 60
+
+    print(f"  System: {cpu_count} logical cores, {total_gb:.1f} GiB total RAM, {free_gb:.1f} GiB free")
+    print(f"  DuckDB: {threads} threads, {mem_limit_gb} GiB memory limit")
+    print(f"  Matrix top N: {matrix_top_n:,} rows")
+    print(f"  Matrix days : {matrix_max_days}\n")
+    return threads, mem_limit_gb, matrix_top_n, matrix_max_days
+
+THREADS, MEMORY_GB, MATRIX_TOP_N, MATRIX_MAX_DAYS = get_system_config()
+
+# ═══════════════════════════════════════════════════════════════
+# PATHS (edit as needed)
 # ═══════════════════════════════════════════════════════════════
 
 LAKE_FOLDER   = Path(r"Z:\05 Veto Logs\lake")   # override via CLI
 OUTPUT_FOLDER = LAKE_FOLDER.parent
-THREADS       = 8
-MEMORY        = "16GB"
-MATRIX_TOP_N  = 100000      # rows per matrix
-MATRIX_MAX_DAYS = 60        # recent date columns
 
 FIELD_MAP = {
     "ua":       "UA",
@@ -46,15 +69,16 @@ FIELD_MAP = {
 # ═══════════════════════════════════════════════════════════════
 
 def sanitize_sheet_name(name: str) -> str:
-    """Replace Excel‑illegal characters with underscore."""
     illegal = r'[]:*?/\\'
     return re.sub(f'[{re.escape(illegal)}]', '_', name)[:31]
 
 def get_conn(lake_root: Path):
     con = duckdb.connect()
     con.execute(f"SET threads={THREADS};")
-    con.execute(f"SET memory_limit='{MEMORY}';")
+    con.execute(f"SET memory_limit='{MEMORY_GB}GB';")
     con.execute("SET preserve_insertion_order=false;")
+    # Optionally set a fast temp directory:
+    # con.execute("PRAGMA temp_directory='D:/duckdb_temp'")
     return con
 
 def lake_reader(lake_root: Path) -> str:
@@ -108,7 +132,7 @@ def _total_label_fmt(wb):
     return f
 
 # ═══════════════════════════════════════════════════════════════
-# OVERVIEW SHEET (simplified)
+# OVERVIEW SHEET (with missing columns)
 # ═══════════════════════════════════════════════════════════════
 
 def build_overview(workbook, con, lake_root, existing, generated_at):
@@ -160,14 +184,15 @@ def build_overview(workbook, con, lake_root, existing, generated_at):
         ws.write(row, 1, "reqTimeSec column not found", kv_val)
         row += 2
 
-    # Day-by-day breakdown (custom columns)
-    ws.merge_range(row, 0, row, 9, "📅  Day-by-Day Breakdown", title)
+    # Day-by-day breakdown (expanded columns)
+    ws.merge_range(row, 0, row, 11, "📅  Day-by-Day Breakdown", title)
     row += 1
     headers = [
         "Date", "Total Rows", "cliIP rows", "Distinct cliIP",
         "Rows with session_id", "Distinct session_id",
         "Rows with device_id", "Distinct device_id",
-        "Rows where device_id is blank", "Rows where session_id is blank"
+        "Rows where device_id is blank", "Rows where session_id is blank",
+        "Rows where device_id is missing", "Rows where session_id is missing"
     ]
     for col, h in enumerate(headers):
         ws.write(row, col, h, hdr)
@@ -183,19 +208,16 @@ def build_overview(workbook, con, lake_root, existing, generated_at):
         distinct_ip = f"COUNT(DISTINCT {ip_col})" if has_ip else "0"
 
         if has_qs:
-            # Rows containing the parameter (any value, including empty)
             sess_present = f"SUM(CASE WHEN {qs} LIKE '%session_id=%' THEN 1 ELSE 0 END)"
             dev_present = f"SUM(CASE WHEN {qs} LIKE '%device_id=%' THEN 1 ELSE 0 END)"
-
-            # Distinct non‑empty values
             sess_distinct = f"COUNT(DISTINCT CASE WHEN {qs_extract(qs, 'session_id')} IS NOT NULL AND {qs_extract(qs, 'session_id')} != '' THEN {qs_extract(qs, 'session_id')} END)"
             dev_distinct = f"COUNT(DISTINCT CASE WHEN {qs_extract(qs, 'device_id')} IS NOT NULL AND {qs_extract(qs, 'device_id')} != '' THEN {qs_extract(qs, 'device_id')} END)"
-
-            # Blank rows: parameter exists but extracted value is NULL or empty string
             dev_blank = f"SUM(CASE WHEN {qs} LIKE '%device_id=%' AND ( {qs_extract(qs, 'device_id')} IS NULL OR {qs_extract(qs, 'device_id')} = '' ) THEN 1 ELSE 0 END)"
             sess_blank = f"SUM(CASE WHEN {qs} LIKE '%session_id=%' AND ( {qs_extract(qs, 'session_id')} IS NULL OR {qs_extract(qs, 'session_id')} = '' ) THEN 1 ELSE 0 END)"
+            dev_missing = f"SUM(CASE WHEN {qs} NOT LIKE '%device_id=%' THEN 1 ELSE 0 END)"
+            sess_missing = f"SUM(CASE WHEN {qs} NOT LIKE '%session_id=%' THEN 1 ELSE 0 END)"
         else:
-            sess_present = sess_distinct = dev_present = dev_distinct = dev_blank = sess_blank = "0"
+            sess_present = sess_distinct = dev_present = dev_distinct = dev_blank = sess_blank = dev_missing = sess_missing = "0"
 
         day_sql = f"""
             SELECT
@@ -208,7 +230,9 @@ def build_overview(workbook, con, lake_root, existing, generated_at):
                 {dev_present} AS dev_rows,
                 {dev_distinct} AS distinct_dev,
                 {dev_blank} AS dev_blank,
-                {sess_blank} AS sess_blank
+                {sess_blank} AS sess_blank,
+                {dev_missing} AS dev_missing,
+                {sess_missing} AS sess_missing
             FROM {reader}
             GROUP BY year, month, day
             ORDER BY year, month, day
@@ -228,23 +252,24 @@ def build_overview(workbook, con, lake_root, existing, generated_at):
                 int(r["distinct_dev"]),
                 int(r["dev_blank"]),
                 int(r["sess_blank"]),
+                int(r["dev_missing"]),
+                int(r["sess_missing"]),
             ]
             for col, v in enumerate(vals):
                 fmt = data_alt if row % 2 == 0 else data
                 ws.write(row, col, v, fmt)
             row += 1
 
-        # Total row
         if len(day_df) > 0:
             start_row = row - len(day_df)
-            total_vals = ["TOTAL"] + [f"=SUM({chr(65+c)}{start_row+1}:{chr(65+c)}{row})" for c in range(1, 10)]
+            total_vals = ["TOTAL"] + [f"=SUM({chr(65+c)}{start_row+1}:{chr(65+c)}{row})" for c in range(1, 12)]
             for col, v in enumerate(total_vals):
                 fmt = total_lab if col == 0 else total_f
                 ws.write(row, col, v, fmt)
             row += 1
 
     ws.freeze_panes(2, 1)
-    
+
 # ═══════════════════════════════════════════════════════════════
 # CHANNEL × PLATFORM (static pivot)
 # ═══════════════════════════════════════════════════════════════
@@ -306,7 +331,7 @@ def build_channel_platform(workbook, con, lake_root, existing):
     ws.freeze_panes(2, 0)
 
 # ═══════════════════════════════════════════════════════════════
-# GENERIC MATRIX SHEET (top values × recent dates)
+# MATRIX SHEET (optimised, OOM‑safe)
 # ═══════════════════════════════════════════════════════════════
 
 def build_matrix_sheet(workbook, con, lake_root, col_expr, field_name, existing,
@@ -346,33 +371,32 @@ def build_matrix_sheet(workbook, con, lake_root, col_expr, field_name, existing,
         ws.write(0, 0, f"No data for {field_name}", data_fmt)
         return
 
-    # Temporary table with top values
+    n_values = len(top_df)
+    print(f"    → Distinct values: {n_values}")
+
+    # Create temporary table with top values
     con.execute("CREATE TEMP TABLE top_values (value VARCHAR PRIMARY KEY)")
     con.executemany("INSERT INTO top_values VALUES (?)", top_df[["value"]].values.tolist())
 
-    print(f"    → Daily counts for {len(top_df)} values, last {max_days} days...")
+    print(f"    → Daily counts for last {max_days} days...")
+    # Direct hash join, partition filter first
     daily_sql = f"""
         WITH last_days AS (
-            SELECT DISTINCT
-                make_date(CAST(year AS INT), CAST(month AS INT), CAST(day AS INT)) AS date
+            SELECT DISTINCT year, month, day
             FROM {reader}
             WHERE {ts} IS NOT NULL
-            ORDER BY date DESC
+            ORDER BY make_date(year, month, day) DESC
             LIMIT {max_days}
-        ),
-        daily_counts AS (
-            SELECT
-                d.date,
-                COALESCE(CAST(src.{col_expr} AS VARCHAR), '(null)') AS value,
-                COUNT(*) AS cnt
-            FROM {reader} src
-            JOIN last_days d ON make_date(CAST(src.year AS INT), CAST(src.month AS INT), CAST(src.day AS INT)) = d.date
-            WHERE src.{col_expr} IS NOT NULL
-              AND TRIM(CAST(src.{col_expr} AS VARCHAR)) <> ''
-              AND COALESCE(CAST(src.{col_expr} AS VARCHAR), '(null)') IN (SELECT value FROM top_values)
-            GROUP BY d.date, src.{col_expr}
         )
-        SELECT date, value, cnt FROM daily_counts
+        SELECT
+            make_date(d.year, d.month, d.day) AS date,
+            t.value,
+            COUNT(*) AS cnt
+        FROM {reader} r
+        JOIN last_days d ON r.year = d.year AND r.month = d.month AND r.day = d.day
+        JOIN top_values t ON COALESCE(CAST({col_expr} AS VARCHAR), '(null)') = t.value
+        WHERE {col_expr} IS NOT NULL
+        GROUP BY d.year, d.month, d.day, t.value
         ORDER BY date DESC, cnt DESC
     """
     daily_df = safe_df(con, daily_sql, f"matrix_{field_name}")
@@ -406,7 +430,6 @@ def build_matrix_sheet(workbook, con, lake_root, col_expr, field_name, existing,
         if (idx+1) % 20000 == 0:
             print(f"        Written {idx+1} rows")
 
-    # Total row
     ws.write(row, 0, "TOTAL", total_lab)
     for col in range(1, len(dates)+1):
         col_letter = xlsxwriter.utility.xl_col_to_name(col)
@@ -427,9 +450,8 @@ def main():
         sys.exit(1)
 
     print(f"\n{'═'*60}")
-    print(f"  Lake Report Generator (FINAL – matrices only)")
+    print(f"  Lake Report Generator (Final – OOM‑safe)")
     print(f"  Lake   : {lake_root}")
-    print(f"  Matrix rows : {MATRIX_TOP_N:,}  |  Days : {MATRIX_MAX_DAYS}")
     print(f"{'═'*60}\n")
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -444,7 +466,7 @@ def main():
     print("  Creating Excel workbook (XlsxWriter) …")
     workbook = xlsxwriter.Workbook(str(out_path), {'constant_memory': True})
 
-    # 1. Overview (simplified)
+    # 1. Overview
     print("  Building Overview …")
     build_overview(workbook, con, lake_root, existing, generated_at)
 
