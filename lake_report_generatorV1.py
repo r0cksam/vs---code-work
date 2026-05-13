@@ -532,12 +532,12 @@ def build_overview(
     ws = wb.add_worksheet("Overview")
     ws.set_column(0, 0, 30)
     ws.set_column(1, 1, 38)
-    for c in range(2, 12):
+    for c in range(2, 13):          # increased range because we have one more column
         ws.set_column(c, c, 16)
 
     row = 0
 
-    # ── Metadata header ────────────────────────────────────────
+    # ── Metadata header (unchanged) ──────────────────────────
     title_row(ws, row, "📊  Report Metadata", 2, s); row += 1
     kv(ws, row, "Report generated",
        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), s); row += 1
@@ -579,11 +579,12 @@ def build_overview(
     row += 1
 
     # ── Day-by-day breakdown ────────────────────────────────────
-    N_COLS = 12
+    N_COLS = 13                     # increased from 12 to 13 columns
     title_row(ws, row, "📅  Day-by-Day Breakdown", N_COLS, s); row += 1
 
     hdr_labels = [
         "Date", "Total Rows*", "cliIP rows", "Distinct cliIP",
+        "Total Bytes (GiB)",                                 # new column
         "Rows w/ session_id", "Distinct session_id",
         "Rows w/ device_id",  "Distinct device_id",
         "device_id blank",    "session_id blank",
@@ -602,22 +603,22 @@ def build_overview(
         ip_rows     = f"COUNT({ip_col})"          if has_ip else "0"
         d_ip        = f"COUNT(DISTINCT {ip_col})" if has_ip else "0"
 
+        # Check if totalBytes column exists
+        total_bytes_col = "totalBytes" if "totalBytes" in cols else None
+        if total_bytes_col:
+            sum_bytes = f"SUM(CAST({total_bytes_col} AS BIGINT))"
+        else:
+            sum_bytes = "NULL"
+
         if has_qs:
-            # Rows where queryStr IS NOT NULL and contains the parameter
             sess_present  = f"SUM(CASE WHEN {qs} LIKE '%session_id=%' THEN 1 ELSE 0 END)"
             dev_present   = f"SUM(CASE WHEN {qs} LIKE '%device_id=%' THEN 1 ELSE 0 END)"
-
-            # Distinct non‑empty values (qs_extract already returns NULL if missing or empty)
             sess_distinct = f"COUNT(DISTINCT {qs_extract(qs, 'session_id')})"
             dev_distinct  = f"COUNT(DISTINCT {qs_extract(qs, 'device_id')})"
-
-            # Blank: parameter exists but extracted value is NULL (i.e., empty value)
             dev_blank     = (f"SUM(CASE WHEN {qs} LIKE '%device_id=%'"
                              f" AND {qs_extract(qs,'device_id')} IS NULL THEN 1 ELSE 0 END)")
             sess_blank    = (f"SUM(CASE WHEN {qs} LIKE '%session_id=%'"
                              f" AND {qs_extract(qs,'session_id')} IS NULL THEN 1 ELSE 0 END)")
-
-            # Missing: queryStr is NULL OR does not contain the parameter
             dev_missing   = f"SUM(CASE WHEN {qs} IS NULL OR {qs} NOT LIKE '%device_id=%' THEN 1 ELSE 0 END)"
             sess_missing  = f"SUM(CASE WHEN {qs} IS NULL OR {qs} NOT LIKE '%session_id=%' THEN 1 ELSE 0 END)"
         else:
@@ -631,6 +632,7 @@ def build_overview(
                 COUNT(*)         AS total_rows,
                 {ip_rows}        AS ip_rows,
                 {d_ip}           AS distinct_ip,
+                {sum_bytes}      AS total_bytes,
                 {sess_present}   AS sess_rows,
                 {sess_distinct}  AS distinct_sess,
                 {dev_present}    AS dev_rows,
@@ -649,11 +651,16 @@ def build_overview(
             dt       = r["date"]
             date_str = dt.strftime("%d/%m/%y") if hasattr(dt, "strftime") else str(dt)
             is_alt   = (row - data_start) % 2 == 1
-            # Use PyArrow metadata count for col 1 (more accurate, zero-cost)
             pa_count = day_counts.get(str(dt), int(r["total_rows"]))
+
+            # Convert bytes to GiB (2^30) for readability
+            bytes_val = r["total_bytes"] if total_bytes_col and pd.notna(r["total_bytes"]) else 0
+            gb_val = bytes_val / (1024 ** 3) if bytes_val else 0
+
             vals = [
                 date_str, pa_count,
                 int(r["ip_rows"]),     int(r["distinct_ip"]),
+                round(gb_val, 2),                      # new column: GiB
                 int(r["sess_rows"]),   int(r["distinct_sess"]),
                 int(r["dev_rows"]),    int(r["distinct_dev"]),
                 int(r["dev_blank"]),   int(r["sess_blank"]),
@@ -679,8 +686,7 @@ def build_overview(
     ws.write(row + 1, 0,
              "* Total Rows sourced from Parquet file metadata (zero-scan). "
              "All other columns via DuckDB aggregation.", s.data)
-    ws.freeze_panes(2, 1)
-    
+    ws.freeze_panes(2, 1) 
 # ═══════════════════════════════════════════════════════════════
 # SHEET 2 — DISTINCT COUNTS SUMMARY
 # ═══════════════════════════════════════════════════════════════
