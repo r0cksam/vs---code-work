@@ -75,6 +75,7 @@ class ReportConfig:
     matrix_days:  int           = 60            # how many recent days to show as columns
     threads:      int           = 2
     memory_gb:    int           = 8
+    temp_dir:     Optional[Path] = None     # DuckDB spill-to-disk (auto = local %TEMP%)
 
     # Column names in your lake (set to None if a column doesn't exist)
     col_ua:       str = "UA"
@@ -97,7 +98,6 @@ class ReportConfig:
 # ═══════════════════════════════════════════════════════════════
 # AUTO-SCALE CONFIG FROM SYSTEM RESOURCES
 # ═══════════════════════════════════════════════════════════════
-
 def auto_config(lake_root: Path) -> ReportConfig:
     """Probe system resources and return a sensibly scaled ReportConfig."""
     mem   = psutil.virtual_memory()
@@ -113,11 +113,15 @@ def auto_config(lake_root: Path) -> ReportConfig:
 
     # Lower matrix limits on small-memory machines
     if total < 16:
-        top_n, days = 15_000, 30
+        top_n, days = 100_000, 30
     elif total < 32:
-        top_n, days = 30_000, 45
+        top_n, days = 100_000, 45
     else:
-        top_n, days = 40_000, 60
+        top_n, days = 100_000, 60
+
+    # Hard cap at Excel's max rows minus header/total
+    EXCEL_MAX_DATA_ROWS = 1_048_576 - 5
+    top_n = min(top_n, EXCEL_MAX_DATA_ROWS)
 
     log.info(f"System: {cpus} cores | {total:.1f} GiB total | {free:.1f} GiB free")
     log.info(f"DuckDB: {threads} threads | {mem_gb} GiB limit")
@@ -131,7 +135,6 @@ def auto_config(lake_root: Path) -> ReportConfig:
         matrix_top_n=top_n,
         matrix_days=days,
     )
-
 
 # ═══════════════════════════════════════════════════════════════
 # INTERACTIVE PROMPTS
@@ -350,6 +353,17 @@ def duck_conn(cfg: ReportConfig) -> duckdb.DuckDBPyConnection:
     con.execute(f"SET threads={cfg.threads};")
     con.execute(f"SET memory_limit='{cfg.memory_gb}GB';")
     con.execute("SET preserve_insertion_order=false;")
+
+    # Spill-to-disk: DuckDB uses this when it can't fit data in memory.
+    # MUST be a local fast drive — never a network share (defeats the purpose).
+    # Auto-detect: prefer %TEMP% on Windows, /tmp on Linux/Mac.
+    if cfg.temp_dir:
+        td = cfg.temp_dir
+    else:
+        td = Path(os.environ.get("TEMP", os.environ.get("TMP", "/tmp"))) / "duckdb_lake_report"
+    td.mkdir(parents=True, exist_ok=True)
+    con.execute(f"SET temp_directory='{td.as_posix()}';")
+    log.info(f"DuckDB temp/spill dir: {td}")
     return con
 
 
@@ -589,17 +603,23 @@ def build_overview(
         d_ip        = f"COUNT(DISTINCT {ip_col})" if has_ip else "0"
 
         if has_qs:
-            # qs_extract already returns NULLIF(...,'') so no IS NOT NULL check needed
+            # Rows where queryStr IS NOT NULL and contains the parameter
             sess_present  = f"SUM(CASE WHEN {qs} LIKE '%session_id=%' THEN 1 ELSE 0 END)"
-            dev_present   = f"SUM(CASE WHEN {qs} LIKE '%device_id=%'  THEN 1 ELSE 0 END)"
+            dev_present   = f"SUM(CASE WHEN {qs} LIKE '%device_id=%' THEN 1 ELSE 0 END)"
+
+            # Distinct non‑empty values (qs_extract already returns NULL if missing or empty)
             sess_distinct = f"COUNT(DISTINCT {qs_extract(qs, 'session_id')})"
             dev_distinct  = f"COUNT(DISTINCT {qs_extract(qs, 'device_id')})"
+
+            # Blank: parameter exists but extracted value is NULL (i.e., empty value)
             dev_blank     = (f"SUM(CASE WHEN {qs} LIKE '%device_id=%'"
                              f" AND {qs_extract(qs,'device_id')} IS NULL THEN 1 ELSE 0 END)")
             sess_blank    = (f"SUM(CASE WHEN {qs} LIKE '%session_id=%'"
                              f" AND {qs_extract(qs,'session_id')} IS NULL THEN 1 ELSE 0 END)")
-            dev_missing   = f"SUM(CASE WHEN {qs} NOT LIKE '%device_id=%'  THEN 1 ELSE 0 END)"
-            sess_missing  = f"SUM(CASE WHEN {qs} NOT LIKE '%session_id=%' THEN 1 ELSE 0 END)"
+
+            # Missing: queryStr is NULL OR does not contain the parameter
+            dev_missing   = f"SUM(CASE WHEN {qs} IS NULL OR {qs} NOT LIKE '%device_id=%' THEN 1 ELSE 0 END)"
+            sess_missing  = f"SUM(CASE WHEN {qs} IS NULL OR {qs} NOT LIKE '%session_id=%' THEN 1 ELSE 0 END)"
         else:
             sess_present = sess_distinct = dev_present = dev_distinct = "0"
             dev_blank = sess_blank = dev_missing = sess_missing = "0"
@@ -645,8 +665,7 @@ def build_overview(
             row += 1
 
         if len(day_df):
-            data_end = row            # XlsxWriter 0-indexed row after last data row
-            # Total row — Excel formulas (1-indexed: data_start+1 to data_end)
+            data_end = row
             ws.write(row, 0, "TOTAL*", s.total_l)
             for c in range(1, N_COLS):
                 col_l = xlsxwriter.utility.xl_col_to_name(c)
@@ -661,8 +680,7 @@ def build_overview(
              "* Total Rows sourced from Parquet file metadata (zero-scan). "
              "All other columns via DuckDB aggregation.", s.data)
     ws.freeze_panes(2, 1)
-
-
+    
 # ═══════════════════════════════════════════════════════════════
 # SHEET 2 — DISTINCT COUNTS SUMMARY
 # ═══════════════════════════════════════════════════════════════
@@ -826,6 +844,118 @@ def build_channel_platform(
 # MATRIX SHEET — top-N values × last-M days heatmap
 # ═══════════════════════════════════════════════════════════════
 
+def _discover_day_partitions(
+    lake_root: Path,
+    year:     Optional[str],
+    month:    Optional[str],
+    max_days: int,
+) -> list[tuple[str, Path]]:
+    days: list[tuple[str, Path]] = []
+
+    if year and month:
+        month_dir = lake_root / f"year={year}" / f"month={month}"
+        if not month_dir.exists():
+            return []
+        # Use iterdir() instead of glob() – works on UNC
+        for child in month_dir.iterdir():
+            if not child.is_dir():
+                continue
+            if not child.name.startswith("day="):
+                continue
+            d = child.name[4:]   # remove "day=" prefix
+            days.append((f"{year}-{month}-{d}", child))
+        # Sort newest first (descending)
+        days.sort(key=lambda x: x[0], reverse=True)
+        return days[:max_days]
+
+    elif year:
+        year_dir = lake_root / f"year={year}"
+        if not year_dir.exists():
+            return []
+        for month_dir in sorted(year_dir.iterdir(), reverse=True):
+            if not month_dir.is_dir() or not month_dir.name.startswith("month="):
+                continue
+            mo = month_dir.name[6:]   # remove "month="
+            for day_dir in sorted(month_dir.iterdir(), reverse=True):
+                if not day_dir.is_dir() or not day_dir.name.startswith("day="):
+                    continue
+                d = day_dir.name[4:]
+                days.append((f"{year}-{mo}-{d}", day_dir))
+                if len(days) >= max_days:
+                    return days
+        return days[:max_days]
+
+    else:
+        for year_dir in sorted(lake_root.iterdir(), reverse=True):
+            if not year_dir.is_dir() or not year_dir.name.startswith("year="):
+                continue
+            y = year_dir.name[5:]   # remove "year="
+            for month_dir in sorted(year_dir.iterdir(), reverse=True):
+                if not month_dir.is_dir() or not month_dir.name.startswith("month="):
+                    continue
+                mo = month_dir.name[6:]
+                for day_dir in sorted(month_dir.iterdir(), reverse=True):
+                    if not day_dir.is_dir() or not day_dir.name.startswith("day="):
+                        continue
+                    d = day_dir.name[4:]
+                    days.append((f"{y}-{mo}-{d}", day_dir))
+                    if len(days) >= max_days:
+                        return days
+        return days[:max_days]
+
+
+def _matrix_counts_by_day(
+    con:       duckdb.DuckDBPyConnection,
+    day_parts: list[tuple[str, Path]],
+    col_expr:  str,
+    top_vals:  set[str],
+    label:     str,
+) -> dict[str, dict[str, int]]:
+    """
+    Build the matrix data by querying ONE day partition at a time.
+
+    Uses a wildcard pattern for each day directory to avoid UNC path issues.
+    """
+    results: dict[str, dict[str, int]] = {}
+
+    for i, (date_str, day_dir) in enumerate(day_parts):
+        # Use forward slashes and wildcard – works reliably on Windows UNC
+        pattern = f"{day_dir.as_posix()}/*.parquet"
+        # Check if any parquet files exist (fast check via glob)
+        if not list(day_dir.glob("*.parquet")):
+            log.warning(f"  No parquet files in {day_dir} – skipping {date_str}")
+            continue
+
+        reader = f"read_parquet('{pattern}', union_by_name=true)"
+
+        df = safe_query(con, f"""
+            SELECT
+                COALESCE(CAST({col_expr} AS VARCHAR), '(null)') AS value,
+                COUNT(*) AS cnt
+            FROM {reader}
+            WHERE {col_expr} IS NOT NULL
+              AND TRIM(CAST({col_expr} AS VARCHAR)) <> ''
+            GROUP BY 1
+        """, f"{label}[{date_str}]")
+
+        if df.empty:
+            continue
+
+        # Filter in Python
+        day_dict: dict[str, int] = {
+            str(r.value): int(r.cnt)
+            for r in df.itertuples(index=False)
+            if str(r.value) in top_vals
+        }
+        if day_dict:
+            results[date_str] = day_dict
+
+        if (i + 1) % 10 == 0:
+            log.info(f"    {i + 1}/{len(day_parts)} days processed …")
+
+    return results
+
+
 def build_matrix(
     wb:        xlsxwriter.Workbook,
     con:       duckdb.DuckDBPyConnection,
@@ -840,16 +970,26 @@ def build_matrix(
     ws = wb.add_worksheet(sheet_name)
     ws.set_column(0, 0, 52)
 
-    ts   = cfg.col_ts
-    expr = lake_expr(cfg)
-
+    ts = cfg.col_ts
     if ts not in cols:
         ws.write(0, 0, f"reqTimeSec missing — cannot build matrix for {label}", s.data)
         return
 
-    # ── Step 1: top N values via DuckDB ────────────────────────
-    log.info(f"  Fetching top {cfg.matrix_top_n:,} values …")
-    top_df = safe_query(con, f"""
+    # ── Step 1: discover day partitions ──────────────────────────
+    day_parts = _discover_day_partitions(
+        cfg.lake_root, cfg.year, cfg.month, cfg.matrix_days
+    )
+    if not day_parts:
+        ws.write(0, 0, f"No day partitions found.", s.data)
+        return
+    log.info(f"  {len(day_parts)} day partitions found (last {cfg.matrix_days} days)")
+
+    # ── Step 2: top N values – respect Excel row limit ───────────
+    EXCEL_MAX_DATA_ROWS = 1_048_576 - 5   # leave room for header + total row
+    safe_top_n = min(cfg.matrix_top_n, EXCEL_MAX_DATA_ROWS)
+    log.info(f"  Fetching top {safe_top_n:,} values …")
+    expr    = lake_expr(cfg)
+    top_df  = safe_query(con, f"""
         SELECT
             COALESCE(CAST({col_expr} AS VARCHAR), '(null)') AS value,
             COUNT(*) AS total
@@ -858,110 +998,85 @@ def build_matrix(
           AND TRIM(CAST({col_expr} AS VARCHAR)) <> ''
         GROUP BY 1
         ORDER BY 2 DESC
-        LIMIT {cfg.matrix_top_n}
+        LIMIT {safe_top_n + 1}   -- fetch one extra to detect truncation
     """, f"top_{label}")
 
     if top_df.empty:
         ws.write(0, 0, f"No data for {label}.", s.data)
         return
 
-    n_vals = len(top_df)
-    log.info(f"  {n_vals:,} distinct values found")
+    # Check if we truncated
+    truncated = False
+    if len(top_df) > safe_top_n:
+        truncated = True
+        top_df = top_df.iloc[:safe_top_n]   # keep only safe_top_n rows
 
-    # ── Step 2: register top values with DuckDB — single operation ──
-    # Using DataFrame registration is ~100x faster than executemany for 40K rows
-    con.register("_top_vals", top_df[["value"]])
-    con.execute("DROP TABLE IF EXISTS _tv")
-    con.execute("CREATE TEMP TABLE _tv AS SELECT value FROM _top_vals")
-    con.unregister("_top_vals")
+    n_vals   = len(top_df)
+    top_vals = set(top_df["value"].tolist())
+    log.info(f"  {n_vals:,} distinct values found" + (" (truncated to Excel row limit)" if truncated else ""))
 
-    # ── Step 3: daily counts — JOIN limits to top-N values ─────
-    log.info(f"  Computing daily counts (last {cfg.matrix_days} days) …")
-    try:
-        daily_df = safe_query(con, f"""
-            WITH last_days AS (
-                SELECT DISTINCT
-                    CAST(year AS INT)  AS y,
-                    CAST(month AS INT) AS mo,
-                    CAST(day AS INT)   AS d
-                FROM {expr}
-                WHERE {ts} IS NOT NULL
-                ORDER BY make_date(
-                    CAST(year AS INT), CAST(month AS INT), CAST(day AS INT)
-                ) DESC
-                LIMIT {cfg.matrix_days}
-            )
-            SELECT
-                make_date(ld.y, ld.mo, ld.d) AS date,
-                tv.value,
-                COUNT(*) AS cnt
-            FROM {expr} src
-            JOIN last_days ld
-              ON CAST(src.year  AS INT) = ld.y
-             AND CAST(src.month AS INT) = ld.mo
-             AND CAST(src.day   AS INT) = ld.d
-            JOIN _tv tv
-              ON COALESCE(CAST({col_expr} AS VARCHAR), '(null)') = tv.value
-            WHERE {col_expr} IS NOT NULL
-            GROUP BY ld.y, ld.mo, ld.d, tv.value
-        """, f"matrix_{label}")
-    finally:
-        con.execute("DROP TABLE IF EXISTS _tv")
+    # ── Step 3: day-by-day counts ───────────────────────────────
+    log.info(f"  Computing daily counts (day-by-day, OOM-safe) …")
+    matrix_data = _matrix_counts_by_day(con, day_parts, col_expr, top_vals, label)
 
-    if daily_df.empty:
+    if not matrix_data:
         ws.write(0, 0, f"No daily data for {label}.", s.data)
         return
 
-    # ── Step 4: pivot (pandas) ──────────────────────────────────
+    # ── Step 4: build pivot ─────────────────────────────────────
     log.info(f"  Pivoting …")
-    pivot = (
-        daily_df
-        .pivot(index="value", columns="date", values="cnt")
-        .fillna(0)
-        .astype(int)
-    )
-    dates = sorted(pivot.columns, reverse=True)   # newest date first
-    pivot = pivot[dates]
+    dates   = sorted(matrix_data.keys(), reverse=True)   # newest first
     n_dates = len(dates)
+
+    # Sort rows by total desc (matches top_df order)
+    row_order = list(top_df["value"])
 
     for c in range(1, n_dates + 1):
         ws.set_column(c, c, 12)
 
-    # ── Step 5: write to Excel ──────────────────────────────────
+    # ── Step 5: write to Excel ─────────────────────────────────
     row = 0
     title_row(ws, row,
               f"📅  {label} Matrix — top {n_vals:,} values × last {n_dates} days",
               n_dates + 1, s)
     row += 1
 
-    headers = [label] + [d.strftime("%d/%m/%y") if hasattr(d, "strftime") else str(d)
-                         for d in dates]
+    headers = [label] + [d for d in dates]
     for c, h in enumerate(headers):
         ws.write(row, c, h, s.hdr)
     row += 1
 
     data_start = row
     log.info(f"  Writing {n_vals:,} rows …")
-    for idx, (val, row_data) in enumerate(pivot.iterrows()):
+    for idx, val in enumerate(row_order):
         is_alt = idx % 2 == 1
         d, n   = (s.alt, s.num_alt) if is_alt else (s.data, s.num)
         ws.write(row, 0, val, d)
         for c, date in enumerate(dates, 1):
-            v = int(row_data[date])
+            v = matrix_data.get(date, {}).get(val, 0)
             ws.write(row, c, v, n)
         row += 1
         if (idx + 1) % 10_000 == 0:
             log.info(f"    {idx + 1:,} rows written …")
 
-    # Total row with Excel SUM formulas
+    # Total row
     ws.write(row, 0, "TOTAL", s.total_l)
     for c in range(1, n_dates + 1):
         col_l = xlsxwriter.utility.xl_col_to_name(c)
-        ws.write(
-            row, c,
-            f"=SUM({col_l}{data_start + 1}:{col_l}{row})",
-            s.total,
-        )
+        ws.write(row, c,
+                 f"=SUM({col_l}{data_start + 1}:{col_l}{row})",
+                 s.total)
+    row += 1
+
+    # Warning if truncated
+    if truncated:
+        warning_msg = f"⚠️  Only top {safe_top_n:,} values shown (Excel row limit). {len(top_df) - safe_top_n} values omitted."
+        ws.write(row, 0, warning_msg, s.data)
+        # Paint the whole row in light red for attention
+        warning_format = wb.add_format({'bg_color': '#FFCCCC', 'font_color': '#990000', 'bold': True})
+        for c in range(n_dates + 1):
+            ws.write(row, c, warning_msg if c == 0 else "", warning_format)
+        row += 1
 
     ws.freeze_panes(2, 1)
     log.info(f"  Matrix '{label}' done ✓")
@@ -1019,7 +1134,7 @@ def main() -> None:
     build_overview(wb, con, cfg, cols, s, ts)
 
     # Sheet 2 — Distinct Counts
-    build_distinct_counts(wb, con, cfg, cols, s)
+    # build_distinct_counts(wb, con, cfg, cols, s)
 
     # Sheet 3 — Channel × Platform
     build_channel_platform(wb, con, cfg, cols, s)
@@ -1032,6 +1147,7 @@ def main() -> None:
         (cfg.col_state,   "State"),
         (cfg.col_country, "Country"),
         (cfg.col_reqhost, "Request Host"),
+        (cfg.col_ip,      "Client IP"),  
     ]
     for col_name, label in direct_fields:
         if col_name in cols:
