@@ -10,7 +10,7 @@ from tqdm import tqdm
 # Config
 # ─────────────────────────────────────────────
 
-BASE_FOLDER  = Path(r"Z:\04 Veto Logs")
+BASE_FOLDER  = Path(r"Z:\05 Veto Logs")
 LAKE_FOLDER  = BASE_FOLDER / "lake"          # output: lake/year=YYYY/month=MM/day=DD/
 LOG_FILE     = BASE_FOLDER / "03_processed_log.json"
 
