@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-lake_report_ist.py
+lake_report_ist_final.py
 ═══════════════════════════════════════════════════════════════════════
 Production-grade Excel report generator for Hive-partitioned Parquet lakes.
 All dates displayed in IST (UTC+5:30) while partition filter remains UTC.
@@ -123,7 +123,7 @@ def auto_config(lake_root: Path) -> ReportConfig:
 
 
 # ═══════════════════════════════════════════════════════════════
-# INTERACTIVE PROMPTS (unchanged)
+# INTERACTIVE PROMPTS
 # ═══════════════════════════════════════════════════════════════
 
 def prompt_lake_folder() -> Path:
@@ -225,7 +225,7 @@ def prompt_confirm(cfg: ReportConfig) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════
-# PYARROW HELPERS (unchanged)
+# PYARROW HELPERS
 # ═══════════════════════════════════════════════════════════════
 
 def pa_schema(lake_root: Path, year: Optional[str] = None, month: Optional[str] = None) -> dict[str, str]:
@@ -286,7 +286,7 @@ def pa_total_file_count(lake_root: Path) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════
-# DUCKDB HELPERS (unchanged except safe_query)
+# DUCKDB HELPERS
 # ═══════════════════════════════════════════════════════════════
 
 def duck_conn(cfg: ReportConfig) -> duckdb.DuckDBPyConnection:
@@ -357,7 +357,7 @@ def safe_query(
 
 
 # ═══════════════════════════════════════════════════════════════
-# XLSXWRITER STYLES (unchanged)
+# XLSXWRITER STYLES
 # ═══════════════════════════════════════════════════════════════
 
 class Styles:
@@ -396,7 +396,7 @@ def kv(ws, row: int, key: str, val, s: Styles) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════
-# SHEET 1 — OVERVIEW with IST dates
+# SHEET 1 — OVERVIEW (all IST)
 # ═══════════════════════════════════════════════════════════════
 
 def build_overview(
@@ -416,7 +416,11 @@ def build_overview(
 
     row = 0
     title_row(ws, row, "📊  Report Metadata", 2, s); row += 1
-    kv(ws, row, "Report generated", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), s); row += 1
+
+    # Report generated in IST
+    ist_now = datetime.now(timezone.utc) + IST_OFFSET
+    kv(ws, row, "Report generated", ist_now.strftime("%Y-%m-%d %H:%M IST"), s); row += 1
+
     if cfg.year:
         kv(ws, row, "Filtered to", f"year={cfg.year}, month={cfg.month}", s); row += 1
     kv(ws, row, "Lake folder", str(cfg.lake_root), s); row += 1
@@ -429,6 +433,7 @@ def build_overview(
     kv(ws, row, "Total rows (metadata)", f"{total_rows_pa:,}", s); row += 1
     kv(ws, row, "Total parquet files", f"{total_files:,}", s); row += 1
 
+    # Date/time range in IST
     if ts in cols:
         expr = lake_expr(cfg)
         meta = safe_query(con, f"""
@@ -441,8 +446,15 @@ def build_overview(
         """, "date range")
         if not meta.empty:
             r = meta.iloc[0]
-            kv(ws, row, "Data date range (UTC)", f"{r['min_date']} → {r['max_date']}", s); row += 1
-            kv(ws, row, "Data time range (UTC)", f"{str(r['min_ts'])[:19]} → {str(r['max_ts'])[:19]}", s); row += 1
+            # Convert UTC to IST
+            min_ist_date = r['min_date'] + IST_OFFSET
+            max_ist_date = r['max_date'] + IST_OFFSET
+            min_ist_ts   = r['min_ts'] + IST_OFFSET
+            max_ist_ts   = r['max_ts'] + IST_OFFSET
+            kv(ws, row, "Data date range (IST)",
+               f"{min_ist_date.strftime('%Y-%m-%d')} → {max_ist_date.strftime('%Y-%m-%d')}", s); row += 1
+            kv(ws, row, "Data time range (IST)",
+               f"{min_ist_ts.strftime('%Y-%m-%d %H:%M:%S')} → {max_ist_ts.strftime('%Y-%m-%d %H:%M:%S')}", s); row += 1
     row += 1
 
     N_COLS = 15
@@ -512,8 +524,7 @@ def build_overview(
 
         data_start = row
         for _, r in day_df.iterrows():
-            utc_dt = r["utc_date"]  # datetime.date object
-            # Convert UTC date to IST date string
+            utc_dt = r["utc_date"]
             ist_date_str = utc_date_to_ist_str(utc_dt)
             is_alt = (row - data_start) % 2 == 1
             pa_count = day_counts.get(str(utc_dt), int(r["total_rows"]))
@@ -550,7 +561,7 @@ def build_overview(
 
 
 # ═══════════════════════════════════════════════════════════════
-# SHEET 2 — DISTINCT COUNTS (unchanged, optional)
+# SHEET 2 — DISTINCT COUNTS (optional)
 # ═══════════════════════════════════════════════════════════════
 
 def build_distinct_counts(
@@ -629,7 +640,7 @@ def build_distinct_counts(
 
 
 # ═══════════════════════════════════════════════════════════════
-# SHEET 3 — CHANNEL × PLATFORM (unchanged)
+# SHEET 3 — CHANNEL × PLATFORM
 # ═══════════════════════════════════════════════════════════════
 
 def build_channel_platform(
@@ -686,7 +697,7 @@ def build_channel_platform(
 
 
 # ═══════════════════════════════════════════════════════════════
-# MATRIX SHEET (with IST date headers)
+# MATRIX SHEET (IST date headers)
 # ═══════════════════════════════════════════════════════════════
 
 def _discover_day_partitions(
@@ -900,7 +911,7 @@ def main() -> None:
     cfg = auto_config(lake_root)
 
     # OPTIONAL: Override matrix_top_n here (increase if memory permits)
-    cfg.matrix_top_n = 50_000   # example: 50k rows per matrix (adjust as needed)
+    # cfg.matrix_top_n = 50_000   # example
 
     cfg.output_path      = prompt_output_path(cfg.output_path)
     cfg.year, cfg.month  = prompt_month_filter(lake_root)
