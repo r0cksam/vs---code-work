@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-generate_detailed_analysis.py - Generate the detailed flat table
-(per date, state, channel, platform, device, user agent) with counts.
-"""
-
 import sys
 from pathlib import Path
 
