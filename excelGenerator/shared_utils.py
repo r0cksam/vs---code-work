@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 """
-detailed_analysis.py - Generate a flat table from Parquet lake,
-replace %20 with spaces, decode device names, and produce an Excel file.
-Includes User Agent column.
+shared_utils.py - Common functions and constants for all analysis scripts.
 """
 
-import sys
 from pathlib import Path
 from datetime import timedelta
-
 import duckdb
 import pandas as pd
 
 # ----------------------------------------------------------------------
-# CONFIGURATION (edit as needed)
+# CONFIGURATION (shared across scripts)
 # ----------------------------------------------------------------------
-LAKE_FOLDER = Path(r"Z:\05 Veto Logs\lake")   # default, can be overridden by CLI
-OUTPUT_FILE = Path(r"Z:\05 Veto Logs\detailed_analysis.xlsx")
+LAKE_FOLDER = Path(r"Z:\05 Veto Logs\lake")   # default, can be overridden
+OUTPUT_DIR = Path(r"Z:\05 Veto Logs\Reports")         # directory for all output files
 YEAR_FILTER = "2026"     # set to None for all years
 MONTH_FILTER = "05"      # set to None for all months
 
@@ -24,9 +20,45 @@ MONTH_FILTER = "05"      # set to None for all months
 IST_OFFSET = timedelta(hours=5, minutes=30)
 
 # ----------------------------------------------------------------------
-# Device name decoding dictionary (same as before)
+# DuckDB helpers
+# ----------------------------------------------------------------------
+def get_conn():
+    con = duckdb.connect()
+    con.execute("SET threads=4")
+    con.execute("SET memory_limit='16GB'")
+    con.execute("SET preserve_insertion_order=false")
+    return con
+
+def lake_reader(lake_root, year=None, month=None):
+    """Return a DuckDB table expression for reading Parquet files."""
+    if year and month:
+        path = lake_root / f"year={year}" / f"month={month}"
+        if path.exists():
+            return f"read_parquet('{path.as_posix()}/**/*.parquet', union_by_name=true)"
+    return f"read_parquet('{lake_root.as_posix()}/**/*.parquet', hive_partitioning=true, union_by_name=true)"
+
+def qs_extract(qs_col, param):
+    """Extract a query string parameter."""
+    return f"NULLIF(regexp_extract({qs_col}, '(?:^|&){param}=([^&]+)', 1), '')"
+
+# Platform suffix removal pattern
+_PLATFORM_SUFFIX_PATTERN = (
+    "_(firetv|firestick|fireos|androidtv|android|webos|web|"
+    "ios|iphone|ipad|appletv|apple|samsung|samsungtv|tizen|"
+    "roku|mi|mitv|xiaomi|sony|bravia|lg|lgtv|"
+    "mobile|phone|tablet|tv)$"
+)
+
+def channel_clean_expr(qs_col):
+    """Return SQL expression to clean channel name from queryStr."""
+    raw = f"COALESCE({qs_extract(qs_col, 'channel')}, {qs_extract(qs_col, 'channel_name')}, 'Unknown')"
+    return f"TRIM(regexp_replace(url_decode({raw}), '{_PLATFORM_SUFFIX_PATTERN}', '', 'i'))"
+
+# ----------------------------------------------------------------------
+# Device name decoding
 # ----------------------------------------------------------------------
 DEVICE_MAP = {
+    # Fire TV / Amazon
     "AFTSS": "Amazon Fire TV Stick (2nd Gen / Lite)",
     "AFTSSS": "Amazon Fire TV Stick 4K",
     "AFTMM": "Amazon Fire TV Cube",
@@ -57,10 +89,12 @@ DEVICE_MAP = {
     "AFTEU011": "Amazon Fire TV (European)",
     "AFTKADE001": "Amazon Fire TV device",
 
+    # Google / Chromecast
     "Chromecast": "Google Chromecast",
     "Chromecast HD": "Google Chromecast with Google TV (HD)",
     "Chromecast with Google TV": "Google Chromecast with Google TV (4K)",
 
+    # Sony Bravia
     "BRAVIA": "Sony Bravia TV",
     "BRAVIA 4K VH2": "Sony Bravia 4K VH2 series",
     "BRAVIA 4K VH21": "Sony Bravia 4K VH21 series",
@@ -77,6 +111,7 @@ DEVICE_MAP = {
     "BRAVIA BF1": "Sony Bravia BF1 series",
     "BRAVIA VH1": "Sony Bravia VH1 series",
 
+    # Xiaomi Mi TV / Mi Box
     "MiTV-AXSO0": "Xiaomi Mi TV Stick (4K)",
     "MiTV-AXSO1": "Xiaomi Mi TV Stick (1080p)",
     "MiTV-AXSO2": "Xiaomi Mi TV Stick (4K)",
@@ -89,6 +124,7 @@ DEVICE_MAP = {
     "MiTV-MZTU0": "Xiaomi Mi TV Stick (unidentified)",
     "MIBOX4": "Xiaomi Mi Box 4",
 
+    # Realme, OnePlus, VU, Haier
     "realme Smart TV": "Realme Smart TV",
     "realme Smart TV 4K": "Realme Smart TV 4K",
     "Oneplus Dosa IN": "OnePlus TV (Dosa series India)",
@@ -97,6 +133,8 @@ DEVICE_MAP = {
     "VU TV FFM": "VU TV (FFM series)",
     "haierATV": "Haier Android TV",
     "haierATVnippori": "Haier Android TV (Nippori series)",
+
+    # Set-top boxes
     "Tata Sky Binge Plus": "Tata Sky Binge+ set‑top box",
     "XStream Smart Box 001": "Airtel Xstream Smart Box",
     "Xstream4 AR": "Airtel Xstream 4K",
@@ -104,9 +142,13 @@ DEVICE_MAP = {
     "XstreamIPTV2-SM": "Airtel Xstream IPTV (SM)",
     "NSTV": "Nokia Streaming Box",
     "NSTV FF": "Nokia Streaming Box (FF series)",
+
+    # Cloud TV
     "CloudTV518": "Cloud TV (generic Android TV box)",
     "CloudTV521": "Cloud TV (generic Android TV box)",
     "Cloud TV": "Cloud TV (generic)",
+
+    # Generic fallbacks
     "AndroidTV": "Generic Android TV device",
     "Smart TV": "Generic Smart TV",
     "Smart TV Pro": "Generic Smart TV Pro",
@@ -124,6 +166,7 @@ DEVICE_MAP = {
 }
 
 def decode_device(device: str) -> str:
+    """Replace %20 and decode device name using lookup table."""
     if not isinstance(device, str):
         return device
     cleaned = device.replace("%20", " ")
@@ -138,136 +181,54 @@ def decode_device(device: str) -> str:
     return cleaned
 
 # ----------------------------------------------------------------------
-# DuckDB helpers
+# Common data cleaning
 # ----------------------------------------------------------------------
-def get_conn():
-    con = duckdb.connect()
-    con.execute("SET threads=4")
-    con.execute("SET memory_limit='16GB'")
-    con.execute("SET preserve_insertion_order=false")
-    return con
-
-def lake_reader(lake_root, year=None, month=None):
-    if year and month:
-        path = lake_root / f"year={year}" / f"month={month}"
-        if path.exists():
-            return f"read_parquet('{path.as_posix()}/**/*.parquet', union_by_name=true)"
-    return f"read_parquet('{lake_root.as_posix()}/**/*.parquet', hive_partitioning=true, union_by_name=true)"
-
-def qs_extract(qs_col, param):
-    return f"NULLIF(regexp_extract({qs_col}, '(?:^|&){param}=([^&]+)', 1), '')"
-
-_PLATFORM_SUFFIX_PATTERN = (
-    "_(firetv|firestick|fireos|androidtv|android|webos|web|"
-    "ios|iphone|ipad|appletv|apple|samsung|samsungtv|tizen|"
-    "roku|mi|mitv|xiaomi|sony|bravia|lg|lgtv|"
-    "mobile|phone|tablet|tv)$"
-)
-
-def channel_clean_expr(qs_col):
-    raw = f"COALESCE({qs_extract(qs_col, 'channel')}, {qs_extract(qs_col, 'channel_name')}, 'Unknown')"
-    return f"TRIM(regexp_replace(url_decode({raw}), '{_PLATFORM_SUFFIX_PATTERN}', '', 'i'))"
+def clean_percent_encoding(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace %20 and %2520 with spaces in all string columns (in-place)."""
+    for col in df.columns:
+        if pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_object_dtype(df[col]):
+            df[col] = df[col].astype(str).str.replace('%20', ' ', regex=False)
+            df[col] = df[col].str.replace('%2520', ' ', regex=False)
+    return df
 
 # ----------------------------------------------------------------------
-# Main
+# Excel writer with README sheet
 # ----------------------------------------------------------------------
-def main():
-    lake_root = Path(sys.argv[1]) if len(sys.argv) > 1 else LAKE_FOLDER
-    if not lake_root.exists():
-        print(f"❌ Lake folder not found: {lake_root}")
-        sys.exit(1)
-
-    print(f"Lake: {lake_root}")
-    print(f"Filter: year={YEAR_FILTER}, month={MONTH_FILTER} (if set)")
-
-    con = get_conn()
-    reader = lake_reader(lake_root, YEAR_FILTER, MONTH_FILTER)
-    qs_col = "queryStr"
-
-    # ==============================================================
-    # CORRECTED: column name is "UA" (uppercase)
-    # ==============================================================
-    ua_column = "UA"
-
-    sql = f"""
-        SELECT
-            make_date(CAST(year AS INT), CAST(month AS INT), CAST(day AS INT)) AS utc_date,
-            state,
-            {ua_column},
-            {channel_clean_expr(qs_col)} AS channel,
-            COALESCE({qs_extract(qs_col, 'platform')}, 'Unknown') AS platform,
-            COALESCE({qs_extract(qs_col, 'device')}, 'Unknown') AS device,
-            COUNT(*) AS requests,
-            COUNT(DISTINCT {qs_extract(qs_col, 'device_id')}) AS unique_devices,
-            COUNT(DISTINCT {qs_extract(qs_col, 'session_id')}) AS unique_sessions
-        FROM {reader}
-        WHERE state IS NOT NULL
-          AND state != ''
-          AND {qs_col} IS NOT NULL
-          AND {qs_col} LIKE '%channel=%'
-        GROUP BY year, month, day, state, {ua_column}, channel, platform, device
-        ORDER BY utc_date, state, {ua_column}, channel, platform, device
-    """
-
-    print("Executing query – this may take a while...")
-    try:
-        df = con.execute(sql).df()
-    except Exception as e:
-        print(f"❌ SQL Error. Possible missing column '{ua_column}'. Check your Parquet schema.")
-        print(f"Error: {e}")
-        sys.exit(1)
-    con.close()
-
-    if df.empty:
-        print("No data found (missing state, channel, etc.).")
-        return
-
-    # Convert UTC date to IST date
-    df['ist_date'] = pd.to_datetime(df['utc_date']) + IST_OFFSET
-    df['date_ist_str'] = df['ist_date'].dt.strftime("%Y-%m-%d")
-
-    # Compute % of requests per day
-    total_requests_per_day = df.groupby('date_ist_str')['requests'].transform('sum')
-    df['pct_of_requests'] = (df['requests'] / total_requests_per_day * 100).round(2)
-
-    # Prepare final DataFrame (user agent column is now named 'UA' in df)
-    output_df = df[[
-        'date_ist_str', 'state', ua_column, 'channel', 'platform', 'device',
-        'requests', 'unique_devices', 'unique_sessions', 'pct_of_requests'
-    ]].copy()
-    output_df.columns = [
-        'Date (IST)', 'State', 'User Agent', 'Channel', 'Platform', 'Device',
-        'Requests', 'Unique Devices', 'Unique Sessions', '% of Requests'
-    ]
-
-    # Clean %20 from all text columns
-    for col in output_df.columns:
-        if pd.api.types.is_string_dtype(output_df[col]) or pd.api.types.is_object_dtype(output_df[col]):
-            output_df[col] = output_df[col].astype(str).str.replace('%20', ' ', regex=False)
-            output_df[col] = output_df[col].str.replace('%2520', ' ', regex=False)
-
-    # Decode device names
-    output_df['Device'] = output_df['Device'].apply(decode_device)
-
-    # Save to Excel
-    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with pd.ExcelWriter(OUTPUT_FILE, engine='xlsxwriter') as writer:
-        output_df.to_excel(writer, sheet_name='Detailed_Analysis', index=False)
-
+def write_to_excel(output_path: Path, data_df: pd.DataFrame, sheet_name: str = "Data"):
+    """Write DataFrame to Excel with an auto-sized column width and a README sheet."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+        data_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # Add README sheet
         note = [
             "Device names decoded using a custom lookup table based on community knowledge.",
             "No third‑party API was used."
         ]
         pd.DataFrame({'Info': note}).to_excel(writer, sheet_name='README', index=False)
-
-        worksheet = writer.sheets['Detailed_Analysis']
-        for i, col in enumerate(output_df.columns):
-            max_len = max(output_df[col].astype(str).map(len).max(), len(col)) + 2
+        
+        # Auto-adjust column widths
+        worksheet = writer.sheets[sheet_name]
+        for i, col in enumerate(data_df.columns):
+            max_len = max(data_df[col].astype(str).map(len).max(), len(col)) + 2
             worksheet.set_column(i, i, min(max_len, 50))
+            
+def utc_date_to_ist_str(utc_date) -> str:
+    """Convert a UTC date (datetime.date or datetime) to IST date string dd/mm/yy."""
+    from datetime import datetime, timezone
+    if isinstance(utc_date, pd.Timestamp):
+        dt = utc_date.to_pydatetime()
+    elif isinstance(utc_date, datetime):
+        dt = utc_date
+    else:
+        dt = datetime.combine(utc_date, datetime.min.time())
+    ist_dt = dt + IST_OFFSET
+    return ist_dt.strftime("%d/%m/%y")
 
-    print(f"\n✅ Output saved to: {OUTPUT_FILE}")
-    print("Open in Excel → Insert Pivot Table → add slicers on State, Channel, Platform, Device, User Agent.")
-    print("The '% of Requests' column is the percentage of that combination within its day.\n")
-
-if __name__ == "__main__":
-    main()
+def utc_date_str_to_ist_str(utc_str: str) -> str:
+    """Convert UTC date string 'YYYY-MM-DD' to IST date string 'DD/MM/YY'."""
+    y, m, d = map(int, utc_str.split('-'))
+    from datetime import datetime, timezone
+    dt = datetime(y, m, d, tzinfo=timezone.utc)
+    ist_dt = dt + IST_OFFSET
+    return ist_dt.strftime("%d/%m/%y")
