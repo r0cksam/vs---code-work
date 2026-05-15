@@ -1003,6 +1003,169 @@ def build_top_channels_by_state(
     ws.freeze_panes(1, 0)
     log.info(f"  Top Channels by State done ✓ (rows: {row - 1})")
 
+# ═══════════════════════════════════════════════════════════════
+# NEW: DEVICE MATRIX WITH STATE (plus %20 cleaning)
+# ═══════════════════════════════════════════════════════════════
+
+def build_device_matrix_with_state(
+    wb:   xlsxwriter.Workbook,
+    con:  duckdb.DuckDBPyConnection,
+    cfg:  MatrixConfig,
+    cols: set[str],
+    s:    Styles,
+) -> None:
+    """Device matrix with an extra column: most frequent State per Device.
+       Also cleans %20 from Device and State strings."""
+    device_col_expr = qs_extract(cfg.col_qs, 'device')
+    state_col = cfg.col_state
+    qs_col = cfg.col_qs
+
+    # Check required columns
+    if cfg.col_qs not in cols:
+        log.warning("Device matrix skipped: queryStr column missing.")
+        return
+    if state_col not in cols:
+        log.warning("Device matrix without State: 'state' column missing.")
+        # Fall back to generic matrix? We'll just exit.
+        return
+
+    sheet_name = "Device_Matrix"
+    log.info(f"Building {sheet_name} with extra State column …")
+    ws = wb.add_worksheet(sheet_name)
+
+    # Column widths
+    ws.set_column(0, 0, 40)   # Device
+    ws.set_column(1, 1, 20)   # State
+    for c in range(2, 2 + cfg.matrix_days):
+        ws.set_column(c, c, 12)
+
+    # Discover day partitions
+    if cfg.col_ts not in cols:
+        ws.write(0, 0, "reqTimeSec missing — cannot build matrix", s.data)
+        return
+    day_parts = _discover_day_partitions(cfg.lake_root, cfg.year, cfg.month, cfg.matrix_days)
+    if not day_parts:
+        ws.write(0, 0, "No day partitions found.", s.data)
+        return
+    log.info(f"  {len(day_parts)} day partitions found (last {cfg.matrix_days} days)")
+
+    # Top N devices (overall)
+    EXCEL_MAX_DATA_ROWS = 1_048_576 - 5
+    safe_top_n = min(cfg.matrix_top_n, EXCEL_MAX_DATA_ROWS)
+    log.info(f"  Fetching top {safe_top_n:,} devices …")
+    expr = lake_reader(cfg.lake_root, cfg.year, cfg.month)
+    top_devices_df = safe_query(con, f"""
+        SELECT
+            COALESCE(CAST({device_col_expr} AS VARCHAR), '(null)') AS device,
+            COUNT(*) AS total
+        FROM {expr}
+        WHERE {qs_col} IS NOT NULL
+          AND {device_col_expr} IS NOT NULL
+          AND TRIM(CAST({device_col_expr} AS VARCHAR)) <> ''
+        GROUP BY 1
+        ORDER BY 2 DESC
+        LIMIT {safe_top_n + 1}
+    """, "top_devices")
+
+    if top_devices_df.empty:
+        ws.write(0, 0, "No device data found.", s.data)
+        return
+
+    truncated = False
+    if len(top_devices_df) > safe_top_n:
+        truncated = True
+        top_devices_df = top_devices_df.iloc[:safe_top_n]
+    top_devices = set(top_devices_df["device"].tolist())
+    n_devices = len(top_devices)
+    log.info(f"  {n_devices:,} distinct devices" + (" (truncated to Excel row limit)" if truncated else ""))
+
+    # Compute most frequent state per device (overall)
+    log.info("  Computing most frequent state for each device …")
+    mode_state_df = safe_query(con, f"""
+        WITH device_state_counts AS (
+            SELECT
+                COALESCE(CAST({device_col_expr} AS VARCHAR), '(null)') AS device,
+                COALESCE(CAST({state_col} AS VARCHAR), 'Unknown') AS state,
+                COUNT(*) AS cnt
+            FROM {expr}
+            WHERE {qs_col} IS NOT NULL
+              AND {device_col_expr} IS NOT NULL
+              AND TRIM(CAST({device_col_expr} AS VARCHAR)) <> ''
+              AND {state_col} IS NOT NULL
+              AND TRIM(CAST({state_col} AS VARCHAR)) <> ''
+            GROUP BY device, state
+        ),
+        ranked AS (
+            SELECT device, state,
+                   ROW_NUMBER() OVER (PARTITION BY device ORDER BY cnt DESC) AS rn
+            FROM device_state_counts
+        )
+        SELECT device, state
+        FROM ranked
+        WHERE rn = 1
+    """, "mode_state_per_device")
+    device_state_map = dict(zip(mode_state_df["device"], mode_state_df["state"])) if not mode_state_df.empty else {}
+
+    # Daily counts per device (only for top devices)
+    log.info("  Computing daily counts per device …")
+    # We need a version of _matrix_counts_by_day that works with an expression (device_col_expr)
+    # Reuse the existing one, but it expects a simple column expression. device_col_expr is complex (function call).
+    # We'll pass the raw expression string; _matrix_counts_by_day will use it in SQL.
+    # However, _matrix_counts_by_day uses "CAST({col_expr} AS VARCHAR)" – that works with any expression.
+    matrix_data = _matrix_counts_by_day(con, day_parts, device_col_expr, top_devices, "device")
+    if not matrix_data:
+        ws.write(0, 0, "No daily data for devices.", s.data)
+        return
+
+    utc_dates = sorted(matrix_data.keys(), reverse=True)
+    n_dates = len(utc_dates)
+
+    # Write headers: Device, State, then dates (IST)
+    row = 0
+    title_row(ws, row, f"📅  Device Matrix — top {n_devices:,} devices × last {n_dates} days (IST dates)", 2 + n_dates, s)
+    row += 1
+    headers = ["Device", "State"] + [utc_date_str_to_ist_str(d) for d in utc_dates]
+    for c, h in enumerate(headers):
+        ws.write(row, c, h, s.hdr)
+    row += 1
+
+    data_start = row
+    log.info(f"  Writing {n_devices:,} rows …")
+    for idx, device in enumerate(top_devices_df["device"]):
+        is_alt = idx % 2 == 1
+        d, n = (s.alt, s.num_alt) if is_alt else (s.data, s.num)
+
+        # Clean %20 from device and state
+        device_clean = device.replace("%20", " ")
+        state_clean = device_state_map.get(device, "N/A").replace("%20", " ")
+
+        ws.write(row, 0, device_clean, d)
+        ws.write(row, 1, state_clean, d)
+        for c, utc_date in enumerate(utc_dates, 2):
+            cnt = matrix_data.get(utc_date, {}).get(device, 0)
+            ws.write(row, c, cnt, n)
+        row += 1
+        if (idx + 1) % 10_000 == 0:
+            log.info(f"    {idx + 1:,} rows written …")
+
+    # Total row
+    ws.write(row, 0, "TOTAL", s.total_l)
+    ws.write(row, 1, "", s.total_l)
+    for c in range(2, 2 + n_dates):
+        col_l = xlsxwriter.utility.xl_col_to_name(c)
+        ws.write(row, c, f"=SUM({col_l}{data_start + 1}:{col_l}{row})", s.total)
+    row += 1
+
+    if truncated:
+        warning_msg = f"⚠️  Only top {safe_top_n:,} devices shown (Excel row limit). Values omitted."
+        ws.write(row, 0, warning_msg, s.data)
+        warning_format = wb.add_format({'bg_color': '#FFCCCC', 'font_color': '#990000', 'bold': True})
+        for c in range(2 + n_dates):
+            ws.write(row, c, warning_msg if c == 0 else "", warning_format)
+        row += 1
+
+    ws.freeze_panes(2, 2)  # Freeze after Device and State columns
+    log.info(f"  Device matrix (with State) done ✓")
 
 # ═══════════════════════════════════════════════════════════════
 # MAIN
@@ -1079,10 +1242,14 @@ def main() -> None:
 
     qs = cfg.col_qs
     if qs in cols:
+        # Special handling for Device matrix (adds State column)
+        build_device_matrix_with_state(wb, con, cfg, cols, s)
+
+        # Other QS matrices use generic builder
         qs_fields = [
             (channel_clean_expr(qs),              "Channel"),
             (qs_extract(qs, "platform"),          "Platform"),
-            (qs_extract(qs, "device"),            "Device"),
+            # (qs_extract(qs, "device"),          "Device"),   # replaced by specialised
             (qs_extract(qs, "category_name"),     "Category"),
             (qs_extract(qs, "content_title"),     "Content Title"),
         ]
