@@ -46,7 +46,6 @@ def _daily_log_path() -> Path:
     return LOG_DIR / f"sync_{datetime.date.today().strftime('%Y-%m-%d')}.log"
 
 def setup_logging():
-    """Refresh logging so messages always go to today's log file + console."""
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     for h in root.handlers[:]:
@@ -89,7 +88,7 @@ def wait_for_network_path() -> bool:
     while waited < NETWORK_WAIT_TIMEOUT:
         try:
             if base.exists():
-                logging.info(f"Network path is reachable (waited {waited}s).")
+                logging.info(f"Network path reachable (waited {waited}s).")
                 return True
         except OSError:
             pass
@@ -106,7 +105,7 @@ def run_sync():
     setup_logging()
 
     if has_run_today():
-        logging.info("Sync already completed today — skipping duplicate run.")
+        logging.info("Sync already completed today — skipping.")
         return
 
     yesterday = datetime.date.today() - datetime.timedelta(days=1)
@@ -133,11 +132,14 @@ def run_sync():
     sep = "=" * 64
     logging.info(sep)
     logging.info("SYNC_STARTED")
-    logging.info(f"  Syncing data for : {yesterday.strftime('%d/%m/%Y')}  (yesterday)")
-    logging.info(f"  S3 source        : {s3_source}")
-    logging.info(f"  Local dest       : {local_dest}")
-    logging.info(f"  AWS exe          : {AWS_EXE}")
+    logging.info(f"  Date      : {yesterday.strftime('%d/%m/%Y')} (yesterday)")
+    logging.info(f"  S3 source : {s3_source}")
+    logging.info(f"  Local dest: {local_dest}")
     logging.info(sep)
+
+    files_downloaded = 0
+    errors           = []
+    start_time       = datetime.datetime.now()
 
     try:
         proc = subprocess.Popen(
@@ -148,25 +150,39 @@ def run_sync():
             encoding="utf-8",
             errors="replace",
         )
+
         for line in proc.stdout:
             line = line.rstrip()
-            if line:
-                logging.info(line)
+            if not line:
+                continue
+            # Count downloads silently, only log errors/warnings
+            if line.startswith("download:"):
+                files_downloaded += 1
+            elif "error" in line.lower() or "fatal" in line.lower():
+                errors.append(line)
+                logging.error(f"  {line}")
+            # skip all other noisy aws output lines
+
         proc.wait()
+        elapsed = str(datetime.datetime.now() - start_time).split(".")[0]  # HH:MM:SS
 
         if proc.returncode == 0:
             logging.info(sep)
             logging.info("SYNC_COMPLETED — SUCCESS ✓")
+            logging.info(f"  Files downloaded : {files_downloaded}")
+            logging.info(f"  Time taken       : {elapsed}")
             logging.info(sep)
             mark_ran_today()
         else:
             logging.error(sep)
             logging.error(f"SYNC_FAILED — exit code {proc.returncode}")
+            logging.error(f"  Files before failure : {files_downloaded}")
+            logging.error(f"  Errors logged        : {len(errors)}")
+            logging.error(f"  Time elapsed         : {elapsed}")
             logging.error(sep)
 
     except FileNotFoundError:
         logging.error(f"SYNC_ERROR — aws.exe not found at: {AWS_EXE}")
-        logging.error("Check the AWS_EXE path in config at top of script.")
     except Exception as exc:
         logging.error(f"SYNC_ERROR — Unexpected error: {exc}")
 
@@ -175,20 +191,15 @@ def startup_check():
     setup_logging()
     sep = "=" * 64
     logging.info(sep)
-    logging.info("SCHEDULER STARTED  (script is now running)")
+    logging.info("SCHEDULER STARTED")
     logging.info(f"  Script   : {__file__}")
-    logging.info(f"  AWS exe  : {AWS_EXE}")
     logging.info(f"  Run time : {RUN_TIME} daily")
     logging.info(f"  Today    : {_today_iso()}")
-
-    # Verify aws.exe exists right at startup — instant feedback
     try:
-        result = subprocess.run([AWS_EXE, "--version"],
-                                capture_output=True, text=True)
+        result = subprocess.run([AWS_EXE, "--version"], capture_output=True, text=True)
         logging.info(f"  AWS CLI  : {result.stdout.strip() or result.stderr.strip()}")
     except FileNotFoundError:
         logging.error(f"  AWS CLI NOT FOUND at {AWS_EXE} — sync will fail!")
-
     logging.info(sep)
 
     if has_run_today():
@@ -200,15 +211,13 @@ def startup_check():
     target = now.replace(hour=run_h, minute=run_m, second=0, microsecond=0)
 
     if now >= target:
-        logging.warning("Started AFTER scheduled time and sync has NOT run yet — "
-                        "running missed sync NOW.")
+        logging.warning("Started AFTER scheduled time — running missed sync NOW.")
         run_sync()
     else:
         mins_left = int((target - now).total_seconds() / 60)
-        logging.info(f"Sync not due yet. Will run at {RUN_TIME} "
-                     f"(~{mins_left} minute(s) from now).")
+        logging.info(f"Waiting for {RUN_TIME} (~{mins_left} min from now).")
 
-# ── Scheduler loop with hourly heartbeat ───────────────────────────────────────
+# ── Scheduler loop ─────────────────────────────────────────────────────────────
 def _next_run_datetime() -> datetime.datetime:
     run_h, run_m = map(int, RUN_TIME.split(":"))
     now   = datetime.datetime.now()
@@ -220,29 +229,27 @@ def _next_run_datetime() -> datetime.datetime:
 def main():
     startup_check()
     next_run = _next_run_datetime()
-    logging.info(f"Next scheduled sync: {next_run.strftime('%Y-%m-%d %H:%M')}")
+    logging.info(f"Next sync: {next_run.strftime('%Y-%m-%d %H:%M')}")
 
     last_heartbeat = datetime.datetime.now()
 
     while True:
-        setup_logging()   # swap log file cleanly after midnight
+        setup_logging()
         now = datetime.datetime.now()
 
-        # ── Heartbeat every 60 minutes — visible proof script is alive ─────────
+        # Heartbeat every 60 minutes — one clean line, not spammy
         if (now - last_heartbeat).total_seconds() >= 3600:
-            mins_to_run = int((next_run - now).total_seconds() / 60)
-            sync_status = "Done today ✓" if has_run_today() else "Pending"
-            logging.info(f"[HEARTBEAT] Script alive | "
-                         f"Next sync: {next_run.strftime('%Y-%m-%d %H:%M')} "
-                         f"(~{mins_to_run} min away) | "
-                         f"Today's sync: {sync_status}")
+            mins_away  = int((next_run - now).total_seconds() / 60)
+            status     = "Done ✓" if has_run_today() else "Pending"
+            logging.info(f"[HEARTBEAT] Alive | Next sync: "
+                         f"{next_run.strftime('%H:%M')} (~{mins_away} min) | "
+                         f"Today: {status}")
             last_heartbeat = now
 
-        # ── Run sync at scheduled time ─────────────────────────────────────────
         if now >= next_run:
             run_sync()
             next_run = _next_run_datetime()
-            logging.info(f"Next scheduled sync: {next_run.strftime('%Y-%m-%d %H:%M')}")
+            logging.info(f"Next sync: {next_run.strftime('%Y-%m-%d %H:%M')}")
 
         time.sleep(30)
 
