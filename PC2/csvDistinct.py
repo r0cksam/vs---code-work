@@ -11,6 +11,9 @@ mapping = {
     "vglive-sk-479089": "India TV SpeedNews",
     "vglive-sk-912213": "India TV Adalat",
     "vglive-sk-699286": "India TV Yoga",
+    "vglive-sk-238731": "NDTV Marathi",
+    "vglive-sk-639201": "IndiaTV Cricket",
+    "vglive-sk-834057": "Ndtv India"
 }
 
 # Regex

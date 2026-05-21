@@ -3,7 +3,7 @@ from pathlib import Path
 import time
 import re
 
-base_folder = Path(r"Z:\05 Veto Logs")
+base_folder = Path(r"Z:\Veto Logs Backup\05 Veto Log")
 output_folder = base_folder  # final files will save directly inside Veto Logs folder
 
 con = duckdb.connect()
