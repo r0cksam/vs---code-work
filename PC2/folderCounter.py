@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 import concurrent.futures
 
-ROOT_PATH = r"Y:\Veto Logs Backup\veto fast logs\05\20"
+ROOT_PATH = r"Y:\Veto Logs Backup\04 Veto Logs"
 
 def human_size(b):
     if b >= 1_073_741_824: return f"{b/1_073_741_824:.2f} GB"
