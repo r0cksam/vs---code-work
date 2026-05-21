@@ -532,11 +532,16 @@ def write_overview_excel(
     ]
     for start_c, end_c, label, color in section_groups:
         ws.merge_cells(start_row=ROW_SECTION_HDR, start_column=start_c,
-                       end_row=ROW_SECTION_HDR, end_column=end_c)
-        _write(ws, ROW_SECTION_HDR, start_c, label,
-               fill_hex=color, font_color=C_WHITE, bold=True, h_align="center")
-        for c in range(start_c + 1, end_c + 1):
-            _write(ws, ROW_SECTION_HDR, c, "", fill_hex=color)
+                   end_row=ROW_SECTION_HDR, end_column=end_c)
+    # Label on the first cell only
+    _write(ws, ROW_SECTION_HDR, start_c, label,
+           fill_hex=color, font_color=C_WHITE, bold=True, h_align="center")
+    # Other cells in the merged range: fill and border only, no value
+    for c in range(start_c + 1, end_c + 1):
+        cell = ws.cell(row=ROW_SECTION_HDR, column=c)
+        cell.fill = _fill(color)
+        cell.border = _thin_border()           
+        cell.alignment = _align("center")
 
     # ── Row 12: column labels (match section colors) ──────────
     col_labels = [
