@@ -6,6 +6,7 @@ PARQUET_FILE_INPUT = r"D:\Veto Logs Backup\05 Veto Logs\22_final_clean.parquet"
 OUTPUT_CHANNEL_CSV = "channel_watch_hours.csv"
 OUTPUT_USER_CSV = "user_watch_hours.csv"
 
+# Channel mapping dictionary
 CHANNEL_MAP = {
     "vglive-sk-274906": "India TV",
     "vglive-sk-385006": "India TV Yoga",
@@ -17,6 +18,7 @@ CHANNEL_MAP = {
     "vglive-sk-834057": "Ndtv India"
 }
 
+# The proven duration configuration (6 seconds per segment)
 CHUNK_DURATION_HOURS = 6 / 3600 
 
 def calculate_watch_hours(file_path):
@@ -36,17 +38,21 @@ def calculate_watch_hours(file_path):
             print("❌ Error: No successful video chunks (.ts) found in this log selection.")
             return
 
-        # 🚀 ULTRA FAST TIMELINE LOGIC: Find min/max numbers first, then convert only those two!
+        # 🚀 FAST TIMELINE LOGIC: Math runs on raw numbers
         raw_min = pd.to_numeric(df_ts['reqTimeSec'], errors='coerce').min()
         raw_max = pd.to_numeric(df_ts['reqTimeSec'], errors='coerce').max()
         
-        log_start_time = pd.to_datetime(raw_min, unit='s') if not np.isnan(raw_min) else "Unknown"
-        log_end_time = pd.to_datetime(raw_max, unit='s') if not np.isnan(raw_max) else "Unknown"
+        # Convert only the 2 boundary numbers to UTC Datetime, then localize and convert to IST (+5:30)
+        if not np.isnan(raw_min) and not np.isnan(raw_max):
+            log_start_time = pd.to_datetime(raw_min, unit='s', utc=True).tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %H:%M:%S')
+            log_end_time = pd.to_datetime(raw_max, unit='s', utc=True).tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            log_start_time, log_end_time = "Unknown", "Unknown"
 
         # 2. Extract Stream ID from reqPath using a fast vectorised split
         print("Extracting Stream IDs and mapping channel names...")
         df_ts['stream_id'] = df_ts['reqPath'].apply(
-            lambda x: x.split('/')[1] if x.startswith('v1/') else x.split('/')[0]
+            lambda x: x.split('/') if x.startswith('v1/') else x.split('/')
         )
         
         # Map to channel names; fill unknown stream IDs with 'Other Streams'
@@ -79,9 +85,9 @@ def calculate_watch_hours(file_path):
         print("\n" + "="*65)
         print("                 GLOBAL CHANNEL WATCH REPORT                    ")
         print("="*65)
-        print(f"📅 LOG METRICS WINDOW:")
-        print(f"   - File Collection Starts : {log_start_time} UTC")
-        print(f"   - File Collection Ends   : {log_end_time} UTC")
+        print(f"📅 LOG METRICS WINDOW (IST Timezone):")
+        print(f"   - File Collection Starts : {log_start_time} IST")
+        print(f"   - File Collection Ends   : {log_end_time} IST")
         print("-"*65)
         print(channel_metrics.to_string(index=False, formatters={
             'watch_hours': '{:.2f} hrs'.format,
