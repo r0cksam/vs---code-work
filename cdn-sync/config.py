@@ -39,7 +39,7 @@ SOURCES = [
 ]
 
 # ── Performance ───────────────────────────────────────────────
-MAX_WORKERS       = 128    # parallel download threads (try 200-256 on fast net)
+MAX_WORKERS       = 256    # parallel download threads (try 200-256 on fast net)
 LIST_WORKERS      = 32     # parallel listing threads
 DOWNLOAD_CHUNK_MB = 8
 RETRY_ATTEMPTS    = 5
