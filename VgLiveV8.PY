@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import duckdb
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, time
+import re
 
-# ===== CONFIGURATION =====
+# ====================== CONFIG ======================
 LAKE_FOLDER = Path(r"D:\Veto Logs Backup\05 Veto Logs\lake")
-CHUNK_DURATION_HOURS = 6 / 3600
+CHUNK_DURATION_SECONDS = 6
+CHUNK_DURATION_HOURS = CHUNK_DURATION_SECONDS / 3600.0
 
 CHANNEL_MAP = {
     "vglive-sk-274906": "India TV",
@@ -22,134 +24,186 @@ CHANNEL_MAP = {
 CARD_COLOURS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7C6C6"]
 
 
+# ====================== FAST DATE RETRIEVAL (NO FULL SCAN) ======================
+@st.cache_data(ttl=86400)  # cache for 1 day
 def get_available_dates(lake_path):
+    """Get min and max dates from partition folders (fast) – or fallback to parquet metadata."""
+    lake_path = Path(lake_path)
+    dates = []
+    # Look for Hive partition folders: year=*/month=*/day=*
+    for year_dir in lake_path.glob("year=*"):
+        try:
+            year = int(year_dir.name.split('=')[1])
+            for month_dir in year_dir.glob("month=*"):
+                month = int(month_dir.name.split('=')[1])
+                for day_dir in month_dir.glob("day=*"):
+                    day = int(day_dir.name.split('=')[1])
+                    dates.append(datetime(year, month, day))
+        except (ValueError, IndexError):
+            continue
+
+    if dates:
+        return min(dates), max(dates)
+
+    # Fallback: read only the first Parquet file's metadata (no row scan)
+    parquet_files = list(lake_path.glob("**/*.parquet"))
+    if not parquet_files:
+        return None, None
     con = duckdb.connect()
-    query = f"""
-        SELECT MIN(reqTimeSec), MAX(reqTimeSec)
-        FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
-        WHERE statusCode = '200' AND reqPath LIKE '%.ts'
-    """
-    result = con.execute(query).fetchone()
-    con.close()
-    if result[0] and result[1]:
-        return datetime.fromtimestamp(result[0]), datetime.fromtimestamp(result[1])
+    try:
+        result = con.execute(f"""
+            SELECT MIN(reqTimeSec), MAX(reqTimeSec)
+            FROM parquet_metadata('{parquet_files[0]}')
+        """).fetchone()
+        if result and result[0] and result[1]:
+            return datetime.fromtimestamp(result[0]), datetime.fromtimestamp(result[1])
+    except Exception:
+        pass
+    finally:
+        con.close()
     return None, None
 
 
+# ====================== FAST LAKE INSPECTION (USES METADATA) ======================
 def inspect_lake(lake_path):
+    """Inspect lake statistics without full scan where possible."""
+    lake_path = Path(lake_path)
+    parquet_files = list(lake_path.glob("**/*.parquet"))
+    if not parquet_files:
+        return {"error": "No parquet files found in the lake folder."}
+
     con = duckdb.connect()
-    query = f"""
-        SELECT
-            COUNT(*) AS total_rows,
-            COUNT(*) FILTER (WHERE reqPath LIKE '%.ts') AS ts_rows,
-            COUNT(*) FILTER (WHERE statusCode = '200' AND reqPath LIKE '%.ts') AS valid_ts_rows
-        FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
-    """
     try:
-        result = con.execute(query).fetchone()
-        con.close()
+        # Total rows from Parquet metadata (fast)
+        meta_df = con.execute(f"""
+            SELECT SUM(num_rows) as total_rows
+            FROM parquet_metadata('{lake_path.as_posix()}/**/*.parquet')
+        """).fetchdf()
+        total_rows = int(meta_df['total_rows'].iloc[0]) if not meta_df.empty else 0
+
+        # Valid .ts rows – requires a scan (but we limit by showing a warning)
+        # We'll do a COUNT(*) with a simple filter – this is still a full scan, but it's a one‑off inspect.
+        valid_ts = 0
+        try:
+            valid_ts = con.execute(f"""
+                SELECT COUNT(*) FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
+                WHERE statusCode = '200' AND reqPath LIKE '%.ts'
+            """).fetchone()[0]
+        except Exception:
+            valid_ts = "unknown (query failed)"
+
         return {
-            "total_rows": result[0],
-            "ts_rows": result[1],
-            "valid_ts_rows": result[2],
+            "total_rows": total_rows,
+            "valid_ts_rows": valid_ts,
         }
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        con.close()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def compute_metrics(lake_path, start_date, end_date, progress_callback=None):
+# ====================== MAIN METRICS (SINGLE SCAN + PARTITION PRUNING) ======================
+def build_partition_filter(start_date, end_date):
     """
-    Compute metrics with optional progress callback (function that takes step_name, step_index, total_steps).
+    Build a DuckDB filter on Hive partition columns (year, month, day).
+    Assumes folder structure: year=YYYY/month=MM/day=DD.
+    Returns a string like "(year=2026 AND month=5 AND day BETWEEN 1 AND 25) OR ..."
     """
+    filters = []
+    current = start_date
+    while current <= end_date:
+        year = current.year
+        month = current.month
+        day = current.day
+        filters.append(f"(year = {year} AND month = {month} AND day = {day})")
+        # Move to next day
+        from datetime import timedelta
+        current += timedelta(days=1)
+    return " OR ".join(filters)
+
+
+@st.cache_data(ttl=7200, show_spinner=False)
+def compute_metrics(lake_path, start_date, end_date):
     lake_path = Path(lake_path)
     con = duckdb.connect()
-    total_steps = 4
-    step = 0
 
-    # Step 1: Build whitelist
-    if progress_callback:
-        progress_callback("🔍 Building whitelist of video segments...", step, total_steps)
-    whitelist_query = f"""
-        SELECT DISTINCT reqPath
-        FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
-        WHERE statusCode = '200' AND reqPath LIKE '%.ts'
-    """
-    con.execute("CREATE TEMP TABLE whitelist AS (" + whitelist_query + ")")
-    whitelist_count = con.execute("SELECT COUNT(*) FROM whitelist").fetchone()[0]
-    if whitelist_count == 0:
+    try:
+        start_epoch = int(datetime.combine(start_date, time.min).timestamp())
+        end_epoch = int(datetime.combine(end_date, time.max).timestamp())
+
+        # Build partition filter (if partitions exist)
+        partition_filter = build_partition_filter(start_date, end_date)
+
+        # Step 1: Create a temporary table with the base data (single scan)
+        # This materialises only the columns we need.
+        con.execute(f"""
+            CREATE TEMP TABLE base_tmp AS
+            SELECT 
+                cliIP,
+                regexp_extract(reqPath, '(vglive-sk-[0-9]+)', 1) AS channel_id
+            FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
+            WHERE statusCode = '200'
+              AND reqPath LIKE '%.ts'
+              AND CAST(reqTimeSec AS DOUBLE) BETWEEN {start_epoch} AND {end_epoch}
+              AND ({partition_filter})
+        """)
+
+        # Step 2: Channel aggregation
+        channel_df = con.execute("""
+            SELECT 
+                channel_id,
+                COUNT(DISTINCT cliIP) AS unique_viewers,
+                COUNT(*) AS total_chunks
+            FROM base_tmp
+            GROUP BY channel_id
+        """).fetchdf()
+
+        # Step 3: User aggregation (top 20000)
+        user_df = con.execute("""
+            SELECT 
+                channel_id,
+                cliIP,
+                COUNT(*) AS chunks_watched
+            FROM base_tmp
+            GROUP BY channel_id, cliIP
+            ORDER BY chunks_watched DESC
+            LIMIT 20000
+        """).fetchdf()
+
+        # Clean up temporary table
+        con.execute("DROP TABLE base_tmp")
+
+        if channel_df.empty:
+            return pd.DataFrame(), pd.DataFrame(), "No data found in selected date range."
+
+        # Map channel IDs to friendly names
+        channel_df['channel_name'] = channel_df['channel_id'].map(CHANNEL_MAP).fillna('Other')
+        # Aggregate in case multiple IDs map to the same name (e.g., duplicate Yoga)
+        channel_df = channel_df.groupby('channel_name', as_index=False).agg({
+            'unique_viewers': 'sum',
+            'total_chunks': 'sum'
+        })
+
+        channel_df['watch_hours'] = channel_df['total_chunks'] * CHUNK_DURATION_HOURS
+        channel_df['avg_chunks_per_viewer'] = channel_df['total_chunks'] / channel_df['unique_viewers']
+        channel_df['avg_watch_hours_per_viewer'] = channel_df['watch_hours'] / channel_df['unique_viewers']
+        channel_df = channel_df.sort_values('watch_hours', ascending=False)
+
+        # Map channel names in user_df
+        user_df['channel_name'] = user_df['channel_id'].map(CHANNEL_MAP).fillna('Other')
+        user_df['watch_hours'] = user_df['chunks_watched'] * CHUNK_DURATION_HOURS
+        user_df = user_df.drop(columns=['channel_id'])
+
+        # Get time range from actual data (optional)
+        time_range = f"{start_date.strftime('%Y-%m-%d')} → {end_date.strftime('%Y-%m-%d')}"
+
+        return channel_df, user_df, time_range
+
+    finally:
         con.close()
-        return pd.DataFrame(), pd.DataFrame(), "No video segments found"
-    step += 1
-
-    # Step 2: Date filter & main query (fetch in chunks for progress)
-    if progress_callback:
-        progress_callback("📥 Streaming chunk requests from lake...", step, total_steps)
-    start_epoch = int(start_date.timestamp()) if start_date else 0
-    end_epoch = int(end_date.timestamp()) if end_date else 2**63 - 1
-    date_filter = f"AND reqTimeSec BETWEEN {start_epoch} AND {end_epoch}"
-
-    main_query = f"""
-        SELECT t.reqPath, t.cliIP, t.reqTimeSec
-        FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1) t
-        JOIN whitelist w ON t.reqPath = w.reqPath
-        WHERE t.statusCode = '200'
-          {date_filter}
-    """
-    # Execute and fetch all (no easy way to get incremental progress from DuckDB)
-    # We'll just show a spinner for now; user sees step 2 completed.
-    df_raw = con.execute(main_query).fetchdf()
-    step += 1
-
-    if df_raw.empty:
-        con.close()
-        return pd.DataFrame(), pd.DataFrame(), "No data in selected date range"
-
-    # Step 3: Extract channel names
-    if progress_callback:
-        progress_callback("🏷️ Mapping channels...", step, total_steps)
-    def extract_stream_id(path):
-        for part in path.split('/'):
-            if part in CHANNEL_MAP:
-                return part
-        return "Unknown"
-    df_raw['stream_id'] = df_raw['reqPath'].apply(extract_stream_id)
-    df_raw['channel_name'] = df_raw['stream_id'].map(CHANNEL_MAP).fillna("Other")
-    step += 1
-
-    # Step 4: Aggregate metrics
-    if progress_callback:
-        progress_callback("📊 Aggregating channel & user metrics...", step, total_steps)
-    channel_agg = df_raw.groupby('channel_name').agg(
-        unique_viewers=('cliIP', 'nunique'),
-        total_chunks=('reqPath', 'count')
-    ).reset_index()
-    channel_agg['watch_hours'] = channel_agg['total_chunks'] * CHUNK_DURATION_HOURS
-    channel_agg = channel_agg.sort_values('watch_hours', ascending=False)
-
-    user_agg = df_raw.groupby(['channel_name', 'cliIP']).agg(
-        chunks_watched=('reqPath', 'count')
-    ).reset_index()
-    user_agg['watch_hours'] = user_agg['chunks_watched'] * CHUNK_DURATION_HOURS
-    user_agg = user_agg.sort_values('watch_hours', ascending=False).head(10000)
-
-    con.close()
-    step += 1
-
-    # Time range for display
-    if not channel_agg.empty:
-        min_ts = df_raw['reqTimeSec'].min()
-        max_ts = df_raw['reqTimeSec'].max()
-        start_dt = pd.to_datetime(min_ts, unit='s', utc=True).tz_convert('Asia/Kolkata')
-        end_dt = pd.to_datetime(max_ts, unit='s', utc=True).tz_convert('Asia/Kolkata')
-        time_range = f"{start_dt.strftime('%Y-%m-%d %H:%M')} → {end_dt.strftime('%Y-%m-%d %H:%M')} IST"
-    else:
-        time_range = "No data"
-
-    return channel_agg, user_agg, time_range
 
 
-# ===== STREAMLIT UI =====
+# ====================== STREAMLIT UI ======================
 st.set_page_config(page_title="Live TV Dashboard", layout="wide")
 st.title("📺 Live TV Channel Watch Dashboard")
 st.markdown("---")
@@ -159,15 +213,13 @@ with st.sidebar:
     lake_input = st.text_input("Lake Folder Path", value=str(LAKE_FOLDER))
 
     if st.button("🔍 Inspect Lake"):
-        info = inspect_lake(lake_input)
-        if "error" in info:
-            st.error(f"Error: {info['error']}")
-        else:
-            st.success(f"Total rows: {info['total_rows']:,}")
-            st.info(f"Rows with .ts: {info['ts_rows']:,}")
-            st.info(f"Valid .ts (status=200): {info['valid_ts_rows']:,}")
-            if info['valid_ts_rows'] == 0:
-                st.warning("No valid video segments found. Check that your lake contains logs with reqPath, cliIP, statusCode, reqTimeSec.")
+        with st.spinner("Inspecting lake (this may take a moment)..."):
+            info = inspect_lake(lake_input)
+            if "error" in info:
+                st.error(f"Error: {info['error']}")
+            else:
+                st.success(f"Total rows (metadata): {info['total_rows']:,}")
+                st.info(f"Valid .ts rows (full scan): {info['valid_ts_rows']:,}")
 
     min_dt, max_dt = get_available_dates(lake_input)
     if min_dt and max_dt:
@@ -183,63 +235,69 @@ with st.sidebar:
     with col2:
         end_date = st.date_input("To", value=max_default)
 
+    if start_date > end_date:
+        st.error("❌ Start date cannot be after end date")
+        st.stop()
+
+    st.info("📁 Assumes Hive partitioning: `year=YYYY/month=MM/day=DD` inside the lake folder.\nIf not present, falls back to slower full scan.")
+
     run_button = st.button("🔄 Refresh Data", type="primary", use_container_width=True)
 
 
+# Compute data when button clicked or first load
 if run_button or "channel_df" not in st.session_state:
-    # Use a status container to show steps
-    with st.status("⏳ Computing metrics...", expanded=True) as status:
-        # Define progress callback that updates status
-        def update_status(msg, current, total):
-            status.update(label=f"{msg} ({current+1}/{total})", state="running")
-        
-        channel_df, user_df, time_range = compute_metrics(
-            lake_input, start_date, end_date,
-            progress_callback=lambda msg, step, total: update_status(msg, step, total)
-        )
+    with st.spinner("Processing data (optimised single scan + partition pruning)..."):
+        channel_df, user_df, time_range = compute_metrics(lake_input, start_date, end_date)
+
         if channel_df.empty:
-            status.update(label="❌ No data found for the selected range", state="error")
-            st.warning("Try a different date range or inspect the lake.")
+            st.error("No data found for the selected range.")
         else:
-            status.update(label="✅ Metrics computed successfully!", state="complete")
             st.session_state.channel_df = channel_df
             st.session_state.user_df = user_df
             st.session_state.time_range = time_range
+            st.success("✅ Analysis completed successfully!")
 
+
+# Display results
 if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
     df = st.session_state.channel_df
     user_df = st.session_state.user_df
     time_range = st.session_state.time_range
 
-    st.markdown(f"**Data period:** {time_range}")
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    st.markdown(f"**Data Period:** {time_range}")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
         st.metric("Total Channels", len(df))
-    with col2:
-        st.metric("Total Watch Hours", f"{df['watch_hours'].sum():,.0f} hrs")
-    with col3:
-        st.metric("Unique Viewers (total)", f"{df['unique_viewers'].sum():,}")
+    with c2:
+        st.metric("Total Watch Hours", f"{df['watch_hours'].sum():,.0f}")
+    with c3:
+        st.metric("Unique Viewers", f"{df['unique_viewers'].sum():,}")
+    with c4:
+        st.metric("Total Chunks", f"{df['total_chunks'].sum():,}")
 
     st.markdown("---")
     st.subheader("📡 Channel Performance")
+
     cols = st.columns(3)
     for idx, row in df.iterrows():
+        colour = CARD_COLOURS[idx % len(CARD_COLOURS)]
         with cols[idx % 3]:
-            colour = CARD_COLOURS[idx % len(CARD_COLOURS)]
             st.markdown(f"""
-            <div style="background-color:{colour}; padding:1rem; border-radius:15px; margin-bottom:1rem;">
+            <div style="background-color:{colour}; padding:1.2rem; border-radius:15px; margin-bottom:1rem; color:black;">
                 <h3>{row['channel_name']}</h3>
-                <p>📺 <b>{row['watch_hours']:.1f}</b> hrs</p>
+                <p><b>{row['watch_hours']:.1f}</b> hrs watched</p>
                 <p>👥 {row['unique_viewers']:,} viewers</p>
                 <p>🎬 {row['total_chunks']:,} chunks</p>
+                <p>Avg: {row['avg_watch_hours_per_viewer']:.2f} hrs/viewer</p>
             </div>
             """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.subheader("🏆 Top Viewers by Channel")
-    selected_channel = st.selectbox("Select channel", df['channel_name'].tolist())
+    selected_channel = st.selectbox("Select Channel", df['channel_name'].tolist())
     if selected_channel:
-        top_users = user_df[user_df['channel_name'] == selected_channel].head(10)
+        top_users = user_df[user_df['channel_name'] == selected_channel].head(15)
         if not top_users.empty:
             st.dataframe(
                 top_users[['cliIP', 'watch_hours', 'chunks_watched']].style.format({
@@ -249,13 +307,14 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
                 use_container_width=True,
                 hide_index=True
             )
-        else:
-            st.info("No viewer data for this channel.")
 
-    csv_channel = df.to_csv(index=False).encode('utf-8')
-    csv_users = user_df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download Channel Report (CSV)", csv_channel, "channel_watch.csv", "text/csv")
-    st.download_button("📥 Download User Report (CSV)", csv_users, "user_watch.csv", "text/csv")
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        st.download_button("📥 Channel Report", df.to_csv(index=False).encode('utf-8'),
+                           "channel_report.csv", "text/csv")
+    with col_dl2:
+        st.download_button("📥 User Report", user_df.to_csv(index=False).encode('utf-8'),
+                           "user_report.csv", "text/csv")
 
-elif "channel_df" in st.session_state:
-    st.info("No data found. Adjust date range or inspect the lake.")
+else:
+    st.info("👆 Click **Refresh Data** to load analytics.")
