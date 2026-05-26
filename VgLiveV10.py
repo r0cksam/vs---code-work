@@ -85,6 +85,16 @@ CHANNEL_MAP_RAW = {
     "1080p":              "Other",
     "out":                "Other",
     "unknown":            "Other",
+    "national":   "DD National",
+    "b4umo001":   "B4U Movies",
+    "b4um001":    "B4U Music",
+    "b4ua001":    "B4U ??? Kadak",      # ← confirm with your team first
+    "nnup":       "NewsNation UP/UK",
+    "nnpunj":     "NewsNation Punjab",
+    "nnbrjh":     "NewsNation BR/JH",
+    "nnmp":       "NewsNation MP/CH",
+    "punjabshort":"Punjabi Shorts",
+# "out" already maps to Other, leave it
 }
 
 # Build a lowercase lookup dict once at module load
