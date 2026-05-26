@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VgLive · Live TV Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #030712;
+    --bg2:       #080f1a;
+    --bg3:       #0b1628;
+    --panel:     rgba(10, 20, 40, 0.85);
+    --border:    rgba(0,255,200,0.12);
+    --cyan:      #00ffe0;
+    --pink:      #ff2d78;
+    --yellow:    #ffe900;
+    --purple:    #b347ff;
+    --blue:      #2d8fff;
+    --green:     #00ff88;
+    --text:      #c8e6f5;
+    --text-dim:  #4a6d8a;
+    --mono:      'Share Tech Mono', monospace;
+    --display:   'Orbitron', sans-serif;
+    --body-font: 'Rajdhani', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body-font);
+    font-size: 16px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* ── Scanline overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.18) 2px,
+      rgba(0,0,0,0.18) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* ── Grid bg ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,200,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,200,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Glow orbs ── */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.18;
+    pointer-events: none;
+    z-index: 0;
+    animation: drift 12s ease-in-out infinite alternate;
+  }
+  .orb-1 { width: 600px; height: 600px; background: var(--cyan);   top: -200px; left: -150px; animation-delay: 0s; }
+  .orb-2 { width: 500px; height: 500px; background: var(--pink);   bottom: -150px; right: -100px; animation-delay: 4s; }
+  .orb-3 { width: 400px; height: 400px; background: var(--purple); top: 40%; left: 50%; animation-delay: 8s; }
+  @keyframes drift {
+    from { transform: translate(0,0) scale(1); }
+    to   { transform: translate(30px, 20px) scale(1.05); }
+  }
+
+  /* ── Layout ── */
+  .wrapper {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 28px 60px;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 40px 0 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .logo-area { display: flex; flex-direction: column; gap: 4px; }
+  .logo {
+    font-family: var(--display);
+    font-size: clamp(1.4rem, 3vw, 2.2rem);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    background: linear-gradient(90deg, var(--cyan), var(--blue), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+  }
+  .logo span {
+    font-size: 0.45em;
+    font-weight: 400;
+    letter-spacing: 0.3em;
+    -webkit-text-fill-color: var(--text-dim);
+  }
+  .meta-pill {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  }
+  .pill {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    padding: 4px 12px;
+    border-radius: 100px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .pill-cyan   { border-color: var(--cyan);   color: var(--cyan);   background: rgba(0,255,224,0.07); }
+  .pill-pink   { border-color: var(--pink);   color: var(--pink);   background: rgba(255,45,120,0.07); }
+  .pill-yellow { border-color: var(--yellow); color: var(--yellow); background: rgba(255,233,0,0.07); }
+
+  .reload-btn {
+    font-family: var(--display);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    padding: 10px 22px;
+    border: 1px solid var(--cyan);
+    background: rgba(0,255,224,0.06);
+    color: var(--cyan);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.25s, box-shadow 0.25s;
+  }
+  .reload-btn:hover {
+    background: rgba(0,255,224,0.18);
+    box-shadow: 0 0 20px rgba(0,255,224,0.35);
+  }
+
+  /* ── Section header ── */
+  .section-title {
+    font-family: var(--display);
+    font-size: 0.72rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border), transparent);
+  }
+  .section-title .dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    animation: blink 2s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .dot-cyan   { background: var(--cyan);   box-shadow: 0 0 6px var(--cyan); }
+  .dot-pink   { background: var(--pink);   box-shadow: 0 0 6px var(--pink); }
+  .dot-yellow { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+  .dot-purple { background: var(--purple); box-shadow: 0 0 6px var(--purple); }
+
+  /* ── KPI Row ── */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 32px 0;
+  }
+  @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .kpi-row { grid-template-columns: 1fr; } }
+
+  .kpi-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 20px 20px;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(8px);
+    transition: transform 0.25s, box-shadow 0.25s;
+  }
+  .kpi-card:hover { transform: translateY(-3px); }
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .kpi-card.c-cyan::before   { background: linear-gradient(90deg, var(--cyan), transparent);   box-shadow: 0 0 12px var(--cyan); }
+  .kpi-card.c-pink::before   { background: linear-gradient(90deg, var(--pink), transparent);   box-shadow: 0 0 12px var(--pink); }
+  .kpi-card.c-yellow::before { background: linear-gradient(90deg, var(--yellow), transparent); box-shadow: 0 0 12px var(--yellow); }
+  .kpi-card.c-purple::before { background: linear-gradient(90deg, var(--purple), transparent); box-shadow: 0 0 12px var(--purple); }
+  .kpi-card:hover.c-cyan   { box-shadow: 0 0 30px rgba(0,255,224,0.18); }
+  .kpi-card:hover.c-pink   { box-shadow: 0 0 30px rgba(255,45,120,0.18); }
+  .kpi-card:hover.c-yellow { box-shadow: 0 0 30px rgba(255,233,0,0.18); }
+  .kpi-card:hover.c-purple { box-shadow: 0 0 30px rgba(179,71,255,0.18); }
+
+  .kpi-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .kpi-value {
+    font-family: var(--display);
+    font-size: clamp(1.5rem, 2.5vw, 2rem);
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .kpi-card.c-cyan   .kpi-value { color: var(--cyan);   text-shadow: 0 0 20px rgba(0,255,224,0.5); }
+  .kpi-card.c-pink   .kpi-value { color: var(--pink);   text-shadow: 0 0 20px rgba(255,45,120,0.5); }
+  .kpi-card.c-yellow .kpi-value { color: var(--yellow); text-shadow: 0 0 20px rgba(255,233,0,0.5); }
+  .kpi-card.c-purple .kpi-value { color: var(--purple); text-shadow: 0 0 20px rgba(179,71,255,0.5); }
+  .kpi-sub { font-size: 0.75rem; color: var(--text-dim); font-family: var(--mono); }
+
+  /* ── Channel Cards Grid ── */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  @media (max-width: 900px) { .cards-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .cards-grid { grid-template-columns: 1fr; } }
+
+  .ch-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(8px);
+    transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+    cursor: default;
+    animation: fadeUp 0.5s both;
+  }
+  @keyframes fadeUp {
+    from { opacity:0; transform: translateY(18px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+  .ch-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--card-accent);
+    box-shadow: 0 0 28px var(--card-glow);
+  }
+  .ch-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-accent);
+    box-shadow: 0 0 14px var(--card-glow);
+  }
+  .ch-card::after {
+    content: attr(data-rank);
+    position: absolute;
+    top: 16px; right: 16px;
+    font-family: var(--display);
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    color: var(--card-accent);
+    opacity: 0.5;
+  }
+
+  .ch-name {
+    font-family: var(--display);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 14px;
+    color: #fff;
+    padding-right: 36px;
+  }
+
+  .ch-stats { display: flex; flex-direction: column; gap: 8px; }
+  .ch-stat {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.82rem;
+  }
+  .ch-stat-label {
+    font-family: var(--mono);
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+  }
+  .ch-stat-val {
+    font-family: var(--mono);
+    color: var(--card-accent);
+    font-size: 0.82rem;
+  }
+
+  /* bar spark */
+  .bar-wrap {
+    margin-top: 14px;
+    height: 3px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--card-accent);
+    box-shadow: 0 0 8px var(--card-glow);
+    transition: width 1.2s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  /* ── Other row ── */
+  .other-row {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 14px 20px;
+    display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+  }
+  .other-row span { color: var(--text); }
+
+  /* ── Chart section ── */
+  .chart-section { margin: 32px 0; }
+  .chart-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+  }
+
+  /* ── Horizontal bar chart ── */
+  .hbar-list { display: flex; flex-direction: column; gap: 14px; }
+  .hbar-item { display: flex; align-items: center; gap: 14px; }
+  .hbar-label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    white-space: nowrap;
+    width: 140px;
+    flex-shrink: 0;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    color: var(--text);
+  }
+  .hbar-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .hbar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1.5s cubic-bezier(0.4,0,0.2,1);
+  }
+  .hbar-val {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    white-space: nowrap;
+    width: 80px;
+    text-align: right;
+    color: var(--text-dim);
+  }
+
+  /* ── Two-col layout ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 32px 0; }
+  @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ── Top viewers table ── */
+  .tab-container {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    backdrop-filter: blur(8px);
+  }
+  .tab-toolbar {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .ch-select {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    padding: 7px 12px;
+    border-radius: 6px;
+    outline: none;
+    cursor: pointer;
+    flex: 1;
+    min-width: 160px;
+  }
+  .ch-select:focus { border-color: var(--cyan); box-shadow: 0 0 8px rgba(0,255,224,0.2); }
+  .tab-inner { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 12px 20px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr {
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: rgba(0,255,224,0.03); }
+  tbody td {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    padding: 10px 20px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  tbody td:first-child { color: var(--text-dim); font-size: 0.65rem; }
+  .rank-badge {
+    display: inline-block;
+    width: 22px; height: 22px;
+    line-height: 22px;
+    text-align: center;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-family: var(--display);
+  }
+  .rank-1 { background: rgba(255,233,0,0.18); color: var(--yellow); border: 1px solid var(--yellow); }
+  .rank-2 { background: rgba(0,255,224,0.12); color: var(--cyan);   border: 1px solid var(--cyan); }
+  .rank-3 { background: rgba(179,71,255,0.12); color: var(--purple); border: 1px solid var(--purple); }
+
+  /* ── Download buttons ── */
+  .dl-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 32px 0; }
+  .dl-btn {
+    font-family: var(--display);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 11px 22px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid;
+    text-decoration: none;
+    transition: background 0.2s, box-shadow 0.2s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .dl-btn.cyan  { border-color: var(--cyan);  color: var(--cyan);  background: rgba(0,255,224,0.05); }
+  .dl-btn.pink  { border-color: var(--pink);  color: var(--pink);  background: rgba(255,45,120,0.05); }
+  .dl-btn.cyan:hover { background: rgba(0,255,224,0.15); box-shadow: 0 0 18px rgba(0,255,224,0.3); }
+  .dl-btn.pink:hover { background: rgba(255,45,120,0.15); box-shadow: 0 0 18px rgba(255,45,120,0.3); }
+
+  /* ── Cache input ── */
+  .cache-bar {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 32px;
+    backdrop-filter: blur(8px);
+  }
+  .cache-label { font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); white-space: nowrap; }
+  .cache-input {
+    flex: 1; min-width: 200px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border);
+    color: var(--cyan);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    padding: 8px 12px;
+    border-radius: 6px;
+    outline: none;
+  }
+  .cache-input:focus { border-color: var(--cyan); }
+
+  /* ── Debug expander ── */
+  .debug-toggle {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    background: none;
+    border: 1px dashed rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 8px 16px;
+    margin-bottom: 12px;
+    transition: color 0.2s, border-color 0.2s;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .debug-toggle:hover { color: var(--yellow); border-color: var(--yellow); }
+  .debug-panel {
+    display: none;
+    background: var(--panel);
+    border: 1px solid rgba(255,233,0,0.15);
+    border-radius: 10px;
+    padding: 16px;
+    backdrop-filter: blur(8px);
+    margin-bottom: 24px;
+  }
+  .debug-panel.open { display: block; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 0 0;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+  }
+
+  /* ── Accent palette for cards ── */
+  .acc-0  { --card-accent: #00ffe0; --card-glow: rgba(0,255,224,0.25); }
+  .acc-1  { --card-accent: #ff2d78; --card-glow: rgba(255,45,120,0.25); }
+  .acc-2  { --card-accent: #ffe900; --card-glow: rgba(255,233,0,0.25); }
+  .acc-3  { --card-accent: #b347ff; --card-glow: rgba(179,71,255,0.25); }
+  .acc-4  { --card-accent: #2d8fff; --card-glow: rgba(45,143,255,0.25); }
+  .acc-5  { --card-accent: #00ff88; --card-glow: rgba(0,255,136,0.25); }
+  .acc-6  { --card-accent: #ff8c00; --card-glow: rgba(255,140,0,0.25); }
+  .acc-7  { --card-accent: #ff60e0; --card-glow: rgba(255,96,224,0.25); }
+  .acc-8  { --card-accent: #60d0ff; --card-glow: rgba(96,208,255,0.25); }
+  .acc-9  { --card-accent: #a0ff60; --card-glow: rgba(160,255,96,0.25); }
+  .acc-10 { --card-accent: #ff6060; --card-glow: rgba(255,96,96,0.25); }
+  .acc-11 { --card-accent: #60ffcc; --card-glow: rgba(96,255,204,0.25); }
+  .acc-12 { --card-accent: #ffc060; --card-glow: rgba(255,192,96,0.25); }
+  .acc-13 { --card-accent: #c060ff; --card-glow: rgba(192,96,255,0.25); }
+  .acc-14 { --card-accent: #00e0ff; --card-glow: rgba(0,224,255,0.25); }
+
+  /* ── Loading state ── */
+  .loading-overlay {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 500;
+    transition: opacity 0.5s;
+  }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .ld-logo {
+    font-family: var(--display);
+    font-size: 2rem;
+    font-weight: 900;
+    background: linear-gradient(90deg, var(--cyan), var(--blue), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 24px;
+  }
+  .ld-bar { width: 260px; height: 2px; background: rgba(255,255,255,0.06); border-radius: 1px; overflow: hidden; }
+  .ld-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--cyan), var(--purple)); animation: ldFill 1s forwards 0.2s; }
+  @keyframes ldFill { to { width: 100%; } }
+  .ld-text { margin-top: 14px; font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); letter-spacing: 0.2em; animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+
+  .empty-msg {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    padding: 20px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadOverlay">
+  <div class="ld-logo">VgLive</div>
+  <div class="ld-bar"><div class="ld-fill"></div></div>
+  <div class="ld-text">INITIALIZING DASHBOARD</div>
+</div>
+
+<!-- Glow orbs -->
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="logo-area">
+      <div class="logo">VgLive <span>ANALYTICS</span></div>
+      <div class="meta-pill" id="metaPills">
+        <span class="pill pill-cyan" id="pillPeriod">Loading…</span>
+        <span class="pill pill-pink"  id="pillGenerated">—</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span class="pill pill-yellow" id="pillStatus">● CACHE READY</span>
+      <button class="reload-btn" onclick="reloadData()">⟳ RELOAD</button>
+    </div>
+  </header>
+
+  <!-- Cache path input -->
+  <div class="cache-bar" style="margin-top:24px;">
+    <span class="cache-label">CACHE PATH</span>
+    <input class="cache-input" id="cachePath"
+           value="D:\Veto Logs Backup\veto Stream logs\dashboard_cache"
+           placeholder="Paste path to cache folder…" />
+    <button class="reload-btn" onclick="reloadData()">LOAD</button>
+  </div>
+
+  <!-- KPI Row -->
+  <div class="section-title"><span class="dot dot-cyan"></span>System Overview</div>
+  <div class="kpi-row">
+    <div class="kpi-card c-cyan">
+      <div class="kpi-label">Total Channels</div>
+      <div class="kpi-value" id="kpiChannels">—</div>
+      <div class="kpi-sub">active mapped</div>
+    </div>
+    <div class="kpi-card c-pink">
+      <div class="kpi-label">Watch Hours</div>
+      <div class="kpi-value" id="kpiHours">—</div>
+      <div class="kpi-sub">aggregate total</div>
+    </div>
+    <div class="kpi-card c-yellow">
+      <div class="kpi-label">Unique Viewers</div>
+      <div class="kpi-value" id="kpiViewers">—</div>
+      <div class="kpi-sub">distinct IPs</div>
+    </div>
+    <div class="kpi-card c-purple">
+      <div class="kpi-label">Total Chunks</div>
+      <div class="kpi-value" id="kpiChunks">—</div>
+      <div class="kpi-sub">TS segments served</div>
+    </div>
+  </div>
+
+  <!-- Channel Cards -->
+  <div class="section-title"><span class="dot dot-pink"></span>Channel Performance</div>
+  <div class="cards-grid" id="cardsGrid"></div>
+  <div class="other-row" id="otherRow" style="display:none">
+    <span style="color:var(--text-dim)">OTHER / UNMAPPED</span>
+    <span>⏱ <span id="otherHrs">0</span> hrs</span>
+    <span>👥 <span id="otherViewers">0</span> viewers</span>
+    <span>🎬 <span id="otherChunks">0</span> chunks</span>
+  </div>
+
+  <!-- Debug expander -->
+  <button class="debug-toggle" onclick="toggleDebug(this)">
+    <span>▶</span> Show Unmapped Channel IDs
+  </button>
+  <div class="debug-panel" id="debugPanel">
+    <div class="section-title" style="margin-bottom:12px;"><span class="dot dot-yellow"></span>Unmapped Raw IDs</div>
+    <div class="tab-inner">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Channel ID</th><th>Unique Viewers</th><th>Total Chunks</th><th>Watch Hours</th>
+        </tr></thead>
+        <tbody id="unmappedBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="two-col" style="margin-top:32px;">
+    <div>
+      <div class="section-title"><span class="dot dot-cyan"></span>Watch Hours by Channel</div>
+      <div class="chart-box">
+        <div class="hbar-list" id="chartHours"></div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title"><span class="dot dot-purple"></span>Unique Viewers by Channel</div>
+      <div class="chart-box">
+        <div class="hbar-list" id="chartViewers"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Viewers Table -->
+  <div class="section-title"><span class="dot dot-yellow"></span>Top Viewers by Channel</div>
+  <div class="tab-container">
+    <div class="tab-toolbar">
+      <span class="cache-label">CHANNEL</span>
+      <select class="ch-select" id="channelSelect" onchange="renderViewerTable()"></select>
+    </div>
+    <div class="tab-inner">
+      <table>
+        <thead><tr>
+          <th>#</th><th>IP Address</th><th>Watch Hours</th><th>Chunks Watched</th>
+        </tr></thead>
+        <tbody id="viewerBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Downloads -->
+  <div class="section-title" style="margin-top:32px;"><span class="dot dot-cyan"></span>Export Data</div>
+  <div class="dl-row">
+    <a class="dl-btn cyan" id="dlChannel" href="#" onclick="downloadCSV('channel')">⬇ Channel Report</a>
+    <a class="dl-btn pink"  id="dlUser"    href="#" onclick="downloadCSV('user')">⬇ User Report</a>
+  </div>
+
+  <footer>
+    <span>VgLive Dashboard · Neon Edition</span>
+    <span id="footerMeta">Load a cache file to begin</span>
+  </footer>
+</div>
+
+<script>
+// ====================== DATA STORE ======================
+let STATE = {
+  channels: [],   // channel_summary rows
+  users:    [],   // top_users rows
+  unmapped: [],   // unmapped_ids rows
+  meta:     {},
+};
+
+const ACCENT_COLORS = [
+  '#00ffe0','#ff2d78','#ffe900','#b347ff','#2d8fff',
+  '#00ff88','#ff8c00','#ff60e0','#60d0ff','#a0ff60',
+  '#ff6060','#60ffcc','#ffc060','#c060ff','#00e0ff',
+];
+const ACCENT_GLOWS = [
+  'rgba(0,255,224,0.5)','rgba(255,45,120,0.5)','rgba(255,233,0,0.5)',
+  'rgba(179,71,255,0.5)','rgba(45,143,255,0.5)','rgba(0,255,136,0.5)',
+  'rgba(255,140,0,0.5)','rgba(255,96,224,0.5)','rgba(96,208,255,0.5)',
+  'rgba(160,255,96,0.5)','rgba(255,96,96,0.5)','rgba(96,255,204,0.5)',
+  'rgba(255,192,96,0.5)','rgba(192,96,255,0.5)','rgba(0,224,255,0.5)',
+];
+
+// ====================== SAMPLE DATA ======================
+// Pre-loaded sample so the dashboard works out-of-the-box.
+// Replace by uploading real parquet files or paste a JSON cache.
+const SAMPLE_CHANNELS = [
+  {channel_name:"India TV",        watch_hours:14820.5, unique_viewers:52430, total_chunks:8892300, avg_watch_hours_per_viewer:0.28},
+  {channel_name:"NDTV India",      watch_hours:11240.2, unique_viewers:41200, total_chunks:6744120, avg_watch_hours_per_viewer:0.27},
+  {channel_name:"NewsNation",      watch_hours: 8640.1, unique_viewers:32100, total_chunks:5184060, avg_watch_hours_per_viewer:0.27},
+  {channel_name:"B4U Music",       watch_hours: 6320.8, unique_viewers:24800, total_chunks:3792480, avg_watch_hours_per_viewer:0.25},
+  {channel_name:"9XM",             watch_hours: 5100.4, unique_viewers:19300, total_chunks:3060240, avg_watch_hours_per_viewer:0.26},
+  {channel_name:"NDTV Marathi",    watch_hours: 4820.3, unique_viewers:17400, total_chunks:2892180, avg_watch_hours_per_viewer:0.28},
+  {channel_name:"B4U Movies",      watch_hours: 4220.6, unique_viewers:15900, total_chunks:2532360, avg_watch_hours_per_viewer:0.27},
+  {channel_name:"India TV Yoga",   watch_hours: 3610.2, unique_viewers:14100, total_chunks:2166120, avg_watch_hours_per_viewer:0.26},
+  {channel_name:"IndiaTV Cricket", watch_hours: 3210.8, unique_viewers:12800, total_chunks:1926480, avg_watch_hours_per_viewer:0.25},
+  {channel_name:"Sanskaar TV",     watch_hours: 2840.1, unique_viewers:11200, total_chunks:1704060, avg_watch_hours_per_viewer:0.25},
+  {channel_name:"9XM Jalwa",       watch_hours: 2420.5, unique_viewers: 9600, total_chunks:1452300, avg_watch_hours_per_viewer:0.25},
+  {channel_name:"B4U Kadak",       watch_hours: 2180.3, unique_viewers: 8800, total_chunks:1308180, avg_watch_hours_per_viewer:0.25},
+  {channel_name:"GTC News",        watch_hours: 1940.7, unique_viewers: 7500, total_chunks:1164420, avg_watch_hours_per_viewer:0.26},
+  {channel_name:"Shubh TV",        watch_hours: 1620.4, unique_viewers: 6400, total_chunks: 972240, avg_watch_hours_per_viewer:0.25},
+  {channel_name:"Bollywood Masala",watch_hours: 1210.2, unique_viewers: 4800, total_chunks: 726120, avg_watch_hours_per_viewer:0.25},
+  {channel_name:"Other",           watch_hours: 3800.0, unique_viewers:12000, total_chunks:2280000, avg_watch_hours_per_viewer:0.32},
+];
+
+const SAMPLE_USERS = [
+  {channel_name:"India TV", cliIP:"103.21.58.xx",  watch_hours:12.4, chunks_watched:7440},
+  {channel_name:"India TV", cliIP:"49.207.32.xx",  watch_hours:11.2, chunks_watched:6720},
+  {channel_name:"India TV", cliIP:"117.197.14.xx", watch_hours:10.8, chunks_watched:6480},
+  {channel_name:"India TV", cliIP:"182.64.21.xx",  watch_hours: 9.6, chunks_watched:5760},
+  {channel_name:"India TV", cliIP:"14.139.88.xx",  watch_hours: 8.4, chunks_watched:5040},
+  {channel_name:"NDTV India", cliIP:"103.55.12.xx",  watch_hours:14.2, chunks_watched:8520},
+  {channel_name:"NDTV India", cliIP:"49.36.142.xx",  watch_hours:12.8, chunks_watched:7680},
+  {channel_name:"NDTV India", cliIP:"59.179.32.xx",  watch_hours:11.4, chunks_watched:6840},
+  {channel_name:"NDTV India", cliIP:"202.88.241.xx", watch_hours: 9.6, chunks_watched:5760},
+  {channel_name:"NDTV India", cliIP:"157.32.14.xx",  watch_hours: 8.2, chunks_watched:4920},
+  {channel_name:"NewsNation", cliIP:"117.55.12.xx",  watch_hours:10.2, chunks_watched:6120},
+  {channel_name:"NewsNation", cliIP:"49.207.99.xx",  watch_hours: 9.4, chunks_watched:5640},
+  {channel_name:"B4U Music",  cliIP:"103.45.21.xx",  watch_hours:16.8, chunks_watched:10080},
+  {channel_name:"B4U Music",  cliIP:"182.64.55.xx",  watch_hours:14.4, chunks_watched:8640},
+  {channel_name:"9XM",        cliIP:"117.197.55.xx", watch_hours:11.6, chunks_watched:6960},
+];
+
+const SAMPLE_UNMAPPED = [
+  {channel_id:"live-test-001", unique_viewers:420, total_chunks:252000, watch_hours:70.0},
+  {channel_id:"stream_backup", unique_viewers:310, total_chunks:186000, watch_hours:51.7},
+  {channel_id:"hls_proxy",     unique_viewers:180, total_chunks:108000, watch_hours:30.0},
+  {channel_id:"unknown_cdn",   unique_viewers:120, total_chunks: 72000, watch_hours:20.0},
+];
+
+const SAMPLE_META = {
+  generated_at: new Date().toISOString(),
+  start_date:   "2026-01-01",
+  end_date:     "2026-05-25",
+  total_channels: 15,
+  total_watch_hours: 77229.1,
+  total_unique_viewers: 277330,
+  total_chunks: 46363680,
+};
+
+// ====================== UTILS ======================
+function fmt(n) { return Number(n).toLocaleString('en-IN'); }
+function fmtH(n) { return Number(n).toFixed(1); }
+
+// ====================== RENDER ======================
+function render() {
+  const { channels, users, unmapped, meta } = STATE;
+
+  // Meta pills
+  document.getElementById('pillPeriod').textContent    = `${meta.start_date} → ${meta.end_date}`;
+  const genAt = meta.generated_at
+    ? new Date(meta.generated_at).toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    : '—';
+  document.getElementById('pillGenerated').textContent = `Generated: ${genAt}`;
+  document.getElementById('footerMeta').textContent    = `Last cache: ${genAt}`;
+
+  // KPIs
+  document.getElementById('kpiChannels').textContent = fmt(meta.total_channels ?? channels.filter(c=>c.channel_name!=='Other').length);
+  document.getElementById('kpiHours').textContent    = fmt(Math.round(meta.total_watch_hours ?? channels.reduce((a,c)=>a+c.watch_hours,0)));
+  document.getElementById('kpiViewers').textContent  = fmt(meta.total_unique_viewers ?? channels.reduce((a,c)=>a+c.unique_viewers,0));
+  document.getElementById('kpiChunks').textContent   = fmt(meta.total_chunks ?? channels.reduce((a,c)=>a+c.total_chunks,0));
+
+  const mapped = channels.filter(c => c.channel_name !== 'Other');
+  const other  = channels.find(c => c.channel_name === 'Other');
+  const maxHrs = Math.max(...mapped.map(c=>c.watch_hours), 1);
+
+  // Channel cards
+  const grid = document.getElementById('cardsGrid');
+  grid.innerHTML = '';
+  mapped.forEach((ch, i) => {
+    const pct = (ch.watch_hours / maxHrs * 100).toFixed(1);
+    const card = document.createElement('div');
+    card.className = `ch-card acc-${i % 15}`;
+    card.setAttribute('data-rank', `#${i+1}`);
+    card.style.animationDelay = `${i * 0.04}s`;
+    card.innerHTML = `
+      <div class="ch-name">${ch.channel_name}</div>
+      <div class="ch-stats">
+        <div class="ch-stat">
+          <span class="ch-stat-label">WATCH HRS</span>
+          <span class="ch-stat-val">${fmtH(ch.watch_hours)}</span>
+        </div>
+        <div class="ch-stat">
+          <span class="ch-stat-label">VIEWERS</span>
+          <span class="ch-stat-val">${fmt(ch.unique_viewers)}</span>
+        </div>
+        <div class="ch-stat">
+          <span class="ch-stat-label">CHUNKS</span>
+          <span class="ch-stat-val">${fmt(ch.total_chunks)}</span>
+        </div>
+        <div class="ch-stat">
+          <span class="ch-stat-label">AVG HRS/VIEWER</span>
+          <span class="ch-stat-val">${Number(ch.avg_watch_hours_per_viewer).toFixed(2)}</span>
+        </div>
+        <div class="bar-wrap"><div class="bar-fill" style="width:0%" data-pct="${pct}"></div></div>
+      </div>`;
+    grid.appendChild(card);
+  });
+  // Animate bars after paint
+  setTimeout(() => {
+    grid.querySelectorAll('.bar-fill').forEach(b => b.style.width = b.dataset.pct + '%');
+  }, 80);
+
+  // Other row
+  if (other) {
+    document.getElementById('otherRow').style.display = '';
+    document.getElementById('otherHrs').textContent     = fmtH(other.watch_hours);
+    document.getElementById('otherViewers').textContent = fmt(other.unique_viewers);
+    document.getElementById('otherChunks').textContent  = fmt(other.total_chunks);
+  }
+
+  // Horizontal bar charts
+  renderHBar('chartHours',   mapped, 'watch_hours',    v => fmtH(v)+' hrs', ACCENT_COLORS);
+  renderHBar('chartViewers', mapped, 'unique_viewers', v => fmt(v),          ACCENT_COLORS);
+
+  // Channel select
+  const sel = document.getElementById('channelSelect');
+  sel.innerHTML = channels.map(c => `<option value="${c.channel_name}">${c.channel_name}</option>`).join('');
+  renderViewerTable();
+
+  // Unmapped table
+  const ubody = document.getElementById('unmappedBody');
+  ubody.innerHTML = unmapped.length
+    ? unmapped.slice(0,50).map((r,i) => `<tr>
+        <td>${i+1}</td>
+        <td>${r.channel_id}</td>
+        <td>${fmt(r.unique_viewers)}</td>
+        <td>${fmt(r.total_chunks)}</td>
+        <td>${fmtH(r.watch_hours)} hrs</td>
+      </tr>`).join('')
+    : '<tr><td colspan="5" class="empty-msg">No unmapped IDs — all resolved!</td></tr>';
+}
+
+function renderHBar(containerId, data, field, fmt_fn, colors) {
+  const container = document.getElementById(containerId);
+  const sorted = [...data].sort((a,b) => b[field] - a[field]).slice(0,12);
+  const max = Math.max(...sorted.map(d=>d[field]), 1);
+  container.innerHTML = sorted.map((d,i) => {
+    const pct = (d[field]/max*100).toFixed(1);
+    return `<div class="hbar-item">
+      <div class="hbar-label" title="${d.channel_name}">${d.channel_name}</div>
+      <div class="hbar-track">
+        <div class="hbar-fill" style="width:0%;background:${colors[i%colors.length]}" data-pct="${pct}"></div>
+      </div>
+      <div class="hbar-val">${fmt_fn(d[field])}</div>
+    </div>`;
+  }).join('');
+  setTimeout(() => {
+    container.querySelectorAll('.hbar-fill').forEach(b => b.style.width = b.dataset.pct + '%');
+  }, 120);
+}
+
+function renderViewerTable() {
+  const ch = document.getElementById('channelSelect').value;
+  const rows = STATE.users.filter(u => u.channel_name === ch).slice(0,15);
+  const tbody = document.getElementById('viewerBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-msg">No viewer data for this channel.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map((r,i) => {
+    const badge = i < 3
+      ? `<span class="rank-badge rank-${i+1}">${i+1}</span>`
+      : `<span style="color:var(--text-dim);font-size:0.7rem">${i+1}</span>`;
+    return `<tr>
+      <td>${badge}</td>
+      <td>${r.cliIP}</td>
+      <td>${fmtH(r.watch_hours)} hrs</td>
+      <td>${fmt(r.chunks_watched)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleDebug(btn) {
+  const panel = document.getElementById('debugPanel');
+  panel.classList.toggle('open');
+  btn.querySelector('span').textContent = panel.classList.contains('open') ? '▼' : '▶';
+}
+
+// ====================== DOWNLOAD ======================
+function downloadCSV(type) {
+  const data   = type === 'channel' ? STATE.channels : STATE.users;
+  if (!data.length) return;
+  const keys   = Object.keys(data[0]);
+  const rows   = [keys.join(','), ...data.map(r => keys.map(k => r[k]).join(','))];
+  const blob   = new Blob([rows.join('\n')], {type:'text/csv'});
+  const url    = URL.createObjectURL(blob);
+  const a      = document.createElement('a');
+  a.href = url;
+  a.download = type === 'channel' ? 'channel_report.csv' : 'user_report.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ====================== LOAD / INIT ======================
+function reloadData() {
+  // In a real deployment you'd fetch JSON generated by generate_cache.py.
+  // For now, reload sample data + show instructions.
+  loadSampleData();
+}
+
+function loadSampleData() {
+  STATE.channels = SAMPLE_CHANNELS;
+  STATE.users    = SAMPLE_USERS;
+  STATE.unmapped = SAMPLE_UNMAPPED;
+  STATE.meta     = SAMPLE_META;
+  render();
+}
+
+// File drop / JSON import
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const json = JSON.parse(ev.target.result);
+      if (json.channels) STATE.channels = json.channels;
+      if (json.users)    STATE.users    = json.users;
+      if (json.unmapped) STATE.unmapped = json.unmapped;
+      if (json.meta)     STATE.meta     = json.meta;
+      render();
+    } catch(e) { alert('Invalid JSON cache file.'); }
+  };
+  reader.readAsText(file);
+});
+
+// Boot
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    document.getElementById('loadOverlay').classList.add('hidden');
+    loadSampleData();
+  }, 1200);
+});
+</script>
+</body>
+</html>

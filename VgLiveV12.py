@@ -3,18 +3,15 @@ import pandas as pd
 import duckdb
 from pathlib import Path
 from datetime import datetime, time, timedelta
-import re
 from urllib.parse import unquote
 
 # ====================== CONFIG ======================
 LAKE_FOLDER = Path(r"D:\Veto Logs Backup\veto Stream logs\lake")
 CHUNK_DURATION_SECONDS = 6
-CHUNK_DURATION_HOURS = CHUNK_DURATION_SECONDS / 3600.0
+CHUNK_DURATION_HOURS   = CHUNK_DURATION_SECONDS / 3600.0
 
-# ====================== CHANNEL MAP (all lowercase keys) ======================
-# Keys are always lowercased before lookup, so no need for case variants here.
+# ====================== CHANNEL MAP ======================
 CHANNEL_MAP_RAW = {
-    # vglive-sk IDs
     "vglive-sk-274906": "India TV",
     "vglive-sk-385006": "India TV Yoga",
     "vglive-sk-479089": "India TV SpeedNews",
@@ -23,138 +20,110 @@ CHANNEL_MAP_RAW = {
     "vglive-sk-238731": "NDTV Marathi",
     "vglive-sk-639201": "IndiaTV Cricket",
     "vglive-sk-834057": "NDTV India",
-
-    # path-segment IDs
-    "indiatv":            "India TV",
-    "india%20tv":         "India TV",
-    "ndtv_india":         "NDTV India",
-    "ndtvindia":          "NDTV India",
-    "ctvndtvindia":       "NDTV India",
-    "ndtv india":         "NDTV India",
-    "speednews":          "India TV SpeedNews",
-    "ndtv_marathi":       "NDTV Marathi",
-    "ndtvmarathi":        "NDTV Marathi",
-    "ctvndtvmarathi":     "NDTV Marathi",
-    "b4u_music":          "B4U Music",
-    "b4umusic":           "B4U Music",
-    "b4u_movies":         "B4U Movies",
-    "b4umovies":          "B4U Movies",
-    "b4u_kadak":          "B4U Kadak",
-    "b4ukadak":           "B4U Kadak",
-    "b4u_bhojpuri":       "B4U Bhojpuri",
-    "b4ubhojpuri":        "B4U Bhojpuri",
-    "b4u bhojpuri":       "B4U Bhojpuri",
-    "9xm":                "9XM",
-    "9xm_jalwa":          "9XM Jalwa",
-    "9xmjalwa":           "9XM Jalwa",
-    "9xjalwa":            "9XM Jalwa",
-    "9xm_tashan":         "9XM Tashan",
-    "9xmtashan":          "9XM Tashan",
-    "9xtashan":           "9XM Tashan",
-    "9xm_jhakaas":        "9XM Jhakaas",
-    "9xmjhakaas":         "9XM Jhakaas",
-    "9xjhakaas":          "9XM Jhakaas",
-    "sanskaartv":         "Sanskaar TV",
-    "sanskaar":           "Sanskaar TV",
-    "sanskar":            "Sanskaar TV",
-    "satsanghtv":         "Satsangh TV",
-    "satsangh":           "Satsangh TV",
-    "satsang":            "Satsangh TV",
-    "shubhtv":            "Shubh TV",
-    "shubh":              "Shubh TV",
-    "aapkiadalat":        "India TV Adalat",
-    "yogatv":             "India TV Yoga",
-    "yoga":               "India TV Yoga",
-    "manorama":           "Manorama",
-    "newsnation":         "NewsNation",
-    "news nation":        "NewsNation",
-    "newsnation_upuk":    "NewsNation UP/UK",
-    "newsnation_pbhr":    "NewsNation PB/HR",
-    "newsnation_mpch":    "NewsNation MP/CH",
-    "newsnation_brjh":    "NewsNation BR/JH",
-    "newsnation upuk":    "NewsNation UP/UK",
-    "gtc_news":           "GTC News",
-    "gtcnews":            "GTC News",
-    "gtc_punjabi":        "GTC Punjabi",
-    "gtcpunjabi":         "GTC Punjabi",
-    "punjabi_shorts":     "Punjabi Shorts",
-    "bollywoodmasala":    "Bollywood Masala",
-    "bollywood masala":   "Bollywood Masala",
-    "vetocricketlive":    "Veto Cricket Live",
-    "indiatvcrk":         "IndiaTV Cricket",
-    "1080p":              "Other",
-    "out":                "Other",
-    "unknown":            "Other",
-    "national":           "DD National",
-    "b4umo001":           "B4U Movies",
-    "b4um001":            "B4U Music",
-    "b4ua001":            "B4U ??? Kadak",          # ✅ fixed
-    "nnup":               "NewsNation UP/UK",
-    "nnpunj":             "NewsNation Punjab",
-    "nnbrjh":             "NewsNation BR/JH",
-    "nnmp":               "NewsNation MP/CH",
-    "punjabshort":        "Punjabi Shorts",
-    "9x_tashan":          "9XM Tashan",
-    "9x_jhakaas":         "9XM Jhakaas",
-    "9x_jalwa":           "9XM Jalwa",
-    # ----- added missing resolution & master keys -----
-    "720p":               "Other",
-    "480p":               "Other",
-    "360p":               "Other",
-    "master_1080":        "Other",
-    "master_720":         "Other",
-    "master_360":         "Other",
-    "master_504":         "Other",
+    "indiatv": "India TV",
+    "india%20tv": "India TV",
+    "india tv": "India TV",
+    "speednews": "India TV SpeedNews",
+    "aapkiadalat": "India TV Adalat",
+    "yogatv": "India TV Yoga",
+    "yoga": "India TV Yoga",
+    "indiatvcrk": "IndiaTV Cricket",
+    "ndtv_india": "NDTV India",
+    "ndtvindia": "NDTV India",
+    "ctvndtvindia": "NDTV India",
+    "ndtv india": "NDTV India",
+    "ndtv_marathi": "NDTV Marathi",
+    "ndtvmarathi": "NDTV Marathi",
+    "ctvndtvmarathi": "NDTV Marathi",
+    "b4u_music": "B4U Music",
+    "b4umusic": "B4U Music",
+    "b4um001": "B4U Music",
+    "b4u_movies": "B4U Movies",
+    "b4umovies": "B4U Movies",
+    "b4umo001": "B4U Movies",
+    "b4u_kadak": "B4U Kadak",
+    "b4ukadak": "B4U Kadak",
+    "b4ua001": "B4U Kadak",
+    "b4u_bhojpuri": "B4U Bhojpuri",
+    "b4ubhojpuri": "B4U Bhojpuri",
+    "b4u bhojpuri": "B4U Bhojpuri",
+    "9xm": "9XM",
+    "9xm_jalwa": "9XM Jalwa",
+    "9xmjalwa": "9XM Jalwa",
+    "9xjalwa": "9XM Jalwa",
+    "9xm_tashan": "9XM Tashan",
+    "9xmtashan": "9XM Tashan",
+    "9xtashan": "9XM Tashan",
+    "9xm_jhakaas": "9XM Jhakaas",
+    "9xmjhakaas": "9XM Jhakaas",
+    "9xjhakaas": "9XM Jhakaas",
+    "newsnation": "NewsNation",
+    "news nation": "NewsNation",
+    "newsnation_upuk": "NewsNation UP/UK",
+    "newsnation upuk": "NewsNation UP/UK",
+    "nnup": "NewsNation UP/UK",
+    "newsnation_pbhr": "NewsNation PB/HR",
+    "newsnation_mpch": "NewsNation MP/CH",
+    "nnmp": "NewsNation MP/CH",
+    "newsnation_brjh": "NewsNation BR/JH",
+    "nnbrjh": "NewsNation BR/JH",
+    "nnpunj": "NewsNation Punjab",
+    "gtc_news": "GTC News",
+    "gtcnews": "GTC News",
+    "gtc_punjabi": "GTC Punjabi",
+    "gtcpunjabi": "GTC Punjabi",
+    "sanskaartv": "Sanskaar TV",
+    "sanskaar": "Sanskaar TV",
+    "sanskar": "Sanskaar TV",
+    "satsanghtv": "Satsangh TV",
+    "satsangh": "Satsangh TV",
+    "satsang": "Satsangh TV",
+    "shubhtv": "Shubh TV",
+    "shubh": "Shubh TV",
+    "manorama": "Manorama",
+    "national": "DD National",
+    "punjabi_shorts": "Punjabi Shorts",
+    "punjabshort": "Punjabi Shorts",
+    "bollywoodmasala": "Bollywood Masala",
+    "bollywood masala": "Bollywood Masala",
+    "vetocricketlive": "Veto Cricket Live",
+    "1080p": "Other",
+    "720p": "Other",
+    "480p": "Other",
+    "360p": "Other",
+    "master_1080": "Other",
+    "master_720": "Other",
+    "master_360": "Other",
+    "master_504": "Other",
+    "out": "Other",
+    "unknown": "Other",
 }
-
-# Build a lowercase lookup dict once at module load
 CHANNEL_MAP = {k.lower(): v for k, v in CHANNEL_MAP_RAW.items()}
 
-# ====================== CARD COLOURS ======================
-CARD_COLOURS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
-                "#DDA0DD", "#98D8C8", "#F7C6C6", "#B5D4F4", "#C0DD97"]
+CARD_COLOURS = [
+    "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
+    "#DDA0DD", "#98D8C8", "#F7C6C6", "#B5D4F4", "#C0DD97",
+    "#FFB347", "#87CEEB", "#DEB887", "#90EE90", "#FFB6C1",
+]
 
-
-# ====================== CHANNEL RESOLUTION (Python-side, after SQL extract) ======================
 def resolve_channel(raw_id: str) -> str:
-    """
-    Maps a raw channel_id string (extracted from reqPath) to a friendly name.
-    Steps:
-      1. URL-decode (%20 etc.)
-      2. Lowercase + strip surrounding slashes/spaces
-      3. Direct dict lookup
-      4. Prefix-match fallback (e.g. 'newsnation' catches 'newsnation_xyz')
-      5. Fall back to 'Other'
-    """
     if not raw_id or not isinstance(raw_id, str):
         return "Other"
-
-    # URL-decode (handles %20, %2F, etc.)
     decoded = unquote(raw_id).strip().strip("/").strip()
     lower = decoded.lower()
-
-    # Direct lookup
     if lower in CHANNEL_MAP:
         return CHANNEL_MAP[lower]
-
-    # Prefix-match (longest match wins)
-    best = None
-    best_len = 0
+    best, best_len = None, 0
     for key, name in CHANNEL_MAP.items():
         if lower.startswith(key) and len(key) > best_len:
             best, best_len = name, len(key)
     if best:
         return best
-
-    # Partial-match fallback: does the ID contain a known key?
     for key, name in sorted(CHANNEL_MAP.items(), key=lambda x: -len(x[0])):
         if key and key in lower:
             return name
-
     return "Other"
 
-
-# ====================== FAST DATE RETRIEVAL ======================
 @st.cache_data(ttl=86400)
 def get_available_dates(lake_path):
     lake_path = Path(lake_path)
@@ -181,19 +150,17 @@ def get_available_dates(lake_path):
             FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
         """).fetchone()
         if result and result[0] and result[1]:
-            return datetime.fromtimestamp(float(result[0])), datetime.fromtimestamp(float(result[1]))
+            return (datetime.fromtimestamp(float(result[0])),
+                    datetime.fromtimestamp(float(result[1])))
     except Exception:
         pass
     finally:
         con.close()
     return None, None
 
-
-# ====================== LAKE INSPECTION ======================
 def inspect_lake(lake_path):
     lake_path = Path(lake_path)
-    parquet_files = list(lake_path.glob("**/*.parquet"))
-    if not parquet_files:
+    if not list(lake_path.glob("**/*.parquet")):
         return {"error": "No parquet files found in the lake folder."}
     con = duckdb.connect()
     try:
@@ -202,49 +169,32 @@ def inspect_lake(lake_path):
             FROM parquet_metadata('{lake_path.as_posix()}/**/*.parquet')
         """).fetchdf()
         total_rows = int(meta_df["total_rows"].iloc[0]) if not meta_df.empty else 0
-        try:
-            valid_ts = con.execute(f"""
-                SELECT COUNT(*) FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
-                WHERE statusCode = '200' AND reqPath LIKE '%.ts'
-            """).fetchone()[0]
-        except Exception:
-            valid_ts = "unknown (query failed)"
+        valid_ts = con.execute(f"""
+            SELECT COUNT(*) FROM read_parquet('{lake_path.as_posix()}/**/*.parquet', hive_partitioning=1)
+            WHERE statusCode = '200' AND reqPath LIKE '%.ts'
+        """).fetchone()[0]
         return {"total_rows": total_rows, "valid_ts_rows": valid_ts}
     except Exception as e:
         return {"error": str(e)}
     finally:
         con.close()
 
-
-# ====================== PARTITION FILTER ======================
 def build_partition_filter(start_date, end_date):
-    filters = []
-    current = start_date
+    filters, current = [], start_date
     while current <= end_date:
-        filters.append(
-            f"(year = {current.year} AND month = {current.month} AND day = {current.day})"
-        )
+        filters.append(f"(year = {current.year} AND month = {current.month} AND day = {current.day})")
         current += timedelta(days=1)
     return " OR ".join(filters) if filters else "1=1"
 
-
-# ====================== MAIN METRICS ======================
 @st.cache_data(ttl=7200, show_spinner=False)
 def compute_metrics(lake_path, start_date, end_date):
     lake_path = Path(lake_path)
     con = duckdb.connect()
-
     try:
         start_epoch = int(datetime.combine(start_date, time.min).timestamp())
         end_epoch   = int(datetime.combine(end_date,   time.max).timestamp())
         partition_filter = build_partition_filter(start_date, end_date)
 
-        # ── SQL extraction ──────────────────────────────────────────────────
-        # Priority order for channel_id extraction from reqPath:
-        #   1. vglive-sk-XXXXXX  (full token)
-        #   2. First path segment (skip 'v1' and move to second if so)
-        #   3. Filename stem before .ts
-        # Everything is lowercased in SQL so Python resolve_channel gets clean input.
         con.execute(f"""
             CREATE TEMP TABLE base_tmp AS
             SELECT
@@ -253,16 +203,14 @@ def compute_metrics(lake_path, start_date, end_date):
                     CASE
                         WHEN reqPath LIKE '%vglive-sk-%'
                             THEN regexp_extract(reqPath, '(vglive-sk-[0-9]+)', 1)
-
                         WHEN reqPath LIKE '%/%' THEN
                             CASE
-                                WHEN lower(split_part(ltrim(reqPath, '/'), '/', 1)) IN ('v1', 'live', 'stream', 'hls', '')
+                                WHEN lower(split_part(ltrim(reqPath, '/'), '/', 1))
+                                     IN ('v1', 'live', 'stream', 'hls', '')
                                     THEN split_part(ltrim(reqPath, '/'), '/', 2)
                                 ELSE split_part(ltrim(reqPath, '/'), '/', 1)
                             END
-
                         ELSE
-                            -- flat filename: strip trailing segment like _1080p, _720p, numbers
                             regexp_replace(
                                 regexp_extract(reqPath, '([^/]+)\\.ts$', 1),
                                 '[_-]?(1080p?|720p?|480p?|360p?|\\d+)$', ''
@@ -276,7 +224,6 @@ def compute_metrics(lake_path, start_date, end_date):
               AND ({partition_filter})
         """)
 
-        # Raw channel aggregation (we do name resolution in Python)
         raw_channel_df = con.execute("""
             SELECT
                 channel_id,
@@ -286,7 +233,6 @@ def compute_metrics(lake_path, start_date, end_date):
             GROUP BY channel_id
         """).fetchdf()
 
-        # User-level data (top 20 000)
         user_df = con.execute("""
             SELECT
                 channel_id,
@@ -298,35 +244,37 @@ def compute_metrics(lake_path, start_date, end_date):
             LIMIT 20000
         """).fetchdf()
 
+        unmapped_raw_df = raw_channel_df.copy()
         con.execute("DROP TABLE base_tmp")
 
         if raw_channel_df.empty:
-            return pd.DataFrame(), pd.DataFrame(), "No data found in selected date range."
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), "No data found."
 
-        # ── Python-side name resolution ─────────────────────────────────────
         raw_channel_df["channel_name"] = raw_channel_df["channel_id"].apply(resolve_channel)
         user_df["channel_name"]        = user_df["channel_id"].apply(resolve_channel)
 
-        # Aggregate channels that map to the same friendly name
+        unmapped_raw_df["channel_name"] = unmapped_raw_df["channel_id"].apply(resolve_channel)
+        unmapped_df = unmapped_raw_df[unmapped_raw_df["channel_name"] == "Other"].copy()
+        if not unmapped_df.empty:
+            unmapped_df["watch_hours"] = unmapped_df["total_chunks"] * CHUNK_DURATION_HOURS
+            unmapped_df = unmapped_df.sort_values("total_chunks", ascending=False)
+
         channel_df = raw_channel_df.groupby("channel_name", as_index=False).agg(
             unique_viewers=("unique_viewers", "sum"),
             total_chunks=("total_chunks", "sum"),
         )
-
-        channel_df["watch_hours"]               = channel_df["total_chunks"] * CHUNK_DURATION_HOURS
-        channel_df["avg_chunks_per_viewer"]     = channel_df["total_chunks"] / channel_df["unique_viewers"]
-        channel_df["avg_watch_hours_per_viewer"]= channel_df["watch_hours"] / channel_df["unique_viewers"]
+        channel_df["watch_hours"] = channel_df["total_chunks"] * CHUNK_DURATION_HOURS
+        channel_df["avg_chunks_per_viewer"] = channel_df["total_chunks"] / channel_df["unique_viewers"]
+        channel_df["avg_watch_hours_per_viewer"] = channel_df["watch_hours"] / channel_df["unique_viewers"]
         channel_df = channel_df.sort_values("watch_hours", ascending=False).reset_index(drop=True)
 
         user_df["watch_hours"] = user_df["chunks_watched"] * CHUNK_DURATION_HOURS
         user_df = user_df.drop(columns=["channel_id"])
 
         time_range = f"{start_date.strftime('%Y-%m-%d')} → {end_date.strftime('%Y-%m-%d')}"
-        return channel_df, user_df, time_range
-
+        return channel_df, user_df, unmapped_df, time_range
     finally:
         con.close()
-
 
 # ====================== STREAMLIT UI ======================
 st.set_page_config(page_title="Live TV Dashboard", layout="wide")
@@ -347,12 +295,8 @@ with st.sidebar:
                 st.info(f"Valid .ts rows: {info['valid_ts_rows']:,}")
 
     min_dt, max_dt = get_available_dates(lake_input)
-    if min_dt and max_dt:
-        min_default = min_dt.date()
-        max_default = max_dt.date()
-    else:
-        min_default = datetime(2026, 3, 1).date()
-        max_default = datetime(2026, 5, 1).date()
+    min_default = min_dt.date() if min_dt else datetime(2026, 3, 1).date()
+    max_default = max_dt.date() if max_dt else datetime(2026, 5, 1).date()
 
     col1, col2 = st.columns(2)
     with col1:
@@ -364,57 +308,45 @@ with st.sidebar:
         st.error("❌ Start date cannot be after end date")
         st.stop()
 
-    st.info(
-        "📁 Assumes Hive partitioning: `year=YYYY/month=MM/day=DD`.\n"
-        "Falls back to full scan if partitions are absent."
-    )
+    cols_per_row = st.slider("📊 Cards per row", min_value=2, max_value=8, value=6, step=1)
+    st.info("📁 Hive partitioning: `year=YYYY/month=MM/day=DD`")
     run_button = st.button("🔄 Refresh Data", type="primary", use_container_width=True)
+    show_debug = st.checkbox("🔎 Show unmapped channel IDs", value=False)
 
-    # ── Debug: show unknown channel IDs ────────────────────────────────────
-    if st.checkbox("🔎 Show unmapped channel IDs (debug)", value=False):
-        st.caption(
-            "After refreshing, unmapped IDs that fell through to 'Other' will appear here."
-        )
-
-# ── Compute ────────────────────────────────────────────────────────────────
 if run_button or "channel_df" not in st.session_state:
     with st.spinner("Processing data…"):
-        channel_df, user_df, time_range = compute_metrics(lake_input, start_date, end_date)
+        result = compute_metrics(lake_input, start_date, end_date)
+        channel_df, user_df, unmapped_df, time_range = result
         if channel_df.empty:
             st.error("No data found for the selected range.")
         else:
             st.session_state.channel_df = channel_df
-            st.session_state.user_df    = user_df
+            st.session_state.user_df = user_df
+            st.session_state.unmapped_df = unmapped_df
             st.session_state.time_range = time_range
             st.success("✅ Analysis completed successfully!")
 
-# ── Display ────────────────────────────────────────────────────────────────
 if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
-    df         = st.session_state.channel_df
-    user_df    = st.session_state.user_df
+    df = st.session_state.channel_df
+    user_df = st.session_state.user_df
+    unmapped_df = st.session_state.unmapped_df
     time_range = st.session_state.time_range
 
     st.markdown(f"**Data Period:** {time_range}")
-
-    # Summary metrics
     c1, c2, c3, c4 = st.columns(4)
-    with c1: st.metric("Total Channels",    len(df))
+    with c1: st.metric("Total Channels", len(df[df["channel_name"] != "Other"]))
     with c2: st.metric("Total Watch Hours", f"{df['watch_hours'].sum():,.0f}")
-    with c3: st.metric("Unique Viewers",    f"{df['unique_viewers'].sum():,}")
-    with c4: st.metric("Total Chunks",      f"{df['total_chunks'].sum():,}")
+    with c3: st.metric("Unique Viewers", f"{df['unique_viewers'].sum():,}")
+    with c4: st.metric("Total Chunks", f"{df['total_chunks'].sum():,}")
 
     st.markdown("---")
     st.subheader("📡 Channel Performance")
 
-    # Filter out "Other" (shown separately)
     display_df = df[df["channel_name"] != "Other"]
-    other_row  = df[df["channel_name"] == "Other"]
+    other_row = df[df["channel_name"] == "Other"]
 
-    # ---------- GRID FIX ----------
-    COLS_PER_ROW = 6   # change this to any number
-
-    for i in range(0, len(display_df), COLS_PER_ROW):
-        cols = st.columns(COLS_PER_ROW)
+    for i in range(0, len(display_df), cols_per_row):
+        cols = st.columns(cols_per_row)
         for j, col in enumerate(cols):
             idx = i + j
             if idx < len(display_df):
@@ -431,9 +363,7 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
                         <p style="margin:.2rem 0">Avg: {row['avg_watch_hours_per_viewer']:.2f} hrs/viewer</p>
                     </div>
                     """, unsafe_allow_html=True)
-    # ---------------------------------
 
-    # Show "Other" as a banner
     if not other_row.empty:
         r = other_row.iloc[0]
         st.markdown(f"""
@@ -445,16 +375,43 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
         </div>
         """, unsafe_allow_html=True)
 
+        # ─── Debug expander with CSV export button ───────────────────────────
+        if show_debug:
+            with st.expander("🔎 Unmapped raw channel IDs (add these to CHANNEL_MAP)"):
+                if unmapped_df.empty:
+                    st.success("No unmapped IDs — everything is resolved!")
+                else:
+                    left, _ = st.columns([1, 4])
+                    with left:
+                        st.download_button(
+                            "📥 Export unmapped CSV",
+                            data=unmapped_df[["channel_id", "unique_viewers",
+                                              "total_chunks", "watch_hours"]].to_csv(index=False).encode("utf-8"),
+                            file_name="unmapped_channels.csv",
+                            mime="text/csv",
+                            help="Download all raw IDs that landed in 'Other'"
+                        )
+                    st.dataframe(
+                        unmapped_df[["channel_id", "unique_viewers",
+                                     "total_chunks", "watch_hours"]].style.format({
+                            "watch_hours":    "{:.2f} hrs",
+                            "total_chunks":   "{:,}",
+                            "unique_viewers": "{:,}",
+                        }),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+        # ──────────────────────────────────────────────────────────────────────
+
     st.markdown("---")
     st.subheader("🏆 Top Viewers by Channel")
-    all_channel_names = df["channel_name"].tolist()
-    selected_channel  = st.selectbox("Select Channel", all_channel_names)
+    selected_channel = st.selectbox("Select Channel", df["channel_name"].tolist())
     if selected_channel:
         top_users = user_df[user_df["channel_name"] == selected_channel].head(15)
         if not top_users.empty:
             st.dataframe(
                 top_users[["cliIP", "watch_hours", "chunks_watched"]].style.format({
-                    "watch_hours":    "{:.2f} hrs",
+                    "watch_hours": "{:.2f} hrs",
                     "chunks_watched": "{:,}",
                 }),
                 use_container_width=True,

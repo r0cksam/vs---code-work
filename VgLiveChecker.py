@@ -9,7 +9,7 @@ from urllib.parse import unquote
 from datetime import datetime, timedelta
 
 LAKE_PATH  = r"D:\Veto Logs Backup\veto Stream logs\lake"
-START_DATE = datetime(2026, 5, 19)   # ← change these
+START_DATE = datetime(2026, 4, 1)   # ← change these
 END_DATE   = datetime(2026, 5, 25)   # ← change these  (same day = single day scan)
 
 # ── Build partition filter for the date range ────────────────────────────────
@@ -99,9 +99,12 @@ CHANNEL_MAP = {
     "bollywoodmasala": "Bollywood Masala",
     "vetocricketlive": "Veto Cricket Live",
     "national": "DD National",
-    "1080p": "Other", "out": "Other", "unknown": "Other",
+    # ────── added to match dashboard ──────
+    "9x_tashan": "9XM Tashan",
+    "9x_jhakaas": "9XM Jhakaas",
+    "9x_jalwa": "9XM Jalwa",
+    "nntv": "DD National",
 }
-
 def resolve(raw):
     if not raw:
         return "Other"
