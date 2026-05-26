@@ -10,7 +10,7 @@ from tqdm import tqdm
 # Config
 # ─────────────────────────────────────────────
 
-BASE_FOLDER  = Path(r"D:\Veto Logs Backup\veto Stream logs")
+BASE_FOLDER  = Path(r"Y:\Veto Logs Backup\Veto Stream Logs\03")
 LAKE_FOLDER  = BASE_FOLDER / "lake"          # output: lake/year=YYYY/month=MM/day=DD/
 LOG_FILE     = BASE_FOLDER / "03_processed_log.json"
 
