@@ -20,8 +20,8 @@ except ImportError:
 # ╔══════════════════════════════════════════════════════════╗
 # ║  SET THESE PATHS                                         ║
 # ╚══════════════════════════════════════════════════════════╝
-XLSX_PATH = Path(r"\\YOUR_SERVER\share\overview_report.xlsx")
-HTML_OUT  = Path(r"\\YOUR_SERVER\share\dashboard\overview_dashboard.html")
+XLSX_PATH = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\overview_report.xlsx")
+HTML_OUT  = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\overview_dashboard.html")
 # ══════════════════════════════════════════════════════════
 
 if len(sys.argv) == 3:
