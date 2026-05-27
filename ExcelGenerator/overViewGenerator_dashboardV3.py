@@ -265,12 +265,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cval{font-size:25px;font-weight:800;line-height:1.05}
 .charts{display:grid;grid-template-columns:repeat(2, minmax(350px, 1fr));gap:16px;margin-bottom:18px}
 .cbox{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
-.cbox h3{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;justify-content:space-between;color:#24324a}
+.cbox h3{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#24324a}
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.chart-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.chart-days{color:#94a3b8;font-weight:500;font-size:11px}
+.expand-btn{border:1px solid #cbd5e1;background:#fff;color:#1F3864;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:800;cursor:pointer}
+.expand-btn:hover{background:#edf2f7;border-color:#94a3b8}
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:50;display:none;align-items:center;justify-content:center;padding:22px}
+.modal-backdrop.open{display:flex}
+.chart-modal{width:min(1180px,96vw);height:min(760px,92vh);background:#fff;border-radius:10px;border:1px solid #d8e1ee;box-shadow:0 24px 80px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}
+.modal-top{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;background:#f8fafc}
+.modal-title{font-size:16px;font-weight:800;color:#1F3864}
+.modal-close{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:6px;padding:5px 10px;font-weight:800;cursor:pointer}
+.modal-body{padding:14px 18px 18px;display:flex;flex-direction:column;gap:12px;min-height:0;flex:1}
+.modal-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.modal-controls input[type="date"]{border:1px solid #cbd5e1;padding:5px 7px;border-radius:5px;font-size:11px;font-family:inherit;color:#1F3864;font-weight:600}
+.modal-range{font-size:11px;color:#64748b;font-weight:700;margin-left:auto}
+.modal-stats{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:8px}
+.stat-chip{border:1px solid #e2e8f0;border-top:3px solid #1F3864;border-radius:7px;padding:8px 10px;background:#fff}
+.stat-chip b{display:block;font-size:10px;color:#64748b;text-transform:uppercase;margin-bottom:3px}
+.stat-chip span{font-size:16px;font-weight:800;color:#1e293b}
+.modal-chart-wrap{min-height:0;flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#fff}
+.modal-chart-wrap canvas{width:100%!important;height:100%!important}
 .table-wrap{background:var(--panel);border-radius:8px;border:1px solid var(--line);overflow:hidden;margin-bottom:18px;box-shadow:0 2px 8px rgba(15,23,42,.06)}
 .thead{padding:13px 17px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:15px;background:#f8fafc}
 .thead h3{font-size:14px;font-weight:700;color:#24324a}
-.table-actions{display:flex;align-items:center;gap:8px;font-size:11px;color:#475569;font-weight:700;white-space:nowrap}
-.table-actions select{border:1px solid #cbd5e1;background:#fff;color:#1F3864;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;outline:none;cursor:pointer}
+.drop-label{display:flex;flex-direction:column;align-items:center;gap:4px;line-height:1.1;font-weight:800}
+.drop-label span{display:block}
+.drop-select{width:100%;max-width:68px;border:1px solid #fdba74;background:#fff;color:#7c2d12;border-radius:6px;padding:3px 5px;font-size:9.5px;font-weight:800;outline:none;cursor:pointer;text-align:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.7)}
+.drop-select:hover{border-color:#f97316;background:#fffbeb}
+.drop-select:focus{border-color:#ea580c;box-shadow:0 0 0 2px rgba(249,115,22,.18)}
 .filter-group{display:flex;align-items:center;gap:8px;background:#fff;padding:11px 12px;border-radius:8px;border:1px solid var(--line);border-top:3px solid var(--accent);box-shadow:0 1px 2px rgba(15,23,42,.05);width:100%;overflow-x:auto;white-space:nowrap}
 .filter-group input[type="date"]{border:1px solid #cbd5e1;padding:5px 6px;border-radius:4px;font-size:11px;outline:none;font-family:inherit;color:#1F3864;font-weight:500;cursor:pointer;min-width:116px}
 .filter-group span{font-size:11px;color:#64748b;font-weight:700;white-space:nowrap}
@@ -292,7 +316,7 @@ tr:nth-child(even) td:first-child{background:#fafafa}
 tr:hover td{background:#eef4ff!important}
 tr.total-row td{background:#1F3864!important;color:#fff!important;font-weight:700}
 tr.drop-row td{background:#fff7ed!important;color:#7c2d12!important;font-weight:700}
-tr.drop-row td:first-child{text-align:left}
+tr.drop-row td:first-child{text-align:center;padding:6px 5px}
 .chg-pos{color:#166534!important}.chg-neg{color:#b91c1c!important}.chg-flat{color:#57534e!important}
 .pct{color:#185FA5;font-weight:500}
 .footer{text-align:center;font-size:11px;color:#94a3b8;padding:8px 0 20px}
@@ -301,6 +325,7 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
 @media (min-width:1500px){.charts{grid-template-columns:repeat(3,minmax(0,1fr))}.tbl-c{max-height:720px}}
 @media (min-width:1900px){#main{max-width:1880px}.charts{grid-template-columns:repeat(5,minmax(0,1fr))}.cbox canvas{height:190px!important}.tbl-c{max-height:760px}body{font-size:14px}}
 @media (max-width:1050px){#main{padding:16px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.charts{grid-template-columns:1fr}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:auto}.control-row{align-items:stretch}}
+@media (max-width:760px){.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-range{width:100%;margin-left:0}.chart-modal{height:94vh}.modal-backdrop{padding:10px}}
 @media print{body{background:#fff}.topbar,.meta-strip,.card,.cbox,.table-wrap{box-shadow:none}.filter-group{display:none}.tbl-c{max-height:none;overflow:visible}}
 </style>
 </head>
@@ -332,28 +357,41 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
   </div>
   
   <div class="charts">
-    <div class="cbox"><h3><span>Daily Row Volume</span><span id="cH1" style="color:#aaa;font-weight:400"></span></h3><canvas id="cRows" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Data Density Profile</span><span id="cH2" style="color:#aaa;font-weight:400"></span></h3><canvas id="cBytes" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Session Not Found</span><span id="cH3" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSessNone" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Session Available & Missing</span><span id="cH4" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSessFound" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Unique Visitors & Devices</span><span id="cH5" style="color:#aaa;font-weight:400"></span></h3><canvas id="cIP" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Daily Row Volume</span><span class="chart-actions"><span class="chart-days" id="cH1"></span><button class="expand-btn" onclick="openChartModal('cRows')">Expand</button></span></h3><canvas id="cRows" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Data Density Profile</span><span class="chart-actions"><span class="chart-days" id="cH2"></span><button class="expand-btn" onclick="openChartModal('cBytes')">Expand</button></span></h3><canvas id="cBytes" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Session Not Found</span><span class="chart-actions"><span class="chart-days" id="cH3"></span><button class="expand-btn" onclick="openChartModal('cSessNone')">Expand</button></span></h3><canvas id="cSessNone" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Session Available & Missing</span><span class="chart-actions"><span class="chart-days" id="cH4"></span><button class="expand-btn" onclick="openChartModal('cSessFound')">Expand</button></span></h3><canvas id="cSessFound" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Unique Visitors & Devices</span><span class="chart-actions"><span class="chart-days" id="cH5"></span><button class="expand-btn" onclick="openChartModal('cIP')">Expand</button></span></h3><canvas id="cIP" height="170"></canvas></div>
   </div>
 
   <div class="table-wrap">
     <div class="thead">
       <h3>Day-by-Day Breakdown (Full Schema)</h3>
-      <div class="table-actions">
-        <span>Drop/Gain lookback</span>
-        <select id="dropLookback" onchange="setDropLookback(this.value)">
-          <option value="3">3 days</option>
-          <option value="5" selected>5 days</option>
-          <option value="7">7 days</option>
-          <option value="14">14 days</option>
-          <option value="30">30 days</option>
-        </select>
-      </div>
     </div>
     <div class="tbl-c"><table id="tbl"></table></div>
+  </div>
+</div>
+<div class="modal-backdrop" id="chartModal">
+  <div class="chart-modal">
+    <div class="modal-top">
+      <div class="modal-title" id="modalTitle">Chart</div>
+      <button class="modal-close" onclick="closeChartModal()">Close</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-controls">
+        <button class="btn-preset" onclick="setModalPreset('dashboard')">Dashboard range</button>
+        <button class="btn-preset" onclick="setModalPreset(7)">7D</button>
+        <button class="btn-preset" onclick="setModalPreset(30)">30D</button>
+        <button class="btn-preset" onclick="setModalPreset('all')">ALL</button>
+        <span class="filter-sep"></span>
+        <input type="date" id="modalStart" onchange="setModalCustom()" />
+        <span style="font-size:11px;color:#64748b;font-weight:700">to</span>
+        <input type="date" id="modalEnd" onchange="setModalCustom()" />
+        <span class="modal-range" id="modalRange"></span>
+      </div>
+      <div class="modal-stats" id="modalStats"></div>
+      <div class="modal-chart-wrap"><canvas id="modalChart"></canvas></div>
+    </div>
   </div>
 </div>
 <script>
@@ -390,43 +428,46 @@ let dropLookbackDays = 5;
 const chartInstances = {};
 
 const CD={tension:.35,fill:true,pointRadius:1.5,pointHoverRadius:4,borderWidth:1.5,animation:{duration:400}};
-const mkOpt=yfmt=>({responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:9.5},boxWidth:8,padding:6}}},
+const mkOpt=(yfmt, expanded=false)=>({responsive:true,maintainAspectRatio:!expanded,plugins:{legend:{position:'bottom',labels:{font:{size:expanded?11:9.5},boxWidth:8,padding:6}}},
   scales:{x:{ticks:{font:{size:8.5},maxTicksLimit:12},grid:{color:'#f5f5f5'}},
           y:{ticks:{font:{size:8.5},callback:v=>yfmt==='gib'?fmtData(v):v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v},grid:{color:'#f5f5f5'}}}});
 
+const chartDefs = {
+  cRows:{title:'Daily Row Volume', keys:['rows'], yfmt:null, datasets:[
+    {label:'Total rows', borderColor:'#185FA5', backgroundColor:'rgba(24,95,165,.04)', ...CD},
+    {label:'Avg', borderColor:'rgba(24,95,165,.6)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
+  ]},
+  cBytes:{title:'Data Density Profile', keys:['bytes'], yfmt:'gib', datasets:[
+    {label:'Data Volume', borderColor:'#1D9E75', backgroundColor:'rgba(29,158,117,.04)', ...CD},
+    {label:'Avg', borderColor:'rgba(29,158,117,.6)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
+  ]},
+  cSessNone:{title:'Session Not Found', keys:['sess_none'], yfmt:null, datasets:[
+    {label:'Sess Not Found', borderColor:'#b71c1c', backgroundColor:'transparent', ...CD},
+    {label:'Avg', borderColor:'rgba(183,28,28,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
+  ]},
+  cSessFound:{title:'Session Available & Missing', keys:['sess_avail','sess_na'], yfmt:null, datasets:[
+    {label:'Sess Avail', borderColor:'#2e6b10', backgroundColor:'transparent', ...CD},
+    {label:'Avg', borderColor:'rgba(46,107,16,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false},
+    {label:'Sess Missing', borderColor:'#9a6000', backgroundColor:'transparent', ...CD},
+    {label:'Avg', borderColor:'rgba(154,96,0,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
+  ]},
+  cIP:{title:'Unique Visitors & Devices', keys:['dist_ip','dist_dev'], yfmt:null, datasets:[
+    {label:'Distinct cliIP', borderColor:'#4a41a8', backgroundColor:'transparent', ...CD},
+    {label:'Avg', borderColor:'rgba(74,65,168,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false},
+    {label:'Distinct device', borderColor:'#0F6E56', backgroundColor:'transparent', ...CD},
+    {label:'Avg', borderColor:'rgba(15,110,86,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
+  ]}
+};
+
+function cloneDatasets(datasets) {
+  return datasets.map(d => ({...d, data:[]}));
+}
+
 function initCharts() {
   if(typeof Chart==='undefined') return;
-  const render = (id, datasets, yfmt) => { chartInstances[id] = new Chart(document.getElementById(id), { type:'line', data:{labels:[], datasets:datasets}, options:mkOpt(yfmt) }); };
-  
-  // Notice the x2 pairing structure. Dataset 0 is actual data, Dataset 1 is the dashed average line.
-  render('cRows', [
-      {label:'Total rows', borderColor:'#185FA5', backgroundColor:'rgba(24,95,165,.04)', ...CD},
-      {label:'Avg', borderColor:'rgba(24,95,165,.6)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
-  ]);
-  
-  render('cIP', [
-      {label:'Distinct cliIP', borderColor:'#4a41a8', backgroundColor:'transparent', ...CD},
-      {label:'Avg', borderColor:'rgba(74,65,168,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false},
-      {label:'Distinct device', borderColor:'#0F6E56', backgroundColor:'transparent', ...CD},
-      {label:'Avg', borderColor:'rgba(15,110,86,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
-  ]);
-  
-  render('cSessFound', [
-      {label:'Sess Avail', borderColor:'#2e6b10', backgroundColor:'transparent', ...CD},
-      {label:'Avg', borderColor:'rgba(46,107,16,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false},
-      {label:'Sess Missing', borderColor:'#9a6000', backgroundColor:'transparent', ...CD},
-      {label:'Avg', borderColor:'rgba(154,96,0,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
-  ]);
-
-  render('cSessNone', [
-      {label:'Sess Not Found', borderColor:'#b71c1c', backgroundColor:'transparent', ...CD},
-      {label:'Avg', borderColor:'rgba(183,28,28,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
-  ]);
-  
-  render('cBytes', [
-      {label:'Data Volume', borderColor:'#1D9E75', backgroundColor:'rgba(29,158,117,.04)', ...CD},
-      {label:'Avg', borderColor:'rgba(29,158,117,.6)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
-  ], 'gib');
+  Object.entries(chartDefs).forEach(([id, def]) => {
+    chartInstances[id] = new Chart(document.getElementById(id), {type:'line', data:{labels:[], datasets:cloneDatasets(def.datasets)}, options:mkOpt(def.yfmt)});
+  });
 }
 
 function updateKPIs() {
@@ -463,26 +504,107 @@ function updateKPIs() {
 
 function updateCharts() {
   if(!chartInstances['cRows']) return;
-  const lbl = viewRows.map(r=>r.date);
-  const len = viewRows.length || 1;
-  const vTot = k => viewRows.reduce((s,r) => s+r[k], 0);
+  Object.entries(chartDefs).forEach(([id, def]) => syncChart(chartInstances[id], viewRows, def.keys));
+  document.querySelectorAll('.chart-days').forEach(e => e.textContent = viewRows.length + ' days');
+}
 
-  const sync = (id, dataMaps) => {
-    const ch = chartInstances[id]; 
-    ch.data.labels = lbl;
-    dataMaps.forEach((k, i) => { 
-        ch.data.datasets[i * 2].data = viewRows.map(r => r[k]); // The actual data
-        ch.data.datasets[(i * 2) + 1].data = Array(len).fill(vTot(k)/len); // The flat average line
-    });
-    ch.update();
-  };
-  
-  sync('cRows', ['rows']); 
-  sync('cIP', ['dist_ip', 'dist_dev']);
-  sync('cSessFound', ['sess_avail', 'sess_na']); 
-  sync('cSessNone', ['sess_none']); 
-  sync('cBytes', ['bytes']);
-  document.querySelectorAll('.cbox h3 span+span').forEach(e => e.textContent = viewRows.length + ' days visible');
+function syncChart(ch, rowsForChart, keys) {
+  const lbl = rowsForChart.map(r=>r.date);
+  const len = rowsForChart.length || 1;
+  ch.data.labels = lbl;
+  keys.forEach((k, i) => {
+    const total = rowsForChart.reduce((s,r) => s + Number(r[k] || 0), 0);
+    ch.data.datasets[i * 2].data = rowsForChart.map(r => r[k]);
+    ch.data.datasets[(i * 2) + 1].data = Array(len).fill(total / len);
+  });
+  ch.update();
+}
+
+let modalChart = null;
+let modalChartId = null;
+let modalRows = [];
+
+function dtFmt(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function formatMetric(k, v) {
+  if(k === 'bytes') return fmtData(v);
+  if(k.startsWith('pct_')) return fmtP(v);
+  return fmt(Math.round(v));
+}
+
+function openChartModal(id) {
+  if(typeof Chart==='undefined') return;
+  modalChartId = id;
+  const def = chartDefs[id];
+  document.getElementById('modalTitle').textContent = def.title;
+  document.getElementById('chartModal').classList.add('open');
+  if(modalChart) modalChart.destroy();
+  modalChart = new Chart(document.getElementById('modalChart'), {
+    type:'line',
+    data:{labels:[], datasets:cloneDatasets(def.datasets)},
+    options:mkOpt(def.yfmt, true)
+  });
+  setModalPreset('dashboard');
+}
+
+function closeChartModal() {
+  document.getElementById('chartModal').classList.remove('open');
+  if(modalChart) { modalChart.destroy(); modalChart = null; }
+  modalChartId = null;
+}
+
+document.getElementById('chartModal').addEventListener('click', e => {
+  if(e.target.id === 'chartModal') closeChartModal();
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && document.getElementById('chartModal').classList.contains('open')) closeChartModal();
+});
+
+function setModalPreset(mode) {
+  if(!modalChartId) return;
+  if(mode === 'dashboard') modalRows = [...viewRows].sort((a,b) => a.ts - b.ts);
+  else if(mode === 'all') modalRows = [...completeRows];
+  else modalRows = completeRows.slice(-Number(mode));
+  document.getElementById('modalStart').value = modalRows.length ? modalRows[0].date : '';
+  document.getElementById('modalEnd').value = modalRows.length ? modalRows[modalRows.length - 1].date : '';
+  renderModalChart();
+}
+
+function setModalCustom() {
+  if(!modalChartId) return;
+  const startStr = document.getElementById('modalStart').value;
+  const endStr = document.getElementById('modalEnd').value;
+  let sTs = -Infinity, eTs = Infinity;
+  if(startStr) {
+    const [y,m,d] = startStr.split('-').map(Number);
+    sTs = new Date(y, m - 1, d).getTime();
+  }
+  if(endStr) {
+    const [y,m,d] = endStr.split('-').map(Number);
+    eTs = new Date(y, m - 1, d + 1).getTime() - 1;
+  }
+  modalRows = completeRows.filter(r => r.ts >= sTs && r.ts <= eTs);
+  renderModalChart();
+}
+
+function renderModalChart() {
+  const def = chartDefs[modalChartId];
+  syncChart(modalChart, modalRows, def.keys);
+  const rangeText = modalRows.length ? `${modalRows[0].date} to ${modalRows[modalRows.length - 1].date} | ${modalRows.length} days` : 'No dates selected';
+  document.getElementById('modalRange').textContent = rangeText;
+  const chips = [];
+  def.keys.forEach(k => {
+    const vals = modalRows.map(r => Number(r[k] || 0)).filter(v => !isNaN(v));
+    if(!vals.length) return;
+    const latest = vals[vals.length - 1];
+    const avg = vals.reduce((s,v) => s + v, 0) / vals.length;
+    chips.push({l:chartDefs[modalChartId].datasets[def.keys.indexOf(k) * 2].label + ' Latest', v:formatMetric(k, latest)});
+    chips.push({l:chartDefs[modalChartId].datasets[def.keys.indexOf(k) * 2].label + ' Avg', v:formatMetric(k, avg)});
+  });
+  document.getElementById('modalStats').innerHTML = chips.slice(0,4).map(c => `<div class="stat-chip"><b>${c.l}</b><span>${c.v}</span></div>`).join('');
 }
 
 const subH=['Date', 'Data', 'Total Rows', 'cliIP rows', 'Dist IP', 'Dist IP+UA', 'Devices', 'Sessions', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found'];
@@ -537,9 +659,11 @@ function fmtChg(n) {
 
 function getDropGain() {
   const byDate = [...viewRows].sort((a, b) => a.ts - b.ts);
-  if(byDate.length <= dropLookbackDays) return {};
+  if(!byDate.length) return {};
   const target = byDate[byDate.length - 1];
-  const baseRows = byDate.slice(-(dropLookbackDays + 1), -1);
+  const historyRows = completeRows.filter(r => r.ts < target.ts).sort((a, b) => a.ts - b.ts);
+  if(historyRows.length < dropLookbackDays) return {};
+  const baseRows = historyRows.slice(-dropLookbackDays);
   const calc = k => {
     const avg = baseRows.reduce((s, r) => s + Number(r[k] || 0), 0) / baseRows.length;
     return avg ? (Number(target[k] || 0) / avg) - 1 : null;
@@ -555,6 +679,7 @@ function getDropGain() {
 
 function renderTable() {
   const scaleStats = getScaleStats();
+  const dropOptions = [3, 5, 7, 14, 30].map(n => `<option value="${n}"${n === dropLookbackDays ? ' selected' : ''}>${n} days</option>`).join('');
   let h = `<thead>
     <tr><th class="b" style="background:#f8fafc;"></th><th colspan="3" class="b">General Volumes</th><th colspan="4" class="g">Absolute Counts</th><th colspan="2" class="m">Unique Subsets</th><th colspan="3" class="a">Session Identifiers</th><th colspan="5" class="p">% Data of TOTAL Segment</th></tr>
     <tr>${subH.map((title, idx) => `<th onclick="handleSort('${fields[idx]}')">${title}${sortKey === fields[idx] ? (sortAsc ? ' \u25B2' : ' \u25BC') : ''}</th>`).join('')}</tr>
@@ -587,7 +712,7 @@ function renderTable() {
     <td class="pct">${fmtP(tPct.pct_ip)}</td><td class="pct">${fmtP(tPct.pct_ipua)}</td><td class="pct">${fmtP(tPct.pct_sess)}</td><td class="pct">${fmtP(tPct.pct_sessna)}</td><td class="pct">${fmtP(tPct.pct_none)}</td>
   </tr>
   <tr class="drop-row">
-    <td>% Drop/Gain w.r.t. previous ${dropLookbackDays} days</td><td>${fmtChg(dropGain.bytes)}</td><td>${fmtChg(dropGain.rows)}</td><td>${fmtChg(dropGain.ip_rows)}</td>
+    <td><div class="drop-label"><span>% Drop/Gain</span><span>vs previous</span><select class="drop-select" onchange="setDropLookback(this.value)">${dropOptions}</select></div></td><td>${fmtChg(dropGain.bytes)}</td><td>${fmtChg(dropGain.rows)}</td><td>${fmtChg(dropGain.ip_rows)}</td>
     <td>${fmtChg(dropGain.dist_ip)}</td><td>${fmtChg(dropGain.dist_ipua)}</td><td>${fmtChg(dropGain.dist_dev)}</td><td>${fmtChg(dropGain.dist_sess)}</td>
     <td>${fmtChg(dropGain.dist_ip_r2)}</td><td>${fmtChg(dropGain.dist_ipua_r2)}</td>
     <td>${fmtChg(dropGain.sess_avail)}</td><td>${fmtChg(dropGain.sess_na)}</td><td>${fmtChg(dropGain.sess_none)}</td>
