@@ -11,7 +11,7 @@ Key Updates:
 Usage:  python generate_dashboard.py
 """
 
-import sys, json, urllib.request
+import sys, json, urllib.request, csv
 from pathlib import Path
 from datetime import datetime
 
@@ -26,6 +26,8 @@ except ImportError:
 # ╚══════════════════════════════════════════════════════════╝
 XLSX_PATH = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\overview_report.xlsx")
 HTML_OUT  = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\overview_dashboard.html")
+DEVICE_SNAPSHOT_CSV = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\device_snapshot.csv")
+DEVICE_DAILY_CSV    = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\device_daily.csv")
 # ══════════════════════════════════════════════════════════
 
 if len(sys.argv) == 3:
@@ -49,6 +51,57 @@ def get_val(row, col_num):
     """Safely fetch cell value by 1-based index to prevent unexpected IndexError on short rows"""
     idx = col_num - 1
     return row[idx] if idx < len(row) else None
+
+def read_device_data(snapshot_path: Path, daily_path: Path):
+    snapshot_rows = []
+    device_idx = {}
+    first_seen_counts = {}
+    daily_map = {}
+    if snapshot_path.exists():
+        with snapshot_path.open("r", encoding="utf-8", newline="") as f:
+            for r in csv.DictReader(f):
+                device_id = r.get("device_id", "")
+                if not device_id:
+                    continue
+                device_idx[device_id] = len(device_idx)
+                first_seen = r.get("first_seen_utc_date", "")
+                if first_seen:
+                    first_seen_counts[first_seen] = first_seen_counts.get(first_seen, 0) + 1
+                snapshot_rows.append({
+                    "device_id": device_id,
+                    "first_seen": r.get("first_seen_utc_date", ""),
+                    "last_seen": r.get("last_seen_utc_date", ""),
+                    "days_seen": int(sn(r.get("days_seen"))),
+                    "total_rows": int(sn(r.get("total_rows"))),
+                    "sessions": int(sn(r.get("distinct_sessions_day_sum"))),
+                })
+    if daily_path.exists():
+        with daily_path.open("r", encoding="utf-8", newline="") as f:
+            for r in csv.DictReader(f):
+                d = r.get("utc_date", "")
+                device_id = r.get("device_id", "")
+                if not d or not device_id:
+                    continue
+                idx = device_idx.get(device_id)
+                if idx is None:
+                    idx = len(device_idx)
+                    device_idx[device_id] = idx
+                item = daily_map.setdefault(d, {"date": d, "devices": set(), "rows": 0, "sessions": 0})
+                item["devices"].add(idx)
+                item["rows"] += int(sn(r.get("rows_on_date")))
+                item["sessions"] += int(sn(r.get("distinct_sessions")))
+    daily_rows = []
+    for k in sorted(daily_map):
+        item = daily_map[k]
+        devices = sorted(item["devices"])
+        daily_rows.append({
+            "date": k,
+            "devices": devices,
+            "active_devices": len(devices),
+            "rows": item["rows"],
+            "sessions": item["sessions"],
+        })
+    return snapshot_rows, daily_rows, first_seen_counts
 
 CHARTJS_CACHE = Path(__file__).parent / ".chartjs_cache.js"
 CHARTJS_URL   = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
@@ -161,10 +214,25 @@ if data_rows:
     latest_date = max(r["date"] for r in data_rows)
     data_rows = [r for r in data_rows if r["date"] != latest_date]
 
+device_snapshot_rows, device_daily_rows, device_first_seen_counts = read_device_data(DEVICE_SNAPSHOT_CSV, DEVICE_DAILY_CSV)
+device_summary = {"total_devices": 0, "latest_date": "", "active_latest": 0, "new_latest": 0, "returning_latest": 0}
+if device_snapshot_rows:
+    device_summary["total_devices"] = len(device_snapshot_rows)
+if device_daily_rows:
+    latest_device_day = max(device_daily_rows, key=lambda d: d["date"])
+    device_summary["latest_date"] = latest_device_day["date"]
+    device_summary["active_latest"] = int(latest_device_day["active_devices"])
+    device_summary["new_latest"] = sum(1 for d in device_snapshot_rows if d["first_seen"] == latest_device_day["date"])
+    device_summary["returning_latest"] = max(0, device_summary["active_latest"] - device_summary["new_latest"])
+
+generated_at = datetime.now()
 data_blob = json.dumps({
     "meta": meta, "rows": data_rows,
-    "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
-    "source": XLSX_PATH.name,
+    "device_daily": device_daily_rows,
+    "device_first_seen_counts": device_first_seen_counts,
+    "device_summary": device_summary,
+    "generated": generated_at.strftime("%Y-%m-%d %H:%M"),
+    "report_date": generated_at.strftime("%Y-%m-%d"),
     "data_range": data_time_range,
 }, ensure_ascii=False, separators=(',', ':'))
 
@@ -189,21 +257,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .meta-strip{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 18px;font-size:12px;color:#475569;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .meta-items{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center}
 .meta-strip b{color:var(--ink);font-weight:700}
-.control-row{display:flex;align-items:stretch;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap}
-.cards{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:12px;flex:1 1 760px}
-.card{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:14px 16px;transition:all 0.3s;box-shadow:0 1px 2px rgba(15,23,42,.05);border-top:3px solid currentColor}
-.clbl{font-size:11px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.control-row{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.cards{display:grid;grid-template-columns:repeat(8,minmax(135px,1fr));gap:10px;width:100%}
+.card{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:11px 14px;transition:all 0.3s;box-shadow:0 1px 2px rgba(15,23,42,.05);border-top:3px solid currentColor}
+.clbl{font-size:10.5px;color:var(--muted);margin-bottom:7px;display:flex;align-items:center;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
 .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.cval{font-size:26px;font-weight:800;line-height:1.05}.csub{font-size:10.5px;color:#94a3b8;margin-top:6px}
+.cval{font-size:25px;font-weight:800;line-height:1.05}
 .charts{display:grid;grid-template-columns:repeat(2, minmax(350px, 1fr));gap:16px;margin-bottom:18px}
 .cbox{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .cbox h3{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;justify-content:space-between;color:#24324a}
 .table-wrap{background:var(--panel);border-radius:8px;border:1px solid var(--line);overflow:hidden;margin-bottom:18px;box-shadow:0 2px 8px rgba(15,23,42,.06)}
 .thead{padding:13px 17px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:15px;background:#f8fafc}
 .thead h3{font-size:14px;font-weight:700;color:#24324a}
-.filter-group{display:flex;align-items:center;gap:8px;background:#fff;padding:12px 14px;border-radius:8px;border:1px solid var(--line);border-top:3px solid var(--accent);align-self:stretch;box-shadow:0 1px 2px rgba(15,23,42,.05)}
-.filter-group input[type="date"]{border:1px solid #cbd5e1;padding:4px 6px;border-radius:4px;font-size:11px;outline:none;font-family:inherit;color:#1F3864;font-weight:500;cursor:pointer}
-.filter-group span{font-size:11px;color:#888;font-weight:500}
+.table-actions{display:flex;align-items:center;gap:8px;font-size:11px;color:#475569;font-weight:700;white-space:nowrap}
+.table-actions select{border:1px solid #cbd5e1;background:#fff;color:#1F3864;border-radius:5px;padding:5px 8px;font-size:11px;font-weight:700;outline:none;cursor:pointer}
+.filter-group{display:flex;align-items:center;gap:8px;background:#fff;padding:11px 12px;border-radius:8px;border:1px solid var(--line);border-top:3px solid var(--accent);box-shadow:0 1px 2px rgba(15,23,42,.05);width:100%;overflow-x:auto;white-space:nowrap}
+.filter-group input[type="date"]{border:1px solid #cbd5e1;padding:5px 6px;border-radius:4px;font-size:11px;outline:none;font-family:inherit;color:#1F3864;font-weight:500;cursor:pointer;min-width:116px}
+.filter-group span{font-size:11px;color:#64748b;font-weight:700;white-space:nowrap}
+.filter-sep{width:1px;height:24px;background:#d8e1ee}
 .btn-preset{background:#fff;border:1px solid #cbd5e1;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;color:#555;transition:all 0.2s}
 .btn-preset:hover{background:#edf2f7;color:#1F3864}
 .btn-preset.active{background:#1F3864;color:#fff;border-color:#1F3864}
@@ -211,12 +282,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:10px;table-layout:fixed}
 thead{position:sticky;top:0;z-index:5}
 thead tr:first-child th{padding:5px 5px;font-size:9px;font-weight:700;color:#fff;text-align:center;white-space:normal;border-right:1px solid rgba(255,255,255,.25);border-bottom:1px solid #b8c4d4}
-thead tr:last-child th{padding:6px 4px;text-align:right;font-size:9px;font-weight:600;color:#334155;border-right:1px solid #cbd5e1;border-bottom:1px solid #b8c4d4;white-space:normal;line-height:1.15;background:#f8fafc;cursor:pointer;user-select:none;overflow-wrap:anywhere}
+thead tr:last-child th{padding:6px 4px;text-align:center;font-size:9px;font-weight:600;color:#334155;border-right:1px solid #cbd5e1;border-bottom:1px solid #b8c4d4;white-space:normal;line-height:1.15;background:#f8fafc;cursor:pointer;user-select:none;overflow-wrap:anywhere;word-break:normal}
 thead tr:last-child th:hover{background:#edf2f7}
-thead tr:last-child th:first-child{text-align:left}
-td{padding:6px 4px;text-align:right;border-right:1px solid #dbe3ef;border-bottom:1px solid #dbe3ef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+thead tr:last-child th:first-child{text-align:center}
+td{padding:6px 4px;text-align:center;vertical-align:middle;border-right:1px solid #dbe3ef;border-bottom:1px solid #dbe3ef;white-space:normal;line-height:1.2;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 th:first-child,td:first-child{border-left:1px solid #dbe3ef}
-td:first-child{text-align:left;font-weight:500;position:sticky;left:0;background:#fff;z-index:1;width:72px}
+td:first-child{text-align:center;font-weight:500;position:sticky;left:0;background:#fff;z-index:1;width:72px}
 tr:nth-child(even) td:first-child{background:#fafafa}
 tr:hover td{background:#eef4ff!important}
 tr.total-row td{background:#1F3864!important;color:#fff!important;font-weight:700}
@@ -226,6 +297,7 @@ tr.drop-row td:first-child{text-align:left}
 .pct{color:#185FA5;font-weight:500}
 .footer{text-align:center;font-size:11px;color:#94a3b8;padding:8px 0 20px}
 th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{background:#9a6000} th.p{background:#4a41a8}
+@media (max-width:1500px){.cards{grid-template-columns:repeat(4,minmax(150px,1fr))}}
 @media (min-width:1500px){.charts{grid-template-columns:repeat(3,minmax(0,1fr))}.tbl-c{max-height:720px}}
 @media (min-width:1900px){#main{max-width:1880px}.charts{grid-template-columns:repeat(5,minmax(0,1fr))}.cbox canvas{height:190px!important}.tbl-c{max-height:760px}body{font-size:14px}}
 @media (max-width:1050px){#main{padding:16px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.charts{grid-template-columns:1fr}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:auto}.control-row{align-items:stretch}}
@@ -252,7 +324,7 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
        <button class="btn-preset active" id="btnAll" onclick="setPreset('all')">ALL</button>
        <button class="btn-preset" id="btn30" onclick="setPreset(30)">30D</button>
        <button class="btn-preset" id="btn7" onclick="setPreset(7)">7D</button>
-       <span style="margin:0 4px">|</span>
+       <span class="filter-sep"></span>
        <input type="date" id="dateStart" onchange="handleCustomDate()" />
        <span>to</span>
        <input type="date" id="dateEnd" onchange="handleCustomDate()" />
@@ -261,21 +333,31 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
   
   <div class="charts">
     <div class="cbox"><h3><span>Daily Row Volume</span><span id="cH1" style="color:#aaa;font-weight:400"></span></h3><canvas id="cRows" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Data Density Profile (GiB)</span><span id="cH2" style="color:#aaa;font-weight:400"></span></h3><canvas id="cBytes" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Unique Visitors & Devices</span><span id="cH3" style="color:#aaa;font-weight:400"></span></h3><canvas id="cIP" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Data Density Profile</span><span id="cH2" style="color:#aaa;font-weight:400"></span></h3><canvas id="cBytes" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Session Not Found</span><span id="cH3" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSessNone" height="170"></canvas></div>
     <div class="cbox"><h3><span>Session Available & Missing</span><span id="cH4" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSessFound" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Session Not Found</span><span id="cH5" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSessNone" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Unique Visitors & Devices</span><span id="cH5" style="color:#aaa;font-weight:400"></span></h3><canvas id="cIP" height="170"></canvas></div>
   </div>
 
   <div class="table-wrap">
     <div class="thead">
       <h3>Day-by-Day Breakdown (Full Schema)</h3>
+      <div class="table-actions">
+        <span>Drop/Gain lookback</span>
+        <select id="dropLookback" onchange="setDropLookback(this.value)">
+          <option value="3">3 days</option>
+          <option value="5" selected>5 days</option>
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="30">30 days</option>
+        </select>
+      </div>
     </div>
     <div class="tbl-c"><table id="tbl"></table></div>
   </div>
 </div>
 <script>
-const {meta,rows,generated,source,data_range} = """ + data_blob + """;
+const {meta,rows,device_daily,device_first_seen_counts,device_summary,generated,report_date,data_range} = """ + data_blob + """;
 
 // Parse strictly using localized component metrics to remove browser engine discrepancies
 rows.forEach(r => { 
@@ -283,9 +365,13 @@ rows.forEach(r => {
     r.ts = new Date(y, m - 1, d).getTime(); 
 });
 rows.sort((a,b) => a.ts - b.ts);
+const firstDataDate = rows.length ? rows[0].date : '';
+const completeRows = rows.filter(r => r.date !== firstDataDate && r.date !== report_date);
+const usedDateRange = completeRows.length ? `${completeRows[0].date} 00:00:00 to ${completeRows[completeRows.length - 1].date} 23:59:59 IST` : '';
+const deviceDailyByDate = new Map(device_daily.map(d => [d.date, d]));
 
 document.getElementById('rangeLbl').style.display = 'none';
-document.getElementById('genLbl').textContent=(data_range ? 'Available data range: '+data_range+' | ' : '')+'Last updated '+generated+' | Source: '+source;
+document.getElementById('genLbl').textContent=(data_range ? 'True data range: '+data_range+' | ' : '')+(usedDateRange ? 'Used range: '+usedDateRange+' | ' : '')+'Last updated '+generated;
 const visibleMeta = Object.entries(meta).filter(([k]) => {
   const key = k.toLowerCase().replace(/\\s+/g, '');
   return !key.includes('duckdb') && !key.includes('totalrows') && !key.includes('datetimerange');
@@ -294,17 +380,19 @@ if(visibleMeta.length > 0) document.getElementById('metaStrip').innerHTML=visibl
 else document.getElementById('metaWrap').style.display = 'none';
 
 const fmt=(n,d=0)=>n==null||isNaN(n)?'\u2014':Number(n).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtData=gib=>{ if(gib==null||isNaN(gib))return'\u2014'; const tb=Number(gib)*1.073741824/1000; return tb>=1 ? fmt(Math.round(tb))+' TB' : fmt(Math.round(Number(gib)))+' GiB'; };
 const fmtP=n=>{ if(n==null||isNaN(n))return'\u2014'; const p=Math.abs(n)<=1?n*100:n; return p.toFixed(2)+'%'; };
 
-let viewRows = [...rows];
+let viewRows = [...completeRows];
 let sortKey = null;
 let sortAsc = true;
+let dropLookbackDays = 5;
 const chartInstances = {};
 
 const CD={tension:.35,fill:true,pointRadius:1.5,pointHoverRadius:4,borderWidth:1.5,animation:{duration:400}};
 const mkOpt=yfmt=>({responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:9.5},boxWidth:8,padding:6}}},
   scales:{x:{ticks:{font:{size:8.5},maxTicksLimit:12},grid:{color:'#f5f5f5'}},
-          y:{ticks:{font:{size:8.5},callback:v=>yfmt==='gib'?v.toFixed(0)+' G':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v},grid:{color:'#f5f5f5'}}}});
+          y:{ticks:{font:{size:8.5},callback:v=>yfmt==='gib'?fmtData(v):v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v},grid:{color:'#f5f5f5'}}}});
 
 function initCharts() {
   if(typeof Chart==='undefined') return;
@@ -336,24 +424,40 @@ function initCharts() {
   ]);
   
   render('cBytes', [
-      {label:'GiB Data', borderColor:'#1D9E75', backgroundColor:'rgba(29,158,117,.04)', ...CD},
+      {label:'Data Volume', borderColor:'#1D9E75', backgroundColor:'rgba(29,158,117,.04)', ...CD},
       {label:'Avg', borderColor:'rgba(29,158,117,.6)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
   ], 'gib');
 }
 
 function updateKPIs() {
     const ndays = viewRows.length || 1;
+    const sortedVisible = [...viewRows].sort((a,b) => a.ts - b.ts);
+    const rangeDates = new Set(sortedVisible.map(r => r.date));
+    const activeDeviceSet = new Set();
+    let newInRange = 0;
+    rangeDates.forEach(date => {
+      const day = deviceDailyByDate.get(date);
+      if(day) day.devices.forEach(id => activeDeviceSet.add(id));
+      newInRange += Number(device_first_seen_counts[date] || 0);
+    });
+    const activeInRange = activeDeviceSet.size;
+    const returningInRange = Math.max(0, activeInRange - newInRange);
     const tBytes = viewRows.reduce((s, r) => s + r.bytes, 0);
     const tIP = viewRows.reduce((s, r) => s + r.dist_ip, 0);
+    const tDev = viewRows.reduce((s, r) => s + r.dist_dev, 0);
     const tSess = viewRows.reduce((s, r) => s + r.dist_sess, 0);
     const tRows = viewRows.reduce((s, r) => s + r.rows, 0);
 
     const kpiHTML = [
-        {l:'Avg Volume / Day',v:fmt(tBytes/ndays,2)+' G',clr:'#0F6E56',s:'mean daily transfer for selected range'},
-        {l:'Avg Distinct IPs / Day',v:fmt(Math.round(tIP/ndays)),clr:'#4a41a8',s:'mean daily distinct IP count'},
-        {l:'Avg Sessions / Day',v:fmt(Math.round(tSess/ndays)),clr:'#9a6000',s:'mean daily tracked sessions'},
-        {l:'Avg Rows / Day',v:fmt(Math.round(tRows/ndays)),clr:'#b71c1c',s:'mean daily logs for range'}
-    ].map(c => `<div class="card"><div class="clbl"><span class="cdot" style="background:${c.clr}"></span>${c.l}</div><div class="cval" style="color:${c.clr}">${c.v}</div><div class="csub">${c.s}</div></div>`).join('');
+        {l:'Avg Volume / Day',v:fmtData(tBytes/ndays),clr:'#0F6E56'},
+        {l:'Avg Distinct IPs / Day',v:fmt(Math.round(tIP/ndays)),clr:'#4a41a8'},
+        {l:'Avg Device IDs / Day',v:fmt(Math.round(tDev/ndays)),clr:'#1f6f8b'},
+        {l:'Avg Sessions / Day',v:fmt(Math.round(tSess/ndays)),clr:'#9a6000'},
+        {l:'Avg Rows / Day',v:fmt(Math.round(tRows/ndays)),clr:'#b71c1c'},
+        {l:'Total Device Count',v:fmt(activeInRange),clr:'#173b5c'},
+        {l:'Returning Devices',v:fmt(returningInRange),clr:'#2e6b10'},
+        {l:'New Devices',v:fmt(newInRange),clr:'#c9a227'}
+    ].map(c => `<div class="card"><div class="clbl"><span class="cdot" style="background:${c.clr}"></span>${c.l}</div><div class="cval" style="color:${c.clr}">${c.v}</div></div>`).join('');
     document.getElementById('cards').innerHTML = kpiHTML;
 }
 
@@ -381,13 +485,21 @@ function updateCharts() {
   document.querySelectorAll('.cbox h3 span+span').forEach(e => e.textContent = viewRows.length + ' days visible');
 }
 
-const subH=['Date', 'GiB', 'Rows*', 'cliIP rows', 'Dist IP', 'Dist IP+UA', 'Devices', 'Sessions', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found'];
+const subH=['Date', 'Data', 'Total Rows', 'cliIP rows', 'Dist IP', 'Dist IP+UA', 'Devices', 'Sessions', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found'];
 const fields=['date','bytes','rows','ip_rows','dist_ip','dist_ipua','dist_dev','dist_sess','dist_ip_r2','dist_ipua_r2','sess_avail','sess_na','sess_none','pct_ip','pct_ipua','pct_sess','pct_sessna','pct_none'];
-const numericFields = fields.filter(f => f !== 'date');
+const columnGroups = {
+  b:{fields:['bytes','rows','ip_rows'], color:'31,56,100'},
+  g:{fields:['dist_ip','dist_ipua','dist_dev','dist_sess'], color:'46,107,16'},
+  m:{fields:['dist_ip_r2','dist_ipua_r2'], color:'124,58,237'},
+  a:{fields:['sess_avail','sess_na','sess_none'], color:'154,96,0'},
+  p:{fields:['pct_ip','pct_ipua','pct_sess','pct_sessna','pct_none'], color:'74,65,168'}
+};
+const fieldGroup = {};
+Object.entries(columnGroups).forEach(([groupKey, group]) => group.fields.forEach(f => fieldGroup[f] = groupKey));
 
 function getScaleStats() {
   const stats = {};
-  numericFields.forEach(k => {
+  fields.filter(f => f !== 'date').forEach(k => {
     const vals = viewRows.map(r => Number(r[k])).filter(v => !isNaN(v));
     stats[k] = vals.length ? {min: Math.min(...vals), max: Math.max(...vals)} : {min: 0, max: 0};
   });
@@ -401,20 +513,19 @@ function blend(a, b, t) {
   return '#' + rgb.map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
-function colorScale(k, v, stats) {
+function columnGradient(k, v, stats) {
   const n = Number(v);
   const s = stats[k];
-  if(!s || isNaN(n) || s.max === s.min) return '';
-  // Excel-style 3-color scale per column: min = red, midpoint = yellow, max = green.
+  const group = columnGroups[fieldGroup[k]];
+  if(!group || !s || isNaN(n)) return '';
+  if(s.max === s.min) return ` style="background:rgba(${group.color},.08)"`;
   const t = Math.max(0, Math.min(1, (n - s.min) / (s.max - s.min)));
-  const color = t < .5
-    ? blend('f8696b', 'ffeb84', t * 2)
-    : blend('ffeb84', '63be7b', (t - .5) * 2);
-  return ` style="background:${color}"`;
+  const alpha = (.08 + (t * .30)).toFixed(3);
+  return ` style="background:rgba(${group.color},${alpha})"`;
 }
 
 function dataCell(d, k, body, cls='', stats=null) {
-  return `<td${cls ? ` class="${cls}"` : ''}${stats ? colorScale(k, d[k], stats) : ''}>${body}</td>`;
+  return `<td${cls ? ` class="${cls}"` : ''}${stats ? columnGradient(k, d[k], stats) : ''}>${body}</td>`;
 }
 
 function fmtChg(n) {
@@ -426,9 +537,9 @@ function fmtChg(n) {
 
 function getDropGain() {
   const byDate = [...viewRows].sort((a, b) => a.ts - b.ts);
-  if(byDate.length < 5) return {};
+  if(byDate.length <= dropLookbackDays) return {};
   const target = byDate[byDate.length - 1];
-  const baseRows = byDate.slice(byDate.length - 5, byDate.length - 1);
+  const baseRows = byDate.slice(-(dropLookbackDays + 1), -1);
   const calc = k => {
     const avg = baseRows.reduce((s, r) => s + Number(r[k] || 0), 0) / baseRows.length;
     return avg ? (Number(target[k] || 0) / avg) - 1 : null;
@@ -450,7 +561,7 @@ function renderTable() {
   </thead><tbody>`;
 
   h += viewRows.map(d => `<tr>
-    <td>${d.date}</td>${dataCell(d,'bytes',fmt(d.bytes,2),'',scaleStats)}${dataCell(d,'rows',fmt(d.rows),'',scaleStats)}${dataCell(d,'ip_rows',fmt(d.ip_rows),'',scaleStats)}
+    <td>${d.date}</td>${dataCell(d,'bytes',fmtData(d.bytes),'',scaleStats)}${dataCell(d,'rows',fmt(d.rows),'',scaleStats)}${dataCell(d,'ip_rows',fmt(d.ip_rows),'',scaleStats)}
     ${dataCell(d,'dist_ip',fmt(d.dist_ip),'',scaleStats)}${dataCell(d,'dist_ipua',fmt(d.dist_ipua),'',scaleStats)}${dataCell(d,'dist_dev',fmt(d.dist_dev),'',scaleStats)}${dataCell(d,'dist_sess',fmt(d.dist_sess),'',scaleStats)}
     ${dataCell(d,'dist_ip_r2',fmt(d.dist_ip_r2),'',scaleStats)}${dataCell(d,'dist_ipua_r2',fmt(d.dist_ipua_r2),'',scaleStats)}
     ${dataCell(d,'sess_avail',fmt(d.sess_avail),'',scaleStats)}${dataCell(d,'sess_na',fmt(d.sess_na),'',scaleStats)}${dataCell(d,'sess_none',fmt(d.sess_none),'',scaleStats)}
@@ -469,20 +580,25 @@ function renderTable() {
   const dropGain = getDropGain();
 
   h += `<tr class="total-row">
-    <td>TOTAL</td><td>${fmt(tVals.bytes,2)}</td><td>${fmt(tVals.rows)}</td><td>${fmt(tVals.ip_rows)}</td>
+    <td>TOTAL</td><td>${fmtData(tVals.bytes)}</td><td>${fmt(tVals.rows)}</td><td>${fmt(tVals.ip_rows)}</td>
     <td>${fmt(tVals.dist_ip)}</td><td>${fmt(tVals.dist_ipua)}</td><td>${fmt(tVals.dist_dev)}</td><td>${fmt(tVals.dist_sess)}</td>
     <td>${fmt(tVals.dist_ip_r2)}</td><td>${fmt(tVals.dist_ipua_r2)}</td>
     <td>${fmt(tVals.sess_avail)}</td><td>${fmt(tVals.sess_na)}</td><td>${fmt(tVals.sess_none)}</td>
     <td class="pct">${fmtP(tPct.pct_ip)}</td><td class="pct">${fmtP(tPct.pct_ipua)}</td><td class="pct">${fmtP(tPct.pct_sess)}</td><td class="pct">${fmtP(tPct.pct_sessna)}</td><td class="pct">${fmtP(tPct.pct_none)}</td>
   </tr>
   <tr class="drop-row">
-    <td>% Drop/Gain w.r.t. last 5 days</td><td>${fmtChg(dropGain.bytes)}</td><td>${fmtChg(dropGain.rows)}</td><td>${fmtChg(dropGain.ip_rows)}</td>
+    <td>% Drop/Gain w.r.t. previous ${dropLookbackDays} days</td><td>${fmtChg(dropGain.bytes)}</td><td>${fmtChg(dropGain.rows)}</td><td>${fmtChg(dropGain.ip_rows)}</td>
     <td>${fmtChg(dropGain.dist_ip)}</td><td>${fmtChg(dropGain.dist_ipua)}</td><td>${fmtChg(dropGain.dist_dev)}</td><td>${fmtChg(dropGain.dist_sess)}</td>
     <td>${fmtChg(dropGain.dist_ip_r2)}</td><td>${fmtChg(dropGain.dist_ipua_r2)}</td>
     <td>${fmtChg(dropGain.sess_avail)}</td><td>${fmtChg(dropGain.sess_na)}</td><td>${fmtChg(dropGain.sess_none)}</td>
     <td>\u2014</td><td>\u2014</td><td>${fmtChg(dropGain.pct_sess)}</td><td>${fmtChg(dropGain.pct_sessna)}</td><td>${fmtChg(dropGain.pct_none)}</td>
   </tr></tbody>`;
   document.getElementById('tbl').innerHTML = h;
+}
+
+function setDropLookback(days) {
+  dropLookbackDays = Math.max(1, Number(days) || 5);
+  renderTable();
 }
 
 function handleSort(key) {
@@ -509,21 +625,21 @@ function syncUIState(presetMode) {
 
 function setPreset(days) {
     syncUIState(days);
-    if(days === 'all' || rows.length === 0) {
-        viewRows = [...rows];
+    if(days === 'all' || completeRows.length === 0) {
+        viewRows = [...completeRows];
         document.getElementById('dateStart').value = '';
         document.getElementById('dateEnd').value = '';
     } else {
-        const maxTs = rows[rows.length - 1].ts;
-        const targetTs = maxTs - (days * 86400000);
-        viewRows = rows.filter(r => r.ts >= targetTs);
+        viewRows = completeRows.slice(-days);
         
         const dtFmt = (ts) => { 
             const d = new Date(ts); 
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; 
         };
-        document.getElementById('dateStart').value = dtFmt(viewRows[0].ts);
-        document.getElementById('dateEnd').value = dtFmt(viewRows[viewRows.length-1].ts);
+        if(viewRows.length) {
+            document.getElementById('dateStart').value = dtFmt(viewRows[0].ts);
+            document.getElementById('dateEnd').value = dtFmt(viewRows[viewRows.length-1].ts);
+        }
     }
     if(sortKey) executeSortLogic();
     renderTable(); updateCharts(); updateKPIs();
@@ -545,15 +661,13 @@ function handleCustomDate() {
         eTs = new Date(y, m - 1, d + 1).getTime() - 1; 
     }
     
-    viewRows = rows.filter(r => r.ts >= sTs && r.ts <= eTs);
+    viewRows = completeRows.filter(r => r.ts >= sTs && r.ts <= eTs);
     if(sortKey) executeSortLogic();
     renderTable(); updateCharts(); updateKPIs();
 }
 
 initCharts();
-updateKPIs();
-updateCharts();
-renderTable();
+setPreset(7);
 </script>
 </body>
 </html>"""
