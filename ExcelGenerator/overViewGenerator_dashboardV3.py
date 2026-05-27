@@ -72,19 +72,24 @@ print(f"Reading: {XLSX_PATH}")
 if not XLSX_PATH.exists():
     print(f"  ERROR: File not found: {XLSX_PATH}"); sys.exit(1)
 
-wb = openpyxl.load_workbook(XLSX_PATH, read_only=True, data_only=True)
+wb = openpyxl.load_workbook(XLSX_PATH, read_only=False, data_only=True)
 ws = wb.active
 
 meta = {}
-exclude_keywords = ["report generated", "filtered to", "lake folder", "duck db", "parquet files", "date range"]
+data_time_range = ""
+exclude_keywords = ["report generated", "filtered to", "lake folder", "duck db", "duckdb", "parquet files", "date range", "data time range", "total rows"]
 for row in ws.iter_rows(min_row=2, max_row=9, values_only=True):
     k = str(row[1]).strip() if row[1] else ''
     v = str(row[2]).strip() if row[2] else ''
+    if k and v and ("data time range" in k.lower() or "date range" in k.lower()):
+        data_time_range = v
     if k and k not in ('None','nan') and not any(keyword in k.lower() for keyword in exclude_keywords):
         meta[k] = v
 
 data_rows = []
-for row in ws.iter_rows(min_row=DATA_START_ROW, values_only=True):
+for row_idx, row in enumerate(ws.iter_rows(min_row=DATA_START_ROW, values_only=True), start=DATA_START_ROW):
+    if ws.row_dimensions[row_idx].hidden:
+        continue
     raw_d = get_val(row, COL['DATE'])
     if isinstance(raw_d, datetime):
         ds = raw_d.strftime("%Y-%m-%d")
@@ -150,10 +155,17 @@ for row in ws.iter_rows(min_row=DATA_START_ROW, values_only=True):
     })
 wb.close()
 
+# The latest date in the workbook is often an in-progress day. Match the Excel
+# summary logic by excluding that newest partial date from the dashboard.
+if data_rows:
+    latest_date = max(r["date"] for r in data_rows)
+    data_rows = [r for r in data_rows if r["date"] != latest_date]
+
 data_blob = json.dumps({
     "meta": meta, "rows": data_rows,
     "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
     "source": XLSX_PATH.name,
+    "data_range": data_time_range,
 }, ensure_ascii=False, separators=(',', ':'))
 
 chartjs = get_chartjs()
@@ -168,81 +180,102 @@ HTML = """<!DOCTYPE html>
 """ + chartjs_tag + """
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh}
-.topbar{background:#1F3864;color:#fff;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
-.topbar h1{font-size:16px;font-weight:600}.topbar .sub{font-size:11.5px;opacity:.6}
-#main{padding:20px 26px;max-width:1700px;margin:0 auto}
-.meta-strip{background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:12px 18px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px 26px;font-size:12px;color:#555}
-.meta-strip b{color:#1a1a2e;font-weight:600}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
-.card{background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:15px 17px;transition:all 0.3s}
-.clbl{font-size:11px;color:#888;margin-bottom:5px;display:flex;align-items:center;gap:5px}
-.cdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.cval{font-size:22px;font-weight:700;line-height:1.1}.csub{font-size:10px;color:#bbb;margin-top:4px}
-.charts{display:grid;grid-template-columns:repeat(auto-fit, minmax(350px, 1fr));gap:14px;margin-bottom:20px}
-.cbox{background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:14px 17px}
-.cbox h3{font-size:12px;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between}
-.table-wrap{background:#fff;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:18px}
-.thead{padding:12px 17px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;gap:15px}
-.thead h3{font-size:13px;font-weight:600}
-.filter-group{display:flex;align-items:center;gap:8px;background:#f8fafc;padding:5px 8px;border-radius:8px;border:1px solid #e2e8f0}
+:root{--ink:#172033;--muted:#64748b;--panel:#fff;--line:#d8e1ee;--brand:#173b5c;--brand2:#1f6f8b;--accent:#c9a227;--bg:#eef3f8}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+.topbar{background:var(--brand);color:#fff;padding:18px 30px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;border-bottom:4px solid var(--accent);box-shadow:0 8px 22px rgba(15,23,42,.16)}
+.title-block{display:flex;flex-direction:column;gap:3px}
+.topbar h1{font-size:20px;font-weight:700;letter-spacing:0}.topbar .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#cbd5e1;font-weight:700}.header-meta{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.topbar .sub{font-size:12px;opacity:.82;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:6px 10px}.range-pill{font-size:12px;font-weight:700;background:rgba(201,162,39,.18);border:1px solid rgba(201,162,39,.45);border-radius:999px;padding:6px 10px;color:#fff}
+#main{padding:22px 28px;max-width:1760px;margin:0 auto}
+.meta-strip{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 18px;font-size:12px;color:#475569;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.meta-items{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center}
+.meta-strip b{color:var(--ink);font-weight:700}
+.control-row{display:flex;align-items:stretch;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:12px;flex:1 1 760px}
+.card{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:14px 16px;transition:all 0.3s;box-shadow:0 1px 2px rgba(15,23,42,.05);border-top:3px solid currentColor}
+.clbl{font-size:11px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.cval{font-size:26px;font-weight:800;line-height:1.05}.csub{font-size:10.5px;color:#94a3b8;margin-top:6px}
+.charts{display:grid;grid-template-columns:repeat(2, minmax(350px, 1fr));gap:16px;margin-bottom:18px}
+.cbox{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.cbox h3{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;justify-content:space-between;color:#24324a}
+.table-wrap{background:var(--panel);border-radius:8px;border:1px solid var(--line);overflow:hidden;margin-bottom:18px;box-shadow:0 2px 8px rgba(15,23,42,.06)}
+.thead{padding:13px 17px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:15px;background:#f8fafc}
+.thead h3{font-size:14px;font-weight:700;color:#24324a}
+.filter-group{display:flex;align-items:center;gap:8px;background:#fff;padding:12px 14px;border-radius:8px;border:1px solid var(--line);border-top:3px solid var(--accent);align-self:stretch;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .filter-group input[type="date"]{border:1px solid #cbd5e1;padding:4px 6px;border-radius:4px;font-size:11px;outline:none;font-family:inherit;color:#1F3864;font-weight:500;cursor:pointer}
 .filter-group span{font-size:11px;color:#888;font-weight:500}
 .btn-preset{background:#fff;border:1px solid #cbd5e1;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;color:#555;transition:all 0.2s}
 .btn-preset:hover{background:#edf2f7;color:#1F3864}
 .btn-preset.active{background:#1F3864;color:#fff;border-color:#1F3864}
-.tbl-c{overflow-x:auto;max-height:650px;overflow-y:auto}
-table{width:100%;border-collapse:collapse;font-size:11px}
+.tbl-c{overflow-x:auto;max-height:650px;overflow-y:auto;background:#fff}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:10px;table-layout:fixed}
 thead{position:sticky;top:0;z-index:5}
-thead tr:first-child th{padding:6px 10px;font-size:10px;font-weight:700;color:#fff;text-align:center;white-space:nowrap}
-thead tr:last-child th{padding:8px 10px;text-align:right;font-size:10px;font-weight:600;color:#444;border-bottom:1px solid #e2e8f0;white-space:nowrap;background:#f8fafc;cursor:pointer;user-select:none}
+thead tr:first-child th{padding:5px 5px;font-size:9px;font-weight:700;color:#fff;text-align:center;white-space:normal;border-right:1px solid rgba(255,255,255,.25);border-bottom:1px solid #b8c4d4}
+thead tr:last-child th{padding:6px 4px;text-align:right;font-size:9px;font-weight:600;color:#334155;border-right:1px solid #cbd5e1;border-bottom:1px solid #b8c4d4;white-space:normal;line-height:1.15;background:#f8fafc;cursor:pointer;user-select:none;overflow-wrap:anywhere}
 thead tr:last-child th:hover{background:#edf2f7}
 thead tr:last-child th:first-child{text-align:left}
-td{padding:7px 10px;text-align:right;border-bottom:.5px solid #f0f0f0;white-space:nowrap}
-td:first-child{text-align:left;font-weight:500;position:sticky;left:0;background:inherit;z-index:1;min-width:85px}
-tr:nth-child(even) td{background:#fafafa}
+td{padding:6px 4px;text-align:right;border-right:1px solid #dbe3ef;border-bottom:1px solid #dbe3ef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th:first-child,td:first-child{border-left:1px solid #dbe3ef}
+td:first-child{text-align:left;font-weight:500;position:sticky;left:0;background:#fff;z-index:1;width:72px}
+tr:nth-child(even) td:first-child{background:#fafafa}
 tr:hover td{background:#eef4ff!important}
 tr.total-row td{background:#1F3864!important;color:#fff!important;font-weight:700}
+tr.drop-row td{background:#fff7ed!important;color:#7c2d12!important;font-weight:700}
+tr.drop-row td:first-child{text-align:left}
+.chg-pos{color:#166534!important}.chg-neg{color:#b91c1c!important}.chg-flat{color:#57534e!important}
 .pct{color:#185FA5;font-weight:500}
-.footer{text-align:center;font-size:11px;color:#ccc;padding:8px 0 20px}
+.footer{text-align:center;font-size:11px;color:#94a3b8;padding:8px 0 20px}
 th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{background:#9a6000} th.p{background:#4a41a8}
+@media (min-width:1500px){.charts{grid-template-columns:repeat(3,minmax(0,1fr))}.tbl-c{max-height:720px}}
+@media (min-width:1900px){#main{max-width:1880px}.charts{grid-template-columns:repeat(5,minmax(0,1fr))}.cbox canvas{height:190px!important}.tbl-c{max-height:760px}body{font-size:14px}}
+@media (max-width:1050px){#main{padding:16px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.charts{grid-template-columns:1fr}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:auto}.control-row{align-items:stretch}}
+@media print{body{background:#fff}.topbar,.meta-strip,.card,.cbox,.table-wrap{box-shadow:none}.filter-group{display:none}.tbl-c{max-height:none;overflow:visible}}
 </style>
 </head>
 <body>
 <div class="topbar">
-  <h1>&#128202;&nbsp; Complete 18-Column Enterprise Dashboard</h1>
-  <span class="sub" id="genLbl"></span>
+  <div class="title-block">
+    <h1>Overview Dashboard Veto</h1>
+  </div>
+  <div class="header-meta">
+    <span class="range-pill" id="rangeLbl"></span>
+    <span class="sub" id="genLbl"></span>
+  </div>
 </div>
 <div id="main">
-  <div class="meta-strip" id="metaStrip"></div>
-  <div class="cards" id="cards"></div>
+  <div class="meta-strip" id="metaWrap">
+    <div class="meta-items" id="metaStrip"></div>
+  </div>
+  <div class="control-row">
+    <div class="cards" id="cards"></div>
+    <div class="filter-group">
+       <button class="btn-preset active" id="btnAll" onclick="setPreset('all')">ALL</button>
+       <button class="btn-preset" id="btn30" onclick="setPreset(30)">30D</button>
+       <button class="btn-preset" id="btn7" onclick="setPreset(7)">7D</button>
+       <span style="margin:0 4px">|</span>
+       <input type="date" id="dateStart" onchange="handleCustomDate()" />
+       <span>to</span>
+       <input type="date" id="dateEnd" onchange="handleCustomDate()" />
+    </div>
+  </div>
   
   <div class="charts">
     <div class="cbox"><h3><span>Daily Row Volume</span><span id="cH1" style="color:#aaa;font-weight:400"></span></h3><canvas id="cRows" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Unique Visitors & Devices</span><span id="cH2" style="color:#aaa;font-weight:400"></span></h3><canvas id="cIP" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Session Health Status</span><span id="cH3" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSess" height="170"></canvas></div>
-    <div class="cbox"><h3><span>Data Density Profile (GiB)</span><span id="cH4" style="color:#aaa;font-weight:400"></span></h3><canvas id="cBytes" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Data Density Profile (GiB)</span><span id="cH2" style="color:#aaa;font-weight:400"></span></h3><canvas id="cBytes" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Unique Visitors & Devices</span><span id="cH3" style="color:#aaa;font-weight:400"></span></h3><canvas id="cIP" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Session Available & Missing</span><span id="cH4" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSessFound" height="170"></canvas></div>
+    <div class="cbox"><h3><span>Session Not Found</span><span id="cH5" style="color:#aaa;font-weight:400"></span></h3><canvas id="cSessNone" height="170"></canvas></div>
   </div>
 
   <div class="table-wrap">
     <div class="thead">
       <h3>Day-by-Day Breakdown (Full Schema)</h3>
-      <div class="filter-group">
-         <button class="btn-preset active" id="btnAll" onclick="setPreset('all')">ALL</button>
-         <button class="btn-preset" id="btn30" onclick="setPreset(30)">30D</button>
-         <button class="btn-preset" id="btn7" onclick="setPreset(7)">7D</button>
-         <span style="margin:0 4px">|</span>
-         <input type="date" id="dateStart" onchange="handleCustomDate()" />
-         <span>to</span>
-         <input type="date" id="dateEnd" onchange="handleCustomDate()" />
-      </div>
     </div>
     <div class="tbl-c"><table id="tbl"></table></div>
   </div>
-  <div class="footer" id="footer"></div>
 </div>
 <script>
-const {meta,rows,generated,source} = """ + data_blob + """;
+const {meta,rows,generated,source,data_range} = """ + data_blob + """;
 
 // Parse strictly using localized component metrics to remove browser engine discrepancies
 rows.forEach(r => { 
@@ -251,10 +284,14 @@ rows.forEach(r => {
 });
 rows.sort((a,b) => a.ts - b.ts);
 
-document.getElementById('genLbl').textContent='Last updated '+generated+' | Source: '+source;
-document.getElementById('footer').textContent='Refresh by running generate_dashboard.py';
-if(Object.keys(meta).length > 0) document.getElementById('metaStrip').innerHTML=Object.entries(meta).map(([k,v])=>`<span><b>${k}:</b> ${v}</span>`).join('');
-else document.getElementById('metaStrip').style.display = 'none';
+document.getElementById('rangeLbl').style.display = 'none';
+document.getElementById('genLbl').textContent=(data_range ? 'Available data range: '+data_range+' | ' : '')+'Last updated '+generated+' | Source: '+source;
+const visibleMeta = Object.entries(meta).filter(([k]) => {
+  const key = k.toLowerCase().replace(/\\s+/g, '');
+  return !key.includes('duckdb') && !key.includes('totalrows') && !key.includes('datetimerange');
+});
+if(visibleMeta.length > 0) document.getElementById('metaStrip').innerHTML=visibleMeta.map(([k,v])=>`<span><b>${k}:</b> ${v}</span>`).join('');
+else document.getElementById('metaWrap').style.display = 'none';
 
 const fmt=(n,d=0)=>n==null||isNaN(n)?'\u2014':Number(n).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtP=n=>{ if(n==null||isNaN(n))return'\u2014'; const p=Math.abs(n)<=1?n*100:n; return p.toFixed(2)+'%'; };
@@ -286,11 +323,14 @@ function initCharts() {
       {label:'Avg', borderColor:'rgba(15,110,86,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
   ]);
   
-  render('cSess', [
+  render('cSessFound', [
       {label:'Sess Avail', borderColor:'#2e6b10', backgroundColor:'transparent', ...CD},
       {label:'Avg', borderColor:'rgba(46,107,16,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false},
       {label:'Sess Missing', borderColor:'#9a6000', backgroundColor:'transparent', ...CD},
-      {label:'Avg', borderColor:'rgba(154,96,0,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false},
+      {label:'Avg', borderColor:'rgba(154,96,0,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
+  ]);
+
+  render('cSessNone', [
       {label:'Sess Not Found', borderColor:'#b71c1c', backgroundColor:'transparent', ...CD},
       {label:'Avg', borderColor:'rgba(183,28,28,.5)', borderWidth:1.5, borderDash:[5,5], pointRadius:0, fill:false}
   ]);
@@ -309,9 +349,9 @@ function updateKPIs() {
     const tRows = viewRows.reduce((s, r) => s + r.rows, 0);
 
     const kpiHTML = [
-        {l:'Volume in View',v:fmt(tBytes,2)+' G',clr:'#0F6E56',s:'cumulative transfer for range'},
-        {l:'Distinct IPs in View',v:fmt(tIP),clr:'#4a41a8',s:'unique absolute users for range'},
-        {l:'Total Sessions in View',v:fmt(tSess),clr:'#9a6000',s:'tracked unique sessions for range'},
+        {l:'Avg Volume / Day',v:fmt(tBytes/ndays,2)+' G',clr:'#0F6E56',s:'mean daily transfer for selected range'},
+        {l:'Avg Distinct IPs / Day',v:fmt(Math.round(tIP/ndays)),clr:'#4a41a8',s:'mean daily distinct IP count'},
+        {l:'Avg Sessions / Day',v:fmt(Math.round(tSess/ndays)),clr:'#9a6000',s:'mean daily tracked sessions'},
         {l:'Avg Rows / Day',v:fmt(Math.round(tRows/ndays)),clr:'#b71c1c',s:'mean daily logs for range'}
     ].map(c => `<div class="card"><div class="clbl"><span class="cdot" style="background:${c.clr}"></span>${c.l}</div><div class="cval" style="color:${c.clr}">${c.v}</div><div class="csub">${c.s}</div></div>`).join('');
     document.getElementById('cards').innerHTML = kpiHTML;
@@ -335,37 +375,112 @@ function updateCharts() {
   
   sync('cRows', ['rows']); 
   sync('cIP', ['dist_ip', 'dist_dev']);
-  sync('cSess', ['sess_avail', 'sess_na', 'sess_none']); 
+  sync('cSessFound', ['sess_avail', 'sess_na']); 
+  sync('cSessNone', ['sess_none']); 
   sync('cBytes', ['bytes']);
   document.querySelectorAll('.cbox h3 span+span').forEach(e => e.textContent = viewRows.length + ' days visible');
 }
 
-const subH=['Date (IST)', 'Total Bytes (GiB)', 'Total Rows*', 'cliIP rows', 'Distinct cliIP', 'Distinct cliIP & UA', 'Distinct device_id', 'Distinct session_id', 'Distinct cliIP', 'Distinct cliIP & UA', 'Session Found - ID Available', 'Session Found - ID NOT Available', 'Session Not Found', 'Distinct cliIP', 'Distinct cliIP & UA', 'Session Found - ID Available', 'Session Found - ID NOT Available', 'Session Not Found'];
+const subH=['Date', 'GiB', 'Rows*', 'cliIP rows', 'Dist IP', 'Dist IP+UA', 'Devices', 'Sessions', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found', 'Dist IP', 'Dist IP+UA', 'Sess Avail', 'Sess Missing', 'Sess Not Found'];
 const fields=['date','bytes','rows','ip_rows','dist_ip','dist_ipua','dist_dev','dist_sess','dist_ip_r2','dist_ipua_r2','sess_avail','sess_na','sess_none','pct_ip','pct_ipua','pct_sess','pct_sessna','pct_none'];
+const numericFields = fields.filter(f => f !== 'date');
+
+function getScaleStats() {
+  const stats = {};
+  numericFields.forEach(k => {
+    const vals = viewRows.map(r => Number(r[k])).filter(v => !isNaN(v));
+    stats[k] = vals.length ? {min: Math.min(...vals), max: Math.max(...vals)} : {min: 0, max: 0};
+  });
+  return stats;
+}
+
+function blend(a, b, t) {
+  const ah = a.match(/\\w\\w/g).map(x => parseInt(x, 16));
+  const bh = b.match(/\\w\\w/g).map(x => parseInt(x, 16));
+  const rgb = ah.map((v, i) => Math.round(v + (bh[i] - v) * t));
+  return '#' + rgb.map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+function colorScale(k, v, stats) {
+  const n = Number(v);
+  const s = stats[k];
+  if(!s || isNaN(n) || s.max === s.min) return '';
+  // Excel-style 3-color scale per column: min = red, midpoint = yellow, max = green.
+  const t = Math.max(0, Math.min(1, (n - s.min) / (s.max - s.min)));
+  const color = t < .5
+    ? blend('f8696b', 'ffeb84', t * 2)
+    : blend('ffeb84', '63be7b', (t - .5) * 2);
+  return ` style="background:${color}"`;
+}
+
+function dataCell(d, k, body, cls='', stats=null) {
+  return `<td${cls ? ` class="${cls}"` : ''}${stats ? colorScale(k, d[k], stats) : ''}>${body}</td>`;
+}
+
+function fmtChg(n) {
+  if(n == null || isNaN(n)) return '\u2014';
+  const cls = n > 0 ? 'chg-pos' : n < 0 ? 'chg-neg' : 'chg-flat';
+  const sign = n > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${(n * 100).toFixed(2)}%</span>`;
+}
+
+function getDropGain() {
+  const byDate = [...viewRows].sort((a, b) => a.ts - b.ts);
+  if(byDate.length < 5) return {};
+  const target = byDate[byDate.length - 1];
+  const baseRows = byDate.slice(byDate.length - 5, byDate.length - 1);
+  const calc = k => {
+    const avg = baseRows.reduce((s, r) => s + Number(r[k] || 0), 0) / baseRows.length;
+    return avg ? (Number(target[k] || 0) / avg) - 1 : null;
+  };
+  return {
+    bytes: calc('bytes'), rows: calc('rows'), ip_rows: calc('ip_rows'),
+    dist_ip: calc('dist_ip'), dist_ipua: calc('dist_ipua'), dist_dev: calc('dist_dev'), dist_sess: calc('dist_sess'),
+    dist_ip_r2: calc('dist_ip_r2'), dist_ipua_r2: calc('dist_ipua_r2'),
+    sess_avail: calc('sess_avail'), sess_na: calc('sess_na'), sess_none: calc('sess_none'),
+    pct_sess: calc('pct_sess'), pct_sessna: calc('pct_sessna'), pct_none: calc('pct_none')
+  };
+}
 
 function renderTable() {
+  const scaleStats = getScaleStats();
   let h = `<thead>
     <tr><th class="b" style="background:#f8fafc;"></th><th colspan="3" class="b">General Volumes</th><th colspan="4" class="g">Absolute Counts</th><th colspan="2" class="m">Unique Subsets</th><th colspan="3" class="a">Session Identifiers</th><th colspan="5" class="p">% Data of TOTAL Segment</th></tr>
     <tr>${subH.map((title, idx) => `<th onclick="handleSort('${fields[idx]}')">${title}${sortKey === fields[idx] ? (sortAsc ? ' \u25B2' : ' \u25BC') : ''}</th>`).join('')}</tr>
   </thead><tbody>`;
 
   h += viewRows.map(d => `<tr>
-    <td>${d.date}</td><td>${fmt(d.bytes,2)}</td><td>${fmt(d.rows)}</td><td>${fmt(d.ip_rows)}</td>
-    <td>${fmt(d.dist_ip)}</td><td>${fmt(d.dist_ipua)}</td><td>${fmt(d.dist_dev)}</td><td>${fmt(d.dist_sess)}</td>
-    <td>${fmt(d.dist_ip_r2)}</td><td>${fmt(d.dist_ipua_r2)}</td>
-    <td>${fmt(d.sess_avail)}</td><td>${fmt(d.sess_na)}</td><td>${fmt(d.sess_none)}</td>
-    <td class="pct">${fmtP(d.pct_ip)}</td><td class="pct">${fmtP(d.pct_ipua)}</td><td class="pct">${fmtP(d.pct_sess)}</td><td class="pct">${fmtP(d.pct_sessna)}</td><td class="pct">${fmtP(d.pct_none)}</td>
+    <td>${d.date}</td>${dataCell(d,'bytes',fmt(d.bytes,2),'',scaleStats)}${dataCell(d,'rows',fmt(d.rows),'',scaleStats)}${dataCell(d,'ip_rows',fmt(d.ip_rows),'',scaleStats)}
+    ${dataCell(d,'dist_ip',fmt(d.dist_ip),'',scaleStats)}${dataCell(d,'dist_ipua',fmt(d.dist_ipua),'',scaleStats)}${dataCell(d,'dist_dev',fmt(d.dist_dev),'',scaleStats)}${dataCell(d,'dist_sess',fmt(d.dist_sess),'',scaleStats)}
+    ${dataCell(d,'dist_ip_r2',fmt(d.dist_ip_r2),'',scaleStats)}${dataCell(d,'dist_ipua_r2',fmt(d.dist_ipua_r2),'',scaleStats)}
+    ${dataCell(d,'sess_avail',fmt(d.sess_avail),'',scaleStats)}${dataCell(d,'sess_na',fmt(d.sess_na),'',scaleStats)}${dataCell(d,'sess_none',fmt(d.sess_none),'',scaleStats)}
+    ${dataCell(d,'pct_ip',fmtP(d.pct_ip),'pct',scaleStats)}${dataCell(d,'pct_ipua',fmtP(d.pct_ipua),'pct',scaleStats)}${dataCell(d,'pct_sess',fmtP(d.pct_sess),'pct',scaleStats)}${dataCell(d,'pct_sessna',fmtP(d.pct_sessna),'pct',scaleStats)}${dataCell(d,'pct_none',fmtP(d.pct_none),'pct',scaleStats)}
   </tr>`).join('');
 
   const tKeys = ["bytes","rows","ip_rows","dist_ip","dist_ipua","dist_dev","dist_sess","dist_ip_r2","dist_ipua_r2","sess_avail","sess_na","sess_none"];
   const tVals = {}; tKeys.forEach(k => tVals[k] = viewRows.reduce((sum, r) => sum + r[k], 0));
+  const tPct = {
+    pct_ip: tVals.ip_rows > 0 ? tVals.dist_ip / tVals.ip_rows : 0,
+    pct_ipua: tVals.ip_rows > 0 ? tVals.dist_ipua / tVals.ip_rows : 0,
+    pct_sess: tVals.ip_rows > 0 ? tVals.sess_avail / tVals.ip_rows : 0,
+    pct_sessna: tVals.ip_rows > 0 ? tVals.sess_na / tVals.ip_rows : 0,
+    pct_none: tVals.ip_rows > 0 ? tVals.sess_none / tVals.ip_rows : 0
+  };
+  const dropGain = getDropGain();
 
   h += `<tr class="total-row">
     <td>TOTAL</td><td>${fmt(tVals.bytes,2)}</td><td>${fmt(tVals.rows)}</td><td>${fmt(tVals.ip_rows)}</td>
     <td>${fmt(tVals.dist_ip)}</td><td>${fmt(tVals.dist_ipua)}</td><td>${fmt(tVals.dist_dev)}</td><td>${fmt(tVals.dist_sess)}</td>
     <td>${fmt(tVals.dist_ip_r2)}</td><td>${fmt(tVals.dist_ipua_r2)}</td>
     <td>${fmt(tVals.sess_avail)}</td><td>${fmt(tVals.sess_na)}</td><td>${fmt(tVals.sess_none)}</td>
-    <td colspan="5" style="text-align:center;opacity:.7;font-size:10px">— dynamic visible snapshot totals —</td>
+    <td class="pct">${fmtP(tPct.pct_ip)}</td><td class="pct">${fmtP(tPct.pct_ipua)}</td><td class="pct">${fmtP(tPct.pct_sess)}</td><td class="pct">${fmtP(tPct.pct_sessna)}</td><td class="pct">${fmtP(tPct.pct_none)}</td>
+  </tr>
+  <tr class="drop-row">
+    <td>% Drop/Gain w.r.t. last 5 days</td><td>${fmtChg(dropGain.bytes)}</td><td>${fmtChg(dropGain.rows)}</td><td>${fmtChg(dropGain.ip_rows)}</td>
+    <td>${fmtChg(dropGain.dist_ip)}</td><td>${fmtChg(dropGain.dist_ipua)}</td><td>${fmtChg(dropGain.dist_dev)}</td><td>${fmtChg(dropGain.dist_sess)}</td>
+    <td>${fmtChg(dropGain.dist_ip_r2)}</td><td>${fmtChg(dropGain.dist_ipua_r2)}</td>
+    <td>${fmtChg(dropGain.sess_avail)}</td><td>${fmtChg(dropGain.sess_na)}</td><td>${fmtChg(dropGain.sess_none)}</td>
+    <td>\u2014</td><td>\u2014</td><td>${fmtChg(dropGain.pct_sess)}</td><td>${fmtChg(dropGain.pct_sessna)}</td><td>${fmtChg(dropGain.pct_none)}</td>
   </tr></tbody>`;
   document.getElementById('tbl').innerHTML = h;
 }
