@@ -87,7 +87,7 @@ CHANNEL_MAP_RAW = {
     "bollywoodmasala": "Bollywood Masala",
     "bollywood masala": "Bollywood Masala",
     "vetocricketlive": "Veto Cricket Live",
-    "out": "manorama",
+    "out": "Other",
     "1080p": "Other",
     "720p": "Other",
     "480p": "Other",
@@ -195,14 +195,24 @@ def compute_metrics(lake_path, start_date, end_date):
         end_epoch   = int(datetime.combine(end_date,   time.max).timestamp())
         partition_filter = build_partition_filter(start_date, end_date)
 
+        # ────────── FIXED: Integrated Stable Stable Extraction Logic ──────────
         con.execute(f"""
             CREATE TEMP TABLE base_tmp AS
             SELECT
                 cliIP,
                 lower(
                     CASE
+                        -- 1. Hostname detection (highest priority)
+                        WHEN reqHost LIKE '%b4u-veto-m%' THEN 'b4u_movies'
+                        WHEN reqHost LIKE '%b4u-veto-music%' THEN 'b4u_music'
+                        WHEN reqHost LIKE '%b4u-veto-kadak%' THEN 'b4u_kadak'
+                        WHEN reqHost LIKE '%manorama-veto%' THEN 'manorama'
+
+                        -- 2. Then vglive-sk IDs
                         WHEN reqPath LIKE '%vglive-sk-%'
                             THEN regexp_extract(reqPath, '(vglive-sk-[0-9]+)', 1)
+
+                        -- 3. Then path-based structural extractions
                         WHEN reqPath LIKE '%/%' THEN
                             CASE
                                 WHEN lower(split_part(ltrim(reqPath, '/'), '/', 1))
@@ -210,6 +220,8 @@ def compute_metrics(lake_path, start_date, end_date):
                                     THEN split_part(ltrim(reqPath, '/'), '/', 2)
                                 ELSE split_part(ltrim(reqPath, '/'), '/', 1)
                             END
+
+                        -- 4. Final filename regex cleanup fallback
                         ELSE
                             regexp_replace(
                                 regexp_extract(reqPath, '([^/]+)\\.ts$', 1),
@@ -375,7 +387,7 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
         </div>
         """, unsafe_allow_html=True)
 
-        # ─── Debug expander with CSV export button ───────────────────────────
+        # Debug expander with CSV export
         if show_debug:
             with st.expander("🔎 Unmapped raw channel IDs (add these to CHANNEL_MAP)"):
                 if unmapped_df.empty:
@@ -401,7 +413,6 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
                         use_container_width=True,
                         hide_index=True,
                     )
-        # ──────────────────────────────────────────────────────────────────────
 
     st.markdown("---")
     st.subheader("🏆 Top Viewers by Channel")

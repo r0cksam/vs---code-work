@@ -1,5 +1,6 @@
 """
 Export raw Parquet rows for unmapped (Other) channels – stable version with LIMIT.
+Now includes hostname detection for B4U and Manorama.
 Usage: python export_unmapped_raw_rows.py
 """
 
@@ -11,10 +12,10 @@ LAKE_PATH  = r"D:\Veto Logs Backup\veto Stream logs\lake"
 START_DATE = datetime(2026, 4, 1)
 END_DATE   = datetime(2026, 5, 25)
 
-OUTPUT_CSV = "todayunmapped_raw_rows.csv"
-MAX_ROWS   = 10000   # adjust as needed (0 = unlimited, but be careful)
+OUTPUT_CSV = "2todayunmapped_raw_rows.csv"
+MAX_ROWS   = 10000
 
-# ====================== CHANNEL MAP (same as dashboard) ======================
+# ====================== CHANNEL MAP ======================
 CHANNEL_MAP = {
     "vglive-sk-274906": "India TV",
     "vglive-sk-385006": "India TV Yoga",
@@ -38,7 +39,8 @@ CHANNEL_MAP = {
     "satsanghtv": "Satsangh TV", "satsangh": "Satsangh TV", "satsang": "Satsangh TV",
     "shubhtv": "Shubh TV", "shubh": "Shubh TV",
     "aapkiadalat": "India TV Adalat", "yogatv": "India TV Yoga",
-    "manorama": "Manorama", "newsnation": "NewsNation",
+    "manorama": "Manorama",   # ← key for host detection result
+    "newsnation": "NewsNation",
     "newsnation_upuk": "NewsNation UP/UK", "nnup": "NewsNation UP/UK",
     "newsnation_pbhr": "NewsNation PB/HR",
     "newsnation_mpch": "NewsNation MP/CH", "nnmp": "NewsNation MP/CH",
@@ -56,10 +58,11 @@ CHANNEL_MAP = {
     "nntv": "DD National",
     "1080p": "Other", "720p": "Other", "480p": "Other", "360p": "Other",
     "master_1080": "Other", "master_720": "Other", "master_360": "Other", "master_504": "Other",
-    "out": "manorama", "unknown": "Other",
+    "out": "Other",          # generic 'out' stays as Other – but we will map via hostname first
+    "unknown": "Other",
 }
 
-# ====================== HELPER FUNCTIONS ======================
+# ====================== HELPER ======================
 def build_partition_filter(start, end):
     filters = []
     current = start
@@ -68,13 +71,11 @@ def build_partition_filter(start, end):
         current += timedelta(days=1)
     return " OR ".join(filters)
 
-# ====================== MAIN ======================
 def main():
     partition_filter = build_partition_filter(START_DATE, END_DATE)
     start_epoch = int(START_DATE.timestamp())
     end_epoch   = int((END_DATE + timedelta(days=1) - timedelta(seconds=1)).timestamp())
 
-    # Build mapping table as VALUES
     map_values = ",\n".join(f"    ('{k.lower()}', '{v}')" for k, v in CHANNEL_MAP.items())
     map_sql = f"CREATE TEMP TABLE map AS SELECT * FROM (VALUES\n{map_values}\n) AS t(channel_key, channel_name)"
 
@@ -86,8 +87,17 @@ def main():
             *,
             lower(
                 CASE
+                    -- Hostname detection (highest priority)
+                    WHEN reqHost LIKE '%b4u-veto-m%' THEN 'b4u_movies'
+                    WHEN reqHost LIKE '%b4u-veto-music%' THEN 'b4u_music'
+                    WHEN reqHost LIKE '%b4u-veto-kadak%' THEN 'b4u_kadak'
+                    WHEN reqHost LIKE '%manorama-veto%' THEN 'manorama'      -- ← NEW: Manorama detection
+
+                    -- Then vglive-sk IDs
                     WHEN reqPath LIKE '%vglive-sk-%'
                         THEN regexp_extract(reqPath, '(vglive-sk-[0-9]+)', 1)
+
+                    -- Then path-based extraction
                     WHEN reqPath LIKE '%/%' THEN
                         CASE
                             WHEN lower(split_part(ltrim(reqPath, '/'), '/', 1))
@@ -95,10 +105,12 @@ def main():
                                 THEN split_part(ltrim(reqPath, '/'), '/', 2)
                             ELSE split_part(ltrim(reqPath, '/'), '/', 1)
                         END
-                    ELSE regexp_replace(
-                        regexp_extract(reqPath, '([^/]+)\\.ts$', 1),
-                        '[_-]?(1080p?|720p?|480p?|360p?|\\d+)$', ''
-                    )
+
+                    ELSE
+                        regexp_replace(
+                            regexp_extract(reqPath, '([^/]+)\\.ts$', 1),
+                            '[_-]?(1080p?|720p?|480p?|360p?|\\d+)$', ''
+                        )
                 END
             ) AS channel_id_raw
         FROM read_parquet('{LAKE_PATH.replace("\\", "/")}/**/*.parquet', hive_partitioning=1)
@@ -119,8 +131,17 @@ def main():
 
     print(f"Scanning raw rows from {START_DATE.date()} to {END_DATE.date()} ...")
     con = duckdb.connect()
+    
+    # === NEW: Enable DuckDB's Native Progress Bar ===
+    con.execute("PRAGMA enable_progress_bar;")
+    # Optional: adjust how fast it shows up (default is a few seconds, this forces it sooner)
+    con.execute("PRAGMA progress_bar_time=100;")
+    
     con.execute(map_sql)
-    df = con.execute(query).fetchdf()
+    
+    print("Executing query and fetching data (this may take a while)...")
+    df = con.execute(query).fetchdf() # The terminal will show a dynamic progress bar here!
+    
     con.close()
 
     if df.empty:

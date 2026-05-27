@@ -104,6 +104,7 @@ CHANNEL_MAP = {
     "9x_jhakaas": "9XM Jhakaas",
     "9x_jalwa": "9XM Jalwa",
     "nntv": "DD National",
+    "out": "manorama"
 }
 def resolve(raw):
     if not raw:

@@ -87,7 +87,7 @@ CHANNEL_MAP_RAW = {
     "bollywoodmasala": "Bollywood Masala",
     "bollywood masala": "Bollywood Masala",
     "vetocricketlive": "Veto Cricket Live",
-    "out": "manorama",
+    "out": "Other",
     "1080p": "Other",
     "720p": "Other",
     "480p": "Other",
@@ -195,14 +195,24 @@ def compute_metrics(lake_path, start_date, end_date):
         end_epoch   = int(datetime.combine(end_date,   time.max).timestamp())
         partition_filter = build_partition_filter(start_date, end_date)
 
+        # ────────── Data Extraction Engine ──────────
         con.execute(f"""
             CREATE TEMP TABLE base_tmp AS
             SELECT
                 cliIP,
                 lower(
                     CASE
+                        -- 1. Hostname detection (highest priority)
+                        WHEN reqHost LIKE '%b4u-veto-m%' THEN 'b4u_movies'
+                        WHEN reqHost LIKE '%b4u-veto-music%' THEN 'b4u_music'
+                        WHEN reqHost LIKE '%b4u-veto-kadak%' THEN 'b4u_kadak'
+                        WHEN reqHost LIKE '%manorama-veto%' THEN 'manorama'
+
+                        -- 2. Then vglive-sk IDs
                         WHEN reqPath LIKE '%vglive-sk-%'
                             THEN regexp_extract(reqPath, '(vglive-sk-[0-9]+)', 1)
+
+                        -- 3. Then path-based structural extractions
                         WHEN reqPath LIKE '%/%' THEN
                             CASE
                                 WHEN lower(split_part(ltrim(reqPath, '/'), '/', 1))
@@ -210,6 +220,8 @@ def compute_metrics(lake_path, start_date, end_date):
                                     THEN split_part(ltrim(reqPath, '/'), '/', 2)
                                 ELSE split_part(ltrim(reqPath, '/'), '/', 1)
                             END
+
+                        -- 4. Final filename regex cleanup fallback
                         ELSE
                             regexp_replace(
                                 regexp_extract(reqPath, '([^/]+)\\.ts$', 1),
@@ -248,7 +260,7 @@ def compute_metrics(lake_path, start_date, end_date):
         con.execute("DROP TABLE base_tmp")
 
         if raw_channel_df.empty:
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), "No data found."
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), "No data found."
 
         raw_channel_df["channel_name"] = raw_channel_df["channel_id"].apply(resolve_channel)
         user_df["channel_name"]        = user_df["channel_id"].apply(resolve_channel)
@@ -270,9 +282,12 @@ def compute_metrics(lake_path, start_date, end_date):
 
         user_df["watch_hours"] = user_df["chunks_watched"] * CHUNK_DURATION_HOURS
         user_df = user_df.drop(columns=["channel_id"])
+        
+        # Calculate raw channel watch hours for the Validator Audit table
+        raw_channel_df["watch_hours"] = raw_channel_df["total_chunks"] * CHUNK_DURATION_HOURS
 
         time_range = f"{start_date.strftime('%Y-%m-%d')} → {end_date.strftime('%Y-%m-%d')}"
-        return channel_df, user_df, unmapped_df, time_range
+        return channel_df, user_df, unmapped_df, raw_channel_df, time_range
     finally:
         con.close()
 
@@ -316,13 +331,15 @@ with st.sidebar:
 if run_button or "channel_df" not in st.session_state:
     with st.spinner("Processing data…"):
         result = compute_metrics(lake_input, start_date, end_date)
-        channel_df, user_df, unmapped_df, time_range = result
+        channel_df, user_df, unmapped_df, raw_channel_df, time_range = result
+        
         if channel_df.empty:
             st.error("No data found for the selected range.")
         else:
             st.session_state.channel_df = channel_df
             st.session_state.user_df = user_df
             st.session_state.unmapped_df = unmapped_df
+            st.session_state.raw_channel_df = raw_channel_df
             st.session_state.time_range = time_range
             st.success("✅ Analysis completed successfully!")
 
@@ -375,7 +392,6 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
         </div>
         """, unsafe_allow_html=True)
 
-        # ─── Debug expander with CSV export button ───────────────────────────
         if show_debug:
             with st.expander("🔎 Unmapped raw channel IDs (add these to CHANNEL_MAP)"):
                 if unmapped_df.empty:
@@ -401,7 +417,6 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
                         use_container_width=True,
                         hide_index=True,
                     )
-        # ──────────────────────────────────────────────────────────────────────
 
     st.markdown("---")
     st.subheader("🏆 Top Viewers by Channel")
@@ -418,6 +433,49 @@ if "channel_df" in st.session_state and not st.session_state.channel_df.empty:
                 hide_index=True,
             )
 
+    # ---------------------------------------------------------
+    # 🕵️ MAPPING VALIDATOR
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🕵️ Mapping Validator & Audit")
+    st.markdown("Use this table to verify that raw IDs are rolling up into the correct channels. If a channel has unusually high watch hours, check here to ensure an unrelated raw ID wasn't accidentally mapped to it.")
+    
+    raw_df = st.session_state.raw_channel_df
+    validator_df = raw_df.groupby("channel_name").agg(
+        raw_ids_mapped=("channel_id", lambda x: ", ".join(sorted(list(x)))),
+        raw_id_count=("channel_id", "count"),
+        total_watch_hours=("watch_hours", "sum")
+    ).reset_index().sort_values("total_watch_hours", ascending=False)
+
+    st.dataframe(
+        validator_df.style.format({
+            "total_watch_hours": "{:.2f} hrs",
+            "raw_id_count": "{:,}"
+        }),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "channel_name": st.column_config.TextColumn("Resolved Channel Name", width="medium"),
+            "raw_id_count": st.column_config.NumberColumn("IDs Combined", width="small"),
+            "total_watch_hours": st.column_config.NumberColumn("Total Hrs", width="small"),
+            "raw_ids_mapped": st.column_config.TextColumn("Raw IDs (Hover to read all)", width="large"),
+        }
+    )
+    
+    inspect_channel = st.selectbox("Inspect specific mapped channel breakdown:", [""] + validator_df["channel_name"].tolist())
+    if inspect_channel:
+        breakdown_df = raw_df[raw_df["channel_name"] == inspect_channel].sort_values("watch_hours", ascending=False)
+        st.dataframe(
+            breakdown_df[["channel_id", "unique_viewers", "total_chunks", "watch_hours"]].style.format({
+                "watch_hours": "{:.2f} hrs",
+                "total_chunks": "{:,}",
+                "unique_viewers": "{:,}"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    st.markdown("---")
     col_dl1, col_dl2 = st.columns(2)
     with col_dl1:
         st.download_button(
