@@ -1,0 +1,13 @@
+{
+  "lake": "D:\\Veto Logs Backup\\lake",
+  "store": "vglive_channel_profile\\etl_store_smoke",
+  "profile_out": "vglive_channel_profile\\deep_profile_smoke_incremental",
+  "full_refresh": false,
+  "dirty_dates": [
+    "2026-03-26"
+  ],
+  "file_count": 132,
+  "date_count": 64,
+  "row_count": 1360187031,
+  "seconds": 12.549
+}

@@ -440,7 +440,11 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     channel_series = build_channel_daily_series(channel_daily, top_channels)
     low_fill = column_fill.sort_values("non_empty_pct").head(18) if not column_fill.empty else pd.DataFrame()
     perf_ts = performance[performance["extension"].astype(str).str.lower() == "ts"] if not performance.empty and "extension" in performance.columns else performance
-    perf_slowest = perf_ts.sort_values("ttfb_p95_ms", ascending=False)
+    perf_slowest = (
+        perf_ts.sort_values("ttfb_p95_ms", ascending=False)
+        if not perf_ts.empty and "ttfb_p95_ms" in perf_ts.columns
+        else pd.DataFrame()
+    )
 
     query_param_row = one_row(query_params)
     cmcd_row = one_row(cmcd)
