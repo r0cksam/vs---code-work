@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -74,11 +75,19 @@ def parse_log_date(path: Path, lake: Path) -> str | None:
         return None
 
 
+def manifest_file_key(file_path: object) -> str:
+    raw = str(file_path).replace("\\", "/")
+    match = re.search(r"(year=\d{4}/month=\d{2}/day=\d{2}/[^/]+\.parquet)$", raw, re.IGNORECASE)
+    return match.group(1).lower() if match else raw.lower()
+
+
 def manifest_signature(rows: pd.DataFrame) -> str:
     h = hashlib.sha1()
-    for row in rows.sort_values("file").itertuples(index=False):
+    rows = rows.copy()
+    rows["file_key"] = rows["file"].map(manifest_file_key)
+    for row in rows.sort_values("file_key").itertuples(index=False):
         h.update(
-            f"{row.file}|{row.size_bytes}|{row.mtime_ns}|{row.row_count}\n".encode(
+            f"{row.file_key}|{row.size_bytes}|{row.mtime_ns}|{row.row_count}\n".encode(
                 "utf-8"
             )
         )

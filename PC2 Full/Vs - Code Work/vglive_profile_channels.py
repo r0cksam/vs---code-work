@@ -8,7 +8,7 @@ import duckdb
 from vglive_core import channel_candidate_sql
 
 
-DEFAULT_LAKE = Path(r"D:\Veto Logs Backup\lake")
+DEFAULT_LAKE = Path(r"D:\Veto Logs Backup\veto Stream logs\lake")
 DEFAULT_OUT = Path(r"D:\Veto Logs Backup\Vs - Code Work\vglive_channel_profile")
 
 

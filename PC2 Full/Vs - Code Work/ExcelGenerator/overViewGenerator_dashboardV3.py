@@ -231,7 +231,7 @@ data_blob = json.dumps({
     "device_daily": device_daily_rows,
     "device_first_seen_counts": device_first_seen_counts,
     "device_summary": device_summary,
-    "generated": generated_at.strftime("%Y-%m-%d %H:%M"),
+    "generated": generated_at.strftime("%Y-%m-%d %H:%M:%S"),
     "report_date": generated_at.strftime("%Y-%m-%d"),
     "data_range": data_time_range,
 }, ensure_ascii=False, separators=(',', ':'))
@@ -249,23 +249,24 @@ HTML = """<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--ink:#172033;--muted:#64748b;--panel:#fff;--line:#d8e1ee;--brand:#173b5c;--brand2:#1f6f8b;--accent:#c9a227;--bg:#eef3f8}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;-webkit-text-size-adjust:100%}
 .topbar{background:var(--brand);color:#fff;padding:18px 30px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;border-bottom:4px solid var(--accent);box-shadow:0 8px 22px rgba(15,23,42,.16)}
 .title-block{display:flex;flex-direction:column;gap:3px}
-.topbar h1{font-size:20px;font-weight:700;letter-spacing:0}.topbar .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#cbd5e1;font-weight:700}.header-meta{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.topbar .sub{font-size:12px;opacity:.82;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:6px 10px}.range-pill{font-size:12px;font-weight:700;background:rgba(201,162,39,.18);border:1px solid rgba(201,162,39,.45);border-radius:999px;padding:6px 10px;color:#fff}
+.topbar h1{font-size:20px;font-weight:700;letter-spacing:0}.topbar .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#cbd5e1;font-weight:700}.header-meta{display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right;max-width:min(980px,72vw);line-height:1.35}.topbar .sub{font-size:12px;color:#dbe7f2}.range-pill{font-size:12px;font-weight:700;color:#fff}
 #main{padding:22px 28px;max-width:1760px;margin:0 auto}
 .meta-strip{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 18px;font-size:12px;color:#475569;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .meta-items{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center}
 .meta-strip b{color:var(--ink);font-weight:700}
 .control-row{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
-.cards{display:grid;grid-template-columns:repeat(8,minmax(135px,1fr));gap:10px;width:100%}
-.card{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:11px 14px;transition:all 0.3s;box-shadow:0 1px 2px rgba(15,23,42,.05);border-top:3px solid currentColor}
-.clbl{font-size:10.5px;color:var(--muted);margin-bottom:7px;display:flex;align-items:center;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.cards{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;width:100%}
+.card{flex:0 1 calc((100% - 70px)/8);min-width:0;background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:11px 14px;text-align:center;transition:all 0.3s;box-shadow:0 1px 2px rgba(15,23,42,.05);border-top:3px solid currentColor}
+.clbl{font-size:10.5px;color:var(--muted);margin-bottom:7px;display:flex;align-items:flex-start;justify-content:center;text-align:center;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.15;min-height:24px}
 .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .cval{font-size:25px;font-weight:800;line-height:1.05}
-.charts{display:grid;grid-template-columns:repeat(2, minmax(350px, 1fr));gap:16px;margin-bottom:18px}
-.cbox{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.charts{display:flex;flex-wrap:wrap;justify-content:center;align-items:stretch;gap:16px;margin-bottom:18px}
+.cbox{flex:1 1 calc((100% - 16px)/2);min-width:320px;background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .cbox h3{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#24324a}
+.cbox canvas{width:100%!important;height:clamp(170px,22vh,240px)!important}
 .chart-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .chart-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .chart-days{color:#94a3b8;font-weight:500;font-size:11px}
@@ -321,11 +322,13 @@ tr.drop-row td:first-child{text-align:center;padding:6px 5px}
 .pct{color:#185FA5;font-weight:500}
 .footer{text-align:center;font-size:11px;color:#94a3b8;padding:8px 0 20px}
 th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{background:#9a6000} th.p{background:#4a41a8}
-@media (max-width:1500px){.cards{grid-template-columns:repeat(4,minmax(150px,1fr))}}
-@media (min-width:1500px){.charts{grid-template-columns:repeat(3,minmax(0,1fr))}.tbl-c{max-height:720px}}
-@media (min-width:1900px){#main{max-width:1880px}.charts{grid-template-columns:repeat(5,minmax(0,1fr))}.cbox canvas{height:190px!important}.tbl-c{max-height:760px}body{font-size:14px}}
-@media (max-width:1050px){#main{padding:16px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.charts{grid-template-columns:1fr}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:auto}.control-row{align-items:stretch}}
-@media (max-width:760px){.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-range{width:100%;margin-left:0}.chart-modal{height:94vh}.modal-backdrop{padding:10px}}
+@media (max-width:1450px){#main{padding:18px 20px}.topbar{padding:16px 22px}.cards{gap:8px}.card{flex-basis:calc((100% - 24px)/4);padding:10px 9px}.clbl{font-size:9.5px}.cval{font-size:21px}.charts{gap:12px}.cbox{padding:13px 14px}.tbl-c{max-height:610px}table{font-size:9.5px}thead tr:last-child th{font-size:8.5px;padding:5px 3px}td{padding:5px 3px}}
+@media (max-width:1180px){.card{flex-basis:calc((100% - 24px)/4)}.cbox{flex-basis:calc((100% - 12px)/2);min-width:300px}.header-meta{max-width:100%;align-items:flex-start;text-align:left}}
+@media (min-width:1500px){.cbox{flex-basis:calc((100% - 32px)/3)}.tbl-c{max-height:720px}}
+@media (min-width:1900px){#main{max-width:1880px}.cbox{flex-basis:calc((100% - 64px)/5);min-width:0}.cbox canvas{height:clamp(190px,23vh,270px)!important}.tbl-c{max-height:760px}body{font-size:14px}}
+@media (min-width:2200px){#main{max-width:2200px}.cbox canvas{height:clamp(220px,24vh,310px)!important}.tbl-c{max-height:880px}.chart-modal{width:min(1500px,94vw);height:min(900px,92vh)}}
+@media (max-width:1050px){#main{padding:16px}.card{flex-basis:calc((100% - 16px)/3)}.cbox{flex-basis:100%;min-width:0}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start;max-width:100%;text-align:left}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.control-row{align-items:stretch}}
+@media (max-width:760px){.card{flex-basis:calc((100% - 8px)/2)}.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-range{width:100%;margin-left:0}.chart-modal{height:94vh}.modal-backdrop{padding:10px}}
 @media print{body{background:#fff}.topbar,.meta-strip,.card,.cbox,.table-wrap{box-shadow:none}.filter-group{display:none}.tbl-c{max-height:none;overflow:visible}}
 </style>
 </head>
@@ -397,6 +400,21 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
 <script>
 const {meta,rows,device_daily,device_first_seen_counts,device_summary,generated,report_date,data_range} = """ + data_blob + """;
 
+function fmtDateTime12(value) {
+  const m = String(value || '').trim().match(/^(\\d{4})-(\\d{2})-(\\d{2})(?:[ T](\\d{2}):(\\d{2})(?::(\\d{2}))?)?/);
+  if(!m) return String(value || '');
+  let hh = Number(m[4] || 0);
+  const ap = hh >= 12 ? 'PM' : 'AM';
+  hh = hh % 12 || 12;
+  return `${m[3]}-${m[2]}-${String(m[1]).slice(2)} ${String(hh).padStart(2,'0')}:${m[5] || '00'}:${m[6] || '00'} ${ap}`;
+}
+
+function fmtDateRange12(value) {
+  const parts = String(value || '').split(/\\s*(?:\u2192|->| to )\\s*/);
+  if(parts.length >= 2) return `${fmtDateTime12(parts[0])} \u2192 ${fmtDateTime12(parts.slice(1).join(' to '))}`;
+  return fmtDateTime12(value);
+}
+
 // Parse strictly using localized component metrics to remove browser engine discrepancies
 rows.forEach(r => { 
     const [y, m, d] = r.date.split('-').map(Number);
@@ -405,11 +423,13 @@ rows.forEach(r => {
 rows.sort((a,b) => a.ts - b.ts);
 const firstDataDate = rows.length ? rows[0].date : '';
 const completeRows = rows.filter(r => r.date !== firstDataDate && r.date !== report_date);
-const usedDateRange = completeRows.length ? `${completeRows[0].date} 00:00:00 to ${completeRows[completeRows.length - 1].date} 23:59:59 IST` : '';
+const usedDateRange = completeRows.length ? `${fmtDateTime12(completeRows[0].date + ' 00:00:00')} to ${fmtDateTime12(completeRows[completeRows.length - 1].date + ' 23:59:59')} IST` : '';
 const deviceDailyByDate = new Map(device_daily.map(d => [d.date, d]));
 
-document.getElementById('rangeLbl').style.display = 'none';
-document.getElementById('genLbl').textContent=(data_range ? 'True data range: '+data_range+' | ' : '')+(usedDateRange ? 'Used range: '+usedDateRange+' | ' : '')+'Last updated '+generated;
+const headerRangeText = (data_range ? 'True data range: '+fmtDateRange12(data_range) : '') + (usedDateRange ? (data_range ? ' | ' : '')+'Used range: '+usedDateRange : '');
+document.getElementById('rangeLbl').style.display = headerRangeText ? '' : 'none';
+document.getElementById('rangeLbl').textContent = headerRangeText;
+document.getElementById('genLbl').textContent='Last updated '+fmtDateTime12(generated);
 const visibleMeta = Object.entries(meta).filter(([k]) => {
   const key = k.toLowerCase().replace(/\\s+/g, '');
   return !key.includes('duckdb') && !key.includes('totalrows') && !key.includes('datetimerange');
@@ -428,7 +448,7 @@ let dropLookbackDays = 5;
 const chartInstances = {};
 
 const CD={tension:.35,fill:true,pointRadius:1.5,pointHoverRadius:4,borderWidth:1.5,animation:{duration:400}};
-const mkOpt=(yfmt, expanded=false)=>({responsive:true,maintainAspectRatio:!expanded,plugins:{legend:{position:'bottom',labels:{font:{size:expanded?11:9.5},boxWidth:8,padding:6}}},
+const mkOpt=(yfmt, expanded=false)=>({responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:expanded?11:9.5},boxWidth:8,padding:6}}},
   scales:{x:{ticks:{font:{size:8.5},maxTicksLimit:12},grid:{color:'#f5f5f5'}},
           y:{ticks:{font:{size:8.5},callback:v=>yfmt==='gib'?fmtData(v):v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v},grid:{color:'#f5f5f5'}}}});
 

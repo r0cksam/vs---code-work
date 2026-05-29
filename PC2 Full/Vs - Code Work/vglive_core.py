@@ -9,7 +9,7 @@ import duckdb
 import pandas as pd
 
 
-DEFAULT_LAKE_FOLDER = Path(r"D:\Veto Logs Backup\lake")
+DEFAULT_LAKE_FOLDER = Path(r"D:\Veto Logs Backup\veto Stream logs\lake")
 CHUNK_DURATION_SECONDS = 6
 CHUNK_DURATION_HOURS = CHUNK_DURATION_SECONDS / 3600.0
 
