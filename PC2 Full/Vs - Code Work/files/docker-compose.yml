@@ -1,0 +1,13 @@
+services:
+  cdn-intelligence:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      # All your drives are mounted — type any path in the app UI directly
+      - C:\:/mnt/c:ro
+      - D:\:/mnt/d:ro
+      - Z:\:/mnt/z:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

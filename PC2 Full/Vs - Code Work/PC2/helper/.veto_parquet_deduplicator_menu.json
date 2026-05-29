@@ -1,0 +1,13 @@
+{
+  "input_dir": "D:/Vs - Code Work/Veto Logs Parquet",
+  "output_dir": "D:/Vs - Code Work/Veto Logs Parquet 1",
+  "recursive": false,
+  "preserve_structure": false,
+  "overwrite": false,
+  "threads": 10,
+  "memory_limit": "10GB",
+  "temp_dir": "D:/dedup_work.duckdb",
+  "duckdb_database": "D:/dedup_work.duckdb",
+  "compression": "snappy",
+  "row_group_size": 200000
+}

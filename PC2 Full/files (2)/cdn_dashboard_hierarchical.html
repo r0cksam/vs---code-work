@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CDN Traffic Intelligence — Geo Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- leaflet-heat removed: replaced with custom GlowHeat layer -->
+<style>
+:root{
+  --bg:#080b12;--surface:#0d1117;--surface2:#111827;--surface3:#1a2234;
+  --border:#1e2d45;--border2:#243352;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
+  --accent:#3b82f6;--accent2:#1d4ed8;--accent-glow:rgba(59,130,246,0.15);
+  --green:#10b981;--green-bg:rgba(16,185,129,0.1);
+  --amber:#f59e0b;--red:#ef4444;
+  --font:'DM Sans',system-ui,sans-serif;--mono:'DM Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;overflow:hidden}
+
+/* ── HEADER ─────────────────────────────────────────────────── */
+.hdr{
+  height:56px;background:var(--surface);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;flex-shrink:0;position:relative;z-index:10;
+}
+.hdr::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  opacity:0.4;
+}
+.brand{display:flex;align-items:center;gap:14px}
+.brand-icon{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  box-shadow:0 0 16px rgba(59,130,246,0.3);
+}
+.brand-text h1{font-size:14px;font-weight:600;color:var(--text);letter-spacing:-0.01em}
+.brand-text p{font-size:11px;color:var(--text3);margin-top:1px;font-family:var(--mono)}
+.status-dot{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:20px;font-size:10px;font-weight:500;
+  background:var(--green-bg);color:var(--green);border:1px solid rgba(16,185,129,0.2);
+  letter-spacing:0.02em;
+}
+.status-dot::before{
+  content:'';width:5px;height:5px;border-radius:50%;background:var(--green);
+  animation:pulse 2s infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,0.4)}50%{opacity:0.7;box-shadow:0 0 0 4px rgba(16,185,129,0)}}
+
+.hdr-right{display:flex;align-items:center;gap:8px}
+.ctrl-btn{
+  padding:6px 14px;font-size:12px;border-radius:7px;font-family:var(--font);font-weight:500;
+  border:1px solid var(--border2);background:var(--surface2);color:var(--text2);
+  cursor:pointer;transition:all 0.15s;white-space:nowrap;
+}
+.ctrl-btn:hover{background:var(--surface3);border-color:var(--accent);color:var(--text)}
+.ctrl-btn.active{background:var(--accent2);border-color:var(--accent);color:#fff;box-shadow:0 0 12px rgba(59,130,246,0.25)}
+select.ctrl-btn{appearance:none;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.upload-btn{
+  padding:6px 14px;font-size:12px;border-radius:7px;font-weight:500;
+  border:1px dashed var(--border2);background:transparent;color:var(--text3);
+  cursor:pointer;transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;
+}
+.upload-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-glow)}
+.divider{width:1px;height:20px;background:var(--border);margin:0 4px}
+.back-btn{
+  display:none;padding:6px 14px;font-size:12px;border-radius:7px;font-weight:500;
+  border:1px solid var(--accent2);background:var(--accent-glow);color:var(--accent);
+  cursor:pointer;transition:all 0.15s;align-items:center;gap:6px;
+}
+.back-btn:hover{background:var(--accent2);color:#fff}
+
+/* ── LAYOUT ─────────────────────────────────────────────────── */
+.body{display:flex;height:calc(100vh - 56px)}
+.map-wrap{flex:1;position:relative;overflow:hidden}
+#map{width:100%;height:100%;background:#060a10}
+
+/* ── MAP OVERLAYS ────────────────────────────────────────────── */
+.map-overlay{
+  position:absolute;z-index:999;
+  background:rgba(8,11,18,0.88);border:1px solid var(--border);
+  border-radius:10px;backdrop-filter:blur(12px);
+}
+.breadcrumb{top:14px;left:14px;padding:8px 14px;font-size:12px;color:var(--text2);
+  display:flex;align-items:center;gap:6px}
+.bc-link{color:var(--accent);cursor:pointer;font-weight:500}
+.bc-link:hover{text-decoration:underline}
+.bc-sep{color:var(--text3)}
+
+.view-toggle{top:14px;right:14px;padding:4px;display:flex;gap:4px}
+.vtbtn{
+  padding:5px 14px;font-size:11px;border-radius:6px;font-family:var(--font);
+  font-weight:500;border:none;background:transparent;color:var(--text3);
+  cursor:pointer;transition:all 0.15s;
+}
+.vtbtn:hover{color:var(--text2);background:var(--surface3)}
+.vtbtn.active{background:var(--accent2);color:#fff;box-shadow:0 0 10px rgba(59,130,246,0.3)}
+
+.map-legend{bottom:20px;left:14px;padding:12px 16px;min-width:180px}
+.leg-title{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;
+  letter-spacing:0.06em;margin-bottom:10px}
+.leg-bar{height:6px;border-radius:3px;margin-bottom:5px}
+.leg-vals{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);font-family:var(--mono)}
+.leg-scale-info{font-size:10px;color:var(--text3);margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
+
+/* ── TOOLTIP ─────────────────────────────────────────────────── */
+.tip{
+  position:fixed;z-index:9999;
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:12px;padding:14px 16px;pointer-events:none;
+  min-width:220px;display:none;
+  box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 0 1px rgba(59,130,246,0.1);
+}
+.tip-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;
+  padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.tip-flag{font-size:16px}
+.tip-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+.tip-row .tip-label{font-size:11px;color:var(--text3)}
+.tip-row .tip-val{font-size:12px;color:var(--text);font-weight:500;font-family:var(--mono)}
+.tip-hint{
+  font-size:10px;color:var(--accent);margin-top:8px;padding-top:8px;
+  border-top:1px solid var(--border);display:flex;align-items:center;gap:4px;
+}
+.tip-bar{height:2px;background:var(--border);border-radius:1px;margin:2px 0 4px}
+.tip-bar-fill{height:100%;border-radius:1px;background:linear-gradient(90deg,var(--accent2),var(--accent))}
+
+/* ── SIDEBAR ─────────────────────────────────────────────────── */
+.sidebar{
+  width:300px;background:var(--surface);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;
+}
+
+/* KPI cards */
+.kpi-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:1px;
+  background:var(--border);border-bottom:1px solid var(--border);
+}
+.kpi{background:var(--surface);padding:14px 16px;position:relative;overflow:hidden}
+.kpi::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--accent2),var(--accent));opacity:0;
+  transition:opacity 0.3s;
+}
+.kpi:hover::before{opacity:1}
+.kpi-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;font-weight:500}
+.kpi-val{font-size:20px;font-weight:600;color:var(--text);line-height:1;font-family:var(--mono);letter-spacing:-0.02em}
+.kpi-sub{font-size:10px;color:var(--text3);margin-top:4px}
+.kpi-badge{
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:9px;font-weight:600;padding:1px 5px;border-radius:3px;
+  background:rgba(16,185,129,0.1);color:var(--green);margin-left:4px;
+}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg)}
+.tab{
+  flex:1;text-align:center;padding:10px;font-size:11px;font-weight:500;
+  color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;
+  transition:all 0.15s;letter-spacing:0.02em;
+}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--surface)}
+.tab:hover:not(.active){color:var(--text2);background:var(--surface2)}
+
+/* Rankings */
+.rank-panel{flex:1;overflow-y:auto;padding:12px}
+.rank-panel::-webkit-scrollbar{width:3px}
+.rank-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.rank-header{
+  font-size:10px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.06em;
+  margin-bottom:10px;padding-bottom:8px;
+  border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;
+}
+.rr{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(30,45,69,0.5);cursor:default}
+.rr:last-child{border:none}
+.rr:hover .rname{color:var(--text)}
+.rn{font-size:10px;color:var(--text3);width:18px;text-align:right;flex-shrink:0;font-family:var(--mono)}
+.rname{flex:1;font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color 0.15s}
+.rsub{font-size:10px;color:var(--text3);margin-top:1px}
+.rbar{width:48px;height:3px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0}
+.rbar-fill{height:100%;border-radius:2px;transition:width 0.4s ease}
+.rval{font-size:11px;color:var(--text2);width:62px;text-align:right;flex-shrink:0;font-family:var(--mono)}
+
+/* Scale toggle for sidebar */
+.scale-toggle{
+  display:flex;align-items:center;gap:6px;margin-bottom:10px;
+  font-size:10px;color:var(--text3);
+}
+.scale-pill{
+  padding:2px 8px;border-radius:4px;cursor:pointer;border:1px solid var(--border);
+  background:var(--surface2);transition:all 0.15s;
+}
+.scale-pill.active{background:var(--surface3);color:var(--text);border-color:var(--border2)}
+
+/* ── LEVEL COLOUR SYSTEM ─────────────────────────────────────────────── */
+:root{
+  --lw:#26c6da; --lw-bg:rgba(38,198,218,0.10); --lw-brd:rgba(38,198,218,0.28);
+  --ls:#ffa000; --ls-bg:rgba(255,160,0,0.10);  --ls-brd:rgba(255,160,0,0.28);
+  --lc:#ab47bc; --lc-bg:rgba(171,71,188,0.10); --lc-brd:rgba(171,71,188,0.28);
+}
+.sidebar{border-left-width:1px;transition:border-color 0.4s}
+.sidebar[data-level="world"]{border-left-color:var(--lw-brd)}
+.sidebar[data-level="state"]{border-left-color:var(--ls-brd)}
+.sidebar[data-level="city"] {border-left-color:var(--lc-brd)}
+.hier-nav{
+  display:flex;align-items:center;justify-content:space-around;
+  padding:10px 8px;background:var(--bg);border-bottom:1px solid var(--border);gap:0
+}
+.hier-step{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 8px;border-radius:8px;cursor:pointer;flex:1;
+  transition:background 0.2s,border-color 0.2s;
+  border:1px solid transparent;opacity:0.32;user-select:none
+}
+.hier-step.done{opacity:0.62}
+.hier-step.active{opacity:1}
+.hier-step.active[data-lv="world"]{background:var(--lw-bg);border-color:var(--lw-brd)}
+.hier-step.active[data-lv="state"]{background:var(--ls-bg);border-color:var(--ls-brd)}
+.hier-step.active[data-lv="city"] {background:var(--lc-bg);border-color:var(--lc-brd)}
+.hier-step.done[data-lv="world"]{color:var(--lw)}
+.hier-step.done[data-lv="state"]{color:var(--ls)}
+.hs-icon{font-size:15px;line-height:1}
+.hs-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em}
+.hs-sub{font-size:8px;color:var(--text3)}
+.hier-sep{color:var(--text3);font-size:11px;padding:0 2px;flex-shrink:0}
+.level-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:20px;font-size:10px;font-weight:600;
+  letter-spacing:0.04em;transition:all 0.35s;white-space:nowrap;
+}
+.level-badge[data-lv="world"]{background:var(--lw-bg);color:var(--lw);border:1px solid var(--lw-brd)}
+.level-badge[data-lv="state"]{background:var(--ls-bg);color:var(--ls);border:1px solid var(--ls-brd)}
+.level-badge[data-lv="city"] {background:var(--lc-bg);color:var(--lc);border:1px solid var(--lc-brd)}
+.level-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor}
+
+/* ── POLITICAL MAP LABELS ────────────────────────────────────────────── */
+.leaflet-tooltip.state-lbl{
+  background:transparent;border:none;box-shadow:none;padding:0;
+  color:#fff;font-family:var(--font);font-size:9px;font-weight:700;
+  text-align:center;white-space:nowrap;letter-spacing:0.03em;
+  text-shadow:0 0 4px rgba(0,0,0,0.9),0 0 8px rgba(0,0,0,0.7),1px 1px 0 rgba(0,0,0,0.8);
+  pointer-events:none;
+}
+.leaflet-tooltip.state-lbl::before,.leaflet-tooltip.state-lbl::after{display:none}
+/* Traffic bubble labels */
+.bubble-lbl{
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-family:var(--mono);font-weight:700;
+  text-shadow:0 1px 3px rgba(0,0,0,0.8);
+  white-space:nowrap;line-height:1;
+}
+/* Simplified metric chips */
+.metric-chip{
+  display:inline-flex;align-items:center;gap:4px;padding:2px 8px;
+  border-radius:12px;font-size:10px;font-weight:600;cursor:pointer;
+  border:1px solid var(--border);background:var(--surface2);color:var(--text2);
+  transition:all 0.15s;
+}
+.metric-chip.active{background:var(--accent2);border-color:var(--accent);color:#fff}
+.metric-chip:hover:not(.active){border-color:var(--accent);color:var(--text)}
+/* Map guide strip */
+.map-guide{
+  bottom:20px;right:14px;padding:10px 14px;min-width:160px;
+  position:absolute;z-index:999;
+  background:rgba(8,11,18,0.88);border:1px solid var(--border);
+  border-radius:10px;backdrop-filter:blur(12px);
+}
+.guide-row{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11px;color:var(--text2)}
+.guide-circle{border-radius:50%;border:2px solid rgba(255,255,255,0.4);flex-shrink:0}
+
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="brand">
+    <div class="brand-icon">⚡</div>
+    <div class="brand-text">
+      <h1>CDN Traffic Intelligence</h1>
+      <p id="hdr-sub">src30_0.parquet · 1,688,283 req · 25 countries</p>
+    </div>
+    <span class="status-dot">LIVE</span>
+  </div>
+  <div class="hdr-right">
+    <span class="level-badge" id="level-badge" data-lv="world">🌍 Country</span>
+    <div class="divider"></div>
+    <select class="ctrl-btn" id="metric-sel" onchange="onMetricChange()">
+      <option value="bandwidth_gb">Bandwidth (GB)</option>
+      <option value="requests">Requests</option>
+      <option value="unique_viewers">Unique Viewers</option>
+      <option value="avg_ttfb_ms">Avg TTFB (ms)</option>
+      <option value="avg_throughput_kbps">Avg Throughput</option>
+    </select>
+    <div class="divider"></div>
+    <button class="ctrl-btn active" id="btn-choro" onclick="setMapMode('choropleth')">Choropleth</button>
+    <button class="ctrl-btn" id="btn-heat" onclick="setMapMode('heatmap')">🔥 Heatmap</button>
+    <div class="divider"></div>
+    <button class="back-btn" id="btn-back" onclick="goWorld()">← World View</button>
+    <label class="upload-btn">
+      ↑ Load CSV
+      <input type="file" accept=".csv" id="csv-up" style="display:none" onchange="handleCSV(this)">
+    </label>
+  </div>
+</div>
+
+<div class="body">
+  <div class="map-wrap">
+    <div class="map-overlay breadcrumb" id="bc"><span>🌍 World</span></div>
+    <div class="map-overlay view-toggle">
+      <button class="vtbtn active" id="vt-choro" onclick="setMapMode('choropleth')">Choropleth</button>
+      <button class="vtbtn" id="vt-heat" onclick="setMapMode('heatmap')">Heatmap</button>
+    </div>
+    <div id="map"></div>
+    <div class="map-overlay map-legend" id="map-legend">
+      <div class="leg-title" id="leg-title">Bandwidth (GB)</div>
+      <div id="leg-choro">
+        <div class="leg-bar" id="leg-swatch"></div>
+        <div class="leg-vals"><span id="leg-lo">0</span><span id="leg-mid"></span><span id="leg-hi">—</span></div>
+        <div class="leg-scale-info" id="leg-scale-note"></div>
+      </div>
+      <div id="leg-heat" style="display:none">
+        <div class="leg-bar" style="background:linear-gradient(to right,#00008080,#0000ff80,#00ffff,#00ff00,#ffff00,#ff0000)"></div>
+        <div class="leg-vals"><span>Low</span><span>High</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Bandwidth</div><div class="kpi-val" id="k-bw">—</div><div class="kpi-sub" id="k-bw-s">—</div></div>
+      <div class="kpi"><div class="kpi-label">Requests</div><div class="kpi-val" id="k-req">—</div><div class="kpi-sub" id="k-req-s">—</div></div>
+      <div class="kpi"><div class="kpi-label">Unique Viewers</div><div class="kpi-val" id="k-uv">—</div><div class="kpi-sub" id="k-uv-s">—</div></div>
+      <div class="kpi"><div class="kpi-label">Avg TTFB</div><div class="kpi-val" id="k-ttfb">—</div><div class="kpi-sub" id="k-ttfb-s">—</div></div>
+    </div>
+    <!-- Hierarchy Navigator -->
+    <div class="hier-nav" id="hier-nav">
+      <div class="hier-step active" data-lv="world" id="hs-world" onclick="goWorld()" title="Country level">
+        <div class="hs-icon">🌍</div>
+        <div class="hs-label" style="color:var(--lw)">Country</div>
+        <div class="hs-sub" id="hs-world-sub">25 regions</div>
+      </div>
+      <div class="hier-sep">›</div>
+      <div class="hier-step" data-lv="state" id="hs-state" title="State level">
+        <div class="hs-icon">🗺️</div>
+        <div class="hs-label" style="color:var(--ls)">State</div>
+        <div class="hs-sub" id="hs-state-sub">25 states</div>
+      </div>
+      <div class="hier-sep">›</div>
+      <div class="hier-step" data-lv="city" id="hs-city" title="City level">
+        <div class="hs-icon">🏙️</div>
+        <div class="hs-label" style="color:var(--lc)">City</div>
+        <div class="hs-sub" id="hs-city-sub">6 cities</div>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" id="tab-rank" onclick="showTab('rank')">Rankings</div>
+      <div class="tab" id="tab-city" onclick="showTab('city')">Cities</div>
+    </div>
+    <div class="rank-panel" id="panel-rank">
+      <div class="rank-header">
+        <span id="rank-hdr-title">Top Regions</span>
+        <div class="scale-toggle">
+          <span class="scale-pill active" id="sp-linear" onclick="setScale('linear')">Linear</span>
+          <span class="scale-pill" id="sp-log" onclick="setScale('log')">Log</span>
+        </div>
+      </div>
+      <div id="rank-list"></div>
+    </div>
+    <div class="rank-panel" id="panel-city" style="display:none">
+      <div class="rank-header"><span>India — City Breakdown</span></div>
+      <div id="city-list"></div>
+    </div>
+  </div>
+
+  <!-- Visual guide for non-tech stakeholders -->
+  <div class="map-guide" id="map-guide">
+    <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">How to read</div>
+    <div class="guide-row"><div class="guide-circle" style="width:22px;height:22px;background:#FF8A65;border-color:#fff"></div><span>Region / Country</span></div>
+    <div class="guide-row"><div style="display:flex;align-items:center;gap:4px"><div class="guide-circle" style="width:14px;height:14px;background:#90CAF9;border-color:#fff"></div><div class="guide-circle" style="width:22px;height:22px;background:#90CAF9;border-color:#fff"></div></div><span>Bubble = traffic volume</span></div>
+    <div class="guide-row"><div class="guide-circle" style="width:18px;height:18px;background:#222;border:2px solid gold"></div><span style="color:#FFD700">★ Major city</span></div>
+    <div style="font-size:9px;color:var(--text3);margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">Click <b style="color:var(--text2)">India 🇮🇳</b> to zoom in</div>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────────────────────
+const WORLD_DATA=[{"country_code":"AE","bandwidth_gb":0.191,"requests":383,"unique_viewers":3,"avg_ttfb_ms":360.6,"avg_throughput_kbps":1400.1},{"country_code":"AO","bandwidth_gb":0.0,"requests":8,"unique_viewers":1,"avg_ttfb_ms":1915.1,"avg_throughput_kbps":1.5},{"country_code":"AT","bandwidth_gb":0.002,"requests":24,"unique_viewers":1,"avg_ttfb_ms":362.4,"avg_throughput_kbps":520.8},{"country_code":"AU","bandwidth_gb":7.694,"requests":17611,"unique_viewers":12,"avg_ttfb_ms":528.8,"avg_throughput_kbps":2474.5},{"country_code":"BH","bandwidth_gb":0.04,"requests":1114,"unique_viewers":2,"avg_ttfb_ms":258.9,"avg_throughput_kbps":129.4},{"country_code":"CA","bandwidth_gb":0.001,"requests":3089,"unique_viewers":1,"avg_ttfb_ms":343.5,"avg_throughput_kbps":5.0},{"country_code":"CZ","bandwidth_gb":0.522,"requests":588,"unique_viewers":1,"avg_ttfb_ms":279.1,"avg_throughput_kbps":8603.8},{"country_code":"DE","bandwidth_gb":0.121,"requests":172,"unique_viewers":1,"avg_ttfb_ms":588.2,"avg_throughput_kbps":3176.8},{"country_code":"GB","bandwidth_gb":10.178,"requests":24789,"unique_viewers":19,"avg_ttfb_ms":344.2,"avg_throughput_kbps":3490.2},{"country_code":"IN","bandwidth_gb":1817.991,"requests":1586073,"unique_viewers":900,"avg_ttfb_ms":43.0,"avg_throughput_kbps":32757.7},{"country_code":"IT","bandwidth_gb":0.01,"requests":12,"unique_viewers":1,"avg_ttfb_ms":166.2,"avg_throughput_kbps":16599.2},{"country_code":"JP","bandwidth_gb":1.255,"requests":1279,"unique_viewers":2,"avg_ttfb_ms":491.1,"avg_throughput_kbps":4700.2},{"country_code":"KE","bandwidth_gb":0.137,"requests":192,"unique_viewers":1,"avg_ttfb_ms":368.5,"avg_throughput_kbps":6810.6},{"country_code":"NG","bandwidth_gb":0.0,"requests":858,"unique_viewers":3,"avg_ttfb_ms":82.9,"avg_throughput_kbps":114.0},{"country_code":"NL","bandwidth_gb":0.0,"requests":7,"unique_viewers":1,"avg_ttfb_ms":186.6,"avg_throughput_kbps":6.2},{"country_code":"OM","bandwidth_gb":0.0,"requests":1,"unique_viewers":1,"avg_ttfb_ms":763.0,"avg_throughput_kbps":0.5},{"country_code":"PK","bandwidth_gb":7.875,"requests":7511,"unique_viewers":5,"avg_ttfb_ms":338.1,"avg_throughput_kbps":5606.7},{"country_code":"PT","bandwidth_gb":0.026,"requests":53,"unique_viewers":1,"avg_ttfb_ms":390.2,"avg_throughput_kbps":7310.7},{"country_code":"QA","bandwidth_gb":0.623,"requests":1355,"unique_viewers":2,"avg_ttfb_ms":195.3,"avg_throughput_kbps":4271.6},{"country_code":"SA","bandwidth_gb":0.015,"requests":3118,"unique_viewers":2,"avg_ttfb_ms":187.0,"avg_throughput_kbps":68.3},{"country_code":"SG","bandwidth_gb":0.558,"requests":575,"unique_viewers":1,"avg_ttfb_ms":204.8,"avg_throughput_kbps":15589.9},{"country_code":"TH","bandwidth_gb":0.0,"requests":833,"unique_viewers":1,"avg_ttfb_ms":82.2,"avg_throughput_kbps":153.1},{"country_code":"TZ","bandwidth_gb":0.114,"requests":495,"unique_viewers":1,"avg_ttfb_ms":1071.5,"avg_throughput_kbps":579.0},{"country_code":"US","bandwidth_gb":12.057,"requests":37067,"unique_viewers":94,"avg_ttfb_ms":299.7,"avg_throughput_kbps":25010.0},{"country_code":"ZA","bandwidth_gb":0.373,"requests":1076,"unique_viewers":10,"avg_ttfb_ms":978.7,"avg_throughput_kbps":971.1}];
+
+const STATES_DATA=[{"state_name":"Andaman and Nicobar Islands","bandwidth_gb":5.2,"requests":10641,"unique_viewers":1,"avg_ttfb_ms":25.9,"avg_throughput_kbps":33919.5},{"state_name":"Andhra Pradesh","bandwidth_gb":0.53,"requests":3501,"unique_viewers":2,"avg_ttfb_ms":11.5,"avg_throughput_kbps":1442.7},{"state_name":"Assam","bandwidth_gb":0.907,"requests":3770,"unique_viewers":2,"avg_ttfb_ms":22.4,"avg_throughput_kbps":2316.2},{"state_name":"Bihar","bandwidth_gb":11.309,"requests":17344,"unique_viewers":11,"avg_ttfb_ms":44.1,"avg_throughput_kbps":27978.0},{"state_name":"Chandigarh","bandwidth_gb":9.551,"requests":8011,"unique_viewers":3,"avg_ttfb_ms":179.4,"avg_throughput_kbps":21629.8},{"state_name":"Chattisgarh","bandwidth_gb":53.821,"requests":25401,"unique_viewers":14,"avg_ttfb_ms":125.6,"avg_throughput_kbps":27453.6},{"state_name":"Dadra and Nagar","bandwidth_gb":0.001,"requests":3267,"unique_viewers":1,"avg_ttfb_ms":9.8,"avg_throughput_kbps":157.8},{"state_name":"Delhi","bandwidth_gb":518.0,"requests":406256,"unique_viewers":250,"avg_ttfb_ms":25.6,"avg_throughput_kbps":46460.5},{"state_name":"Goa","bandwidth_gb":1.613,"requests":659,"unique_viewers":1,"avg_ttfb_ms":30.3,"avg_throughput_kbps":70230.7},{"state_name":"Gujarat","bandwidth_gb":194.682,"requests":123960,"unique_viewers":80,"avg_ttfb_ms":22.5,"avg_throughput_kbps":29473.6},{"state_name":"Haryana","bandwidth_gb":85.721,"requests":59899,"unique_viewers":35,"avg_ttfb_ms":36.0,"avg_throughput_kbps":41149.8},{"state_name":"Himachal Pradesh","bandwidth_gb":0.665,"requests":970,"unique_viewers":2,"avg_ttfb_ms":31.2,"avg_throughput_kbps":11435.8},{"state_name":"Jammu & Kashmir","bandwidth_gb":0.343,"requests":539,"unique_viewers":2,"avg_ttfb_ms":17.3,"avg_throughput_kbps":16522.2},{"state_name":"Jharkhand","bandwidth_gb":14.541,"requests":10509,"unique_viewers":5,"avg_ttfb_ms":40.7,"avg_throughput_kbps":12936.8},{"state_name":"Karnataka","bandwidth_gb":56.311,"requests":70033,"unique_viewers":50,"avg_ttfb_ms":64.7,"avg_throughput_kbps":24093.0},{"state_name":"Madhya Pradesh","bandwidth_gb":77.888,"requests":75432,"unique_viewers":50,"avg_ttfb_ms":80.2,"avg_throughput_kbps":20402.5},{"state_name":"Maharashtra","bandwidth_gb":266.595,"requests":324242,"unique_viewers":164,"avg_ttfb_ms":56.1,"avg_throughput_kbps":21537.7},{"state_name":"Orissa","bandwidth_gb":39.356,"requests":38671,"unique_viewers":5,"avg_ttfb_ms":30.0,"avg_throughput_kbps":22195.8},{"state_name":"Punjab","bandwidth_gb":51.674,"requests":41914,"unique_viewers":27,"avg_ttfb_ms":68.2,"avg_throughput_kbps":21964.2},{"state_name":"Rajasthan","bandwidth_gb":104.544,"requests":90890,"unique_viewers":47,"avg_ttfb_ms":48.2,"avg_throughput_kbps":32724.4},{"state_name":"Tamil Nadu","bandwidth_gb":11.627,"requests":10524,"unique_viewers":12,"avg_ttfb_ms":20.0,"avg_throughput_kbps":38988.3},{"state_name":"Telangana","bandwidth_gb":31.408,"requests":25473,"unique_viewers":22,"avg_ttfb_ms":48.1,"avg_throughput_kbps":29071.1},{"state_name":"Uttar Pradesh","bandwidth_gb":260.5,"requests":209727,"unique_viewers":115,"avg_ttfb_ms":31.8,"avg_throughput_kbps":39381.9},{"state_name":"Uttarakhand","bandwidth_gb":0.0,"requests":1191,"unique_viewers":1,"avg_ttfb_ms":40.2,"avg_throughput_kbps":58.0},{"state_name":"West Bengal","bandwidth_gb":21.203,"requests":23249,"unique_viewers":20,"avg_ttfb_ms":49.8,"avg_throughput_kbps":28221.9}];
+
+const CITIES_DATA=[{"state_name":"Delhi","city_name":"NEW DELHI","bandwidth_gb":500.781,"requests":392908,"unique_viewers":241,"avg_ttfb_ms":26.0,"avg_throughput_kbps":47073.8},{"state_name":"Karnataka","city_name":"BANGALORE","bandwidth_gb":56.205,"requests":69904,"unique_viewers":49,"avg_ttfb_ms":63.8,"avg_throughput_kbps":24130.4},{"state_name":"Maharashtra","city_name":"MUMBAI","bandwidth_gb":146.721,"requests":218868,"unique_viewers":111,"avg_ttfb_ms":70.0,"avg_throughput_kbps":16563.7},{"state_name":"Maharashtra","city_name":"PUNE","bandwidth_gb":58.991,"requests":42484,"unique_viewers":16,"avg_ttfb_ms":39.8,"avg_throughput_kbps":48303.4},{"state_name":"Tamil Nadu","city_name":"CHENNAI","bandwidth_gb":11.626,"requests":7149,"unique_viewers":9,"avg_ttfb_ms":22.5,"avg_throughput_kbps":57332.3},{"state_name":"Telangana","city_name":"HYDERABAD","bandwidth_gb":17.964,"requests":15025,"unique_viewers":17,"avg_ttfb_ms":50.6,"avg_throughput_kbps":42048.0}];
+
+const COUNTRY_COORDS={AE:[24.47,54.37],AO:[-11.20,17.87],AT:[47.52,14.55],AU:[-25.27,133.77],BH:[26.00,50.55],CA:[56.13,-106.34],CZ:[49.82,15.47],DE:[51.17,10.45],GB:[55.37,-3.44],IN:[20.59,78.96],IT:[41.87,12.57],JP:[36.20,138.25],KE:[-0.02,37.91],NG:[9.08,8.68],NL:[52.13,5.29],OM:[21.51,55.92],PK:[30.38,69.35],PT:[39.40,-8.22],QA:[25.35,51.18],SA:[23.89,45.08],SG:[1.35,103.82],TH:[15.87,100.99],TZ:[-6.37,34.89],US:[37.09,-95.71],ZA:[-30.56,22.94]};
+const COUNTRY_NAMES={AE:'UAE',AO:'Angola',AT:'Austria',AU:'Australia',BH:'Bahrain',CA:'Canada',CZ:'Czechia',DE:'Germany',GB:'United Kingdom',IN:'India',IT:'Italy',JP:'Japan',KE:'Kenya',NG:'Nigeria',NL:'Netherlands',OM:'Oman',PK:'Pakistan',PT:'Portugal',QA:'Qatar',SA:'Saudi Arabia',SG:'Singapore',TH:'Thailand',TZ:'Tanzania',US:'United States',ZA:'South Africa'};
+const COUNTRY_FLAGS={AE:'🇦🇪',AO:'🇦🇴',AT:'🇦🇹',AU:'🇦🇺',BH:'🇧🇭',CA:'🇨🇦',CZ:'🇨🇿',DE:'🇩🇪',GB:'🇬🇧',IN:'🇮🇳',IT:'🇮🇹',JP:'🇯🇵',KE:'🇰🇪',NG:'🇳🇬',NL:'🇳🇱',OM:'🇴🇲',PK:'🇵🇰',PT:'🇵🇹',QA:'🇶🇦',SA:'🇸🇦',SG:'🇸🇬',TH:'🇹🇭',TZ:'🇹🇿',US:'🇺🇸',ZA:'🇿🇦'};
+
+const STATE_COORDS={"Andaman and Nicobar Islands":[11.74,92.66],"Andhra Pradesh":[15.91,79.74],"Assam":[26.20,92.94],"Bihar":[25.10,85.31],"Chandigarh":[30.74,76.79],"Chattisgarh":[21.27,81.87],"Dadra and Nagar":[20.19,73.02],"Delhi":[28.70,77.10],"Goa":[15.30,74.12],"Gujarat":[22.26,71.19],"Haryana":[29.24,76.43],"Himachal Pradesh":[31.10,77.17],"Jammu & Kashmir":[33.73,76.92],"Jharkhand":[23.61,85.28],"Karnataka":[15.32,75.71],"Madhya Pradesh":[23.47,77.95],"Maharashtra":[19.75,75.71],"Orissa":[20.94,85.10],"Punjab":[31.15,75.34],"Rajasthan":[27.02,74.22],"Tamil Nadu":[11.13,78.66],"Telangana":[18.11,79.02],"Uttar Pradesh":[27.57,80.10],"Uttarakhand":[30.07,79.06],"West Bengal":[22.98,87.85]};
+const CITY_COORDS={"NEW DELHI":[28.6139,77.2090],"NEWDELHI":[28.6139,77.2090],"BANGALORE":[12.9716,77.5946],"BENGALURU":[12.9716,77.5946],"MUMBAI":[19.0760,72.8777],"PUNE":[18.5204,73.8567],"CHENNAI":[13.0827,80.2707],"HYDERABAD":[17.3850,78.4867]};
+
+// ── POLITICAL COLOURS (unique per region, like a physical map) ───────────────
+const STATE_COLORS={
+  'andhra pradesh':'#F48FB1','arunachal pradesh':'#80CBC4','assam':'#90CAF9',
+  'bihar':'#FFCC80','chandigarh':'#CE93D8','chattisgarh':'#A5D6A7',
+  'dadra and nagar':'#FFAB91','delhi':'#80DEEA','goa':'#EF9A9A',
+  'gujarat':'#FFE082','haryana':'#C5E1A5','himachal pradesh':'#B39DDB',
+  'jammu & kashmir':'#FFF176','jharkhand':'#F48FB1','karnataka':'#80CBC4',
+  'kerala':'#A5D6A7','ladakh':'#BCAAA4','lakshadweep':'#80CBC4',
+  'madhya pradesh':'#FFD54F','maharashtra':'#FF8A65','manipur':'#DCE775',
+  'meghalaya':'#4FC3F7','mizoram':'#F06292','nagaland':'#AED581',
+  'orissa':'#4DB6AC','puducherry':'#FF8A65','punjab':'#7986CB',
+  'rajasthan':'#FFA726','sikkim':'#9CCC65','tamil nadu':'#26C6DA',
+  'telangana':'#AB47BC','tripura':'#EC407A','uttar pradesh':'#FFB74D',
+  'uttarakhand':'#66BB6A','west bengal':'#EF5350',
+};
+const COUNTRY_COLORS={
+  IN:'#FF8A65',US:'#7986CB',GB:'#4DB6AC',AU:'#FFD54F',CA:'#F06292',
+  DE:'#AED581',JP:'#80DEEA',SG:'#CE93D8',AE:'#FFCC80',SA:'#90CAF9',
+  PK:'#A5D6A7','ZA':'#F48FB1',QA:'#FFE082',NG:'#80CBC4',KE:'#B39DDB',
+  FR:'#FF8A65',NL:'#DCE775',TH:'#4FC3F7',TZ:'#FFF176',PK:'#C5E1A5',
+  OM:'#FFAB91',BH:'#EF9A9A',PT:'#7986CB',CZ:'#FFB74D',IT:'#66BB6A',
+  AT:'#EF5350',
+};
+function stateColor(rawName){
+  return STATE_COLORS[rawName]||STATE_COLORS[Object.keys(STATE_COLORS).find(k=>rawName.includes(k.split(' ')[0])||k.includes(rawName.split(' ')[0]))]||'#B0BEC5';
+}
+function countryColor(iso){
+  return COUNTRY_COLORS[iso]||'#B0BEC5';
+}
+
+const CITY_ABBREV={'NEW DELHI':'DEL','NEWDELHI':'DEL','DELHI':'DEL','BANGALORE':'BLR','BENGALURU':'BLR','MUMBAI':'BOM','PUNE':'PNQ','CHENNAI':'MAA','HYDERABAD':'HYD','KOLKATA':'CCU','AHMEDABAD':'AMD'};
+
+// Level-specific choropleth palettes
+const CHORO_WORLD=['#0d1b2b','#0f3460','#1a5276','#1f6f8b','#2196ad','#26c6da','#80deea']; // Country → Cyan/Blue
+const CHORO_STATE=['#1c0900','#7b2500','#bf360c','#e64a19','#ef6c00','#ffa000','#ffd54f']; // State   → Amber/Orange
+const CHORO_CITY =['#12005e','#4527a0','#6a1b9a','#8e24aa','#ab47bc','#ce93d8','#f3e5f5']; // City    → Violet/Purple
+function currentPalette(){ return currentView==='world'?CHORO_WORLD:CHORO_STATE; }
+
+const METRIC_META={
+  bandwidth_gb:      {label:'Bandwidth',      unit:'GB',  fmt:v=>v>=1000?(v/1000).toFixed(2)+' TB':v>=1?(v).toFixed(1)+' GB':v.toFixed(3)+' GB', tipFmt:v=>v.toFixed(3)+' GB'},
+  requests:          {label:'Requests',       unit:'req', fmt:v=>v>=1e6?(v/1e6).toFixed(2)+'M':v>=1000?(v/1000).toFixed(1)+'K':v.toString(), tipFmt:v=>v.toLocaleString()},
+  unique_viewers:    {label:'Unique Viewers', unit:'',    fmt:v=>v>=1000?(v/1000).toFixed(1)+'K':v.toString(), tipFmt:v=>v.toLocaleString()},
+  avg_ttfb_ms:       {label:'Avg TTFB',       unit:'ms',  fmt:v=>v.toFixed(1)+' ms', tipFmt:v=>v.toFixed(1)+' ms'},
+  avg_throughput_kbps:{label:'Throughput',    unit:'',    fmt:v=>v>=1000?(v/1000).toFixed(1)+' Mbps':v.toFixed(0)+' Kbps', tipFmt:v=>v>=1000?(v/1000).toFixed(2)+' Mbps':v.toFixed(1)+' Kbps'},
+};
+
+let map,geoLayer=null,heatLayer=null,cityMarkers=[];
+let currentView='world',currentMetric='bandwidth_gb',mapMode='choropleth',rankScale='linear';
+let worldData=[...WORLD_DATA],statesData=[...STATES_DATA],citiesData=[...CITIES_DATA];
+let _indiaGeoCache=null,_worldGeoCache=null;
+
+// ── GEO FETCH WITH CACHE ─────────────────────────────────────────────────────
+function fetchIndiaGeo(){
+  if(_indiaGeoCache) return Promise.resolve(_indiaGeoCache);
+  const INDIA_URLS=[
+    'https://cdn.jsdelivr.net/gh/geohacker/india@master/state/india_state.geojson',
+    'https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson',
+    'https://cdn.jsdelivr.net/gh/Subhash9325/GeoJson-Data-of-Indian-States@master/Indian_States'
+  ];
+  function tryNext(i){
+    if(i>=INDIA_URLS.length) return Promise.reject(new Error('All India GeoJSON sources failed'));
+    return fetch(INDIA_URLS[i])
+      .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+      .then(g=>{_indiaGeoCache=g;return g;})
+      .catch(e=>{console.warn('India GeoJSON source '+i+' failed:',INDIA_URLS[i],e.message);return tryNext(i+1);});
+  }
+  return tryNext(0);
+}
+function fetchWorldGeo(){
+  if(_worldGeoCache) return Promise.resolve(_worldGeoCache);
+  const WORLD_URLS=[
+    'https://cdn.jsdelivr.net/gh/datasets/geo-countries@0.2.0/data/countries.geojson',
+    'https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson',
+    'https://cdn.jsdelivr.net/gh/datasets/geo-countries@master/data/countries.geojson',
+    'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson'
+  ];
+  function tryNext(i){
+    if(i>=WORLD_URLS.length) return Promise.reject(new Error('All world GeoJSON sources failed'));
+    return fetch(WORLD_URLS[i])
+      .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+      .then(g=>{_worldGeoCache=g;return g;})
+      .catch(e=>{console.warn('World GeoJSON source '+i+' failed:',WORLD_URLS[i],e.message);return tryNext(i+1);});
+  }
+  return tryNext(0);
+}
+
+// ── MATH HELPERS ─────────────────────────────────────────────────────────────
+const fv=(m,v)=>METRIC_META[m].fmt(+v||0);
+const ftip=(m,v)=>METRIC_META[m].tipFmt(+v||0);
+const sum=(arr,f)=>arr.reduce((s,d)=>s+(+d[f]||0),0);
+const avg=(arr,f)=>arr.length?sum(arr,f)/arr.length:0;
+
+// Log-scale normalizer: maps [min,max] → [0,1] on log scale
+// Handles the India-dominates-the-world problem properly
+function logNorm(val,mn,mx){
+  if(mx<=mn||val<=0) return 0;
+  const lo=Math.log1p(Math.max(0,mn));
+  const hi=Math.log1p(mx);
+  if(hi===lo) return 0.5;
+  return Math.max(0,Math.min(1,(Math.log1p(val)-lo)/(hi-lo)));
+}
+function linNorm(val,mn,mx){
+  if(mx===mn) return 0.5;
+  return Math.max(0,Math.min(1,(val-mn)/(mx-mn)));
+}
+function getNorm(val,mn,mx){
+  // Always use log for world view on bandwidth/requests to handle skew
+  // For India states (less skewed) use linear unless user picks log
+  if(currentView==='world'&&(currentMetric==='bandwidth_gb'||currentMetric==='requests'))
+    return logNorm(val,mn,mx);
+  return rankScale==='log'?logNorm(val,mn,mx):linNorm(val,mn,mx);
+}
+
+function getColor(norm){
+  const p=currentPalette();
+  const i=Math.round(norm*(p.length-1));
+  return p[Math.max(0,Math.min(p.length-1,i))];
+}
+
+function cityAbbr(name){
+  const k=name.toUpperCase().replace(/\s+/g,'');
+  return CITY_ABBREV[name.toUpperCase()]||CITY_ABBREV[k]||(name.length>6?name.slice(0,3):name);
+}
+
+// ── TOOLTIP ──────────────────────────────────────────────────────────────────
+function showTip(e,name,d,hint='',flag=''){
+  const t=document.getElementById('tip');
+  const m=currentMetric;
+  const allVals=(currentView==='world'?worldData:statesData).map(x=>+x[m]||0);
+  const mx=Math.max(...allVals);
+  const pct=mx>0?Math.round(((+d[m]||0)/mx)*100):0;
+  t.innerHTML=`
+    <div class="tip-name">${flag?'<span class="tip-flag">'+flag+'</span>':''}${name}</div>
+    <div class="tip-bar"><div class="tip-bar-fill" style="width:${pct}%"></div></div>
+    <div class="tip-row"><span class="tip-label">Bandwidth</span><span class="tip-val">${ftip('bandwidth_gb',d.bandwidth_gb)}</span></div>
+    <div class="tip-row"><span class="tip-label">Requests</span><span class="tip-val">${ftip('requests',d.requests)}</span></div>
+    <div class="tip-row"><span class="tip-label">Unique Viewers</span><span class="tip-val">${ftip('unique_viewers',d.unique_viewers)}</span></div>
+    <div class="tip-row"><span class="tip-label">Avg TTFB</span><span class="tip-val">${ftip('avg_ttfb_ms',d.avg_ttfb_ms)}</span></div>
+    <div class="tip-row"><span class="tip-label">Throughput</span><span class="tip-val">${ftip('avg_throughput_kbps',d.avg_throughput_kbps)}</span></div>
+    ${hint?'<div class="tip-hint">'+hint+'</div>':''}`;
+  t.style.display='block';
+  const px=e.originalEvent.pageX,py=e.originalEvent.pageY;
+  t.style.left=(px+18)+'px'; t.style.top=(py-40)+'px';
+  // clamp to viewport
+  requestAnimationFrame(()=>{
+    const r=t.getBoundingClientRect();
+    if(r.right>window.innerWidth-8) t.style.left=Math.max(8,px-r.width-8)+'px';
+    if(r.bottom>window.innerHeight-8) t.style.top=Math.max(8,py-r.height-8)+'px';
+  });
+}
+function hideTip(){document.getElementById('tip').style.display='none';}
+
+// ── BREADCRUMB ────────────────────────────────────────────────────────────────
+function setBC(parts){
+  const bc=document.getElementById('bc');
+  bc.innerHTML='';
+  parts.forEach((p,i)=>{
+    if(i<parts.length-1){
+      const s=document.createElement('span');
+      s.className='bc-link'; s.textContent=p.label;
+      if(typeof p.fn==='function') s.addEventListener('click',p.fn);
+      bc.appendChild(s);
+      const sep=document.createElement('span');
+      sep.className='bc-sep'; sep.textContent=' › ';
+      bc.appendChild(sep);
+    } else {
+      const s=document.createElement('span');
+      s.style.color='var(--text2)';
+      s.textContent=typeof p==='string'?p:p.label;
+      bc.appendChild(s);
+    }
+  });
+}
+
+// ── SIDEBAR ───────────────────────────────────────────────────────────────────
+function updateSidebar(arr,scope,nameKey){
+  document.getElementById('k-bw').textContent=fv('bandwidth_gb',sum(arr,'bandwidth_gb'));
+  document.getElementById('k-req').textContent=fv('requests',sum(arr,'requests'));
+  document.getElementById('k-uv').textContent=fv('unique_viewers',sum(arr,'unique_viewers'));
+  document.getElementById('k-ttfb').textContent=fv('avg_ttfb_ms',avg(arr,'avg_ttfb_ms'));
+  ['k-bw-s','k-req-s','k-uv-s','k-ttfb-s'].forEach(id=>document.getElementById(id).textContent=scope);
+
+  const m=currentMetric;
+  const sorted=[...arr].sort((a,b)=>(+b[m]||0)-(+a[m]||0)).slice(0,20);
+  const mx=sorted[0]?+sorted[0][m]||0:1;
+  const mn=sorted[sorted.length-1]?+sorted[sorted.length-1][m]||0:0;
+
+  document.getElementById('rank-hdr-title').textContent=
+    `Top ${sorted.length} · ${METRIC_META[m].label}`;
+
+  document.getElementById('rank-list').innerHTML=sorted.map((d,i)=>{
+    const val=+d[m]||0;
+    const norm=getNorm(val,mn,mx);
+    const barPct=Math.max(3,Math.round(norm*100));
+    const flag=nameKey==='country_code'?(COUNTRY_FLAGS[d[nameKey]]||''):'';
+    const displayName=nameKey==='country_code'?(COUNTRY_NAMES[d[nameKey]]||d[nameKey]):d[nameKey];
+    const barColor=currentView==='world'?`hsl(${195+norm*15},${55+norm*35}%,${30+norm*30}%)`:`hsl(${25+norm*15},${55+norm*35}%,${30+norm*30}%)`;
+    return `<div class="rr">
+      <span class="rn">${i+1}</span>
+      <span class="rname" title="${displayName}">${flag?flag+' ':''}<span>${displayName}</span></span>
+      <div class="rbar"><div class="rbar-fill" style="width:${barPct}%;background:${barColor}"></div></div>
+      <span class="rval">${fv(m,val)}</span>
+    </div>`;
+  }).join('');
+
+  // city list
+  const cm=currentMetric;
+  const cs=[...citiesData].sort((a,b)=>(+b[cm]||0)-(+a[cm]||0));
+  const cmx=cs[0]?+cs[0][cm]||0:1;
+  document.getElementById('city-list').innerHTML=cs.map((d,i)=>{
+    const v=+d[cm]||0;
+    const bp=Math.max(3,Math.round((v/cmx)*100));
+    return `<div class="rr">
+      <span class="rn">${i+1}</span>
+      <span class="rname" title="${d.city_name}">
+        ${d.city_name}<br><span class="rsub">${d.state_name}</span>
+      </span>
+      <div class="rbar"><div class="rbar-fill" style="width:${bp}%;background:var(--lc)"></div></div>
+      <span class="rval">${fv(cm,v)}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── LEGEND ───────────────────────────────────────────────────────────────────
+function updateLegend(arr){
+  const m=currentMetric;
+  const vals=arr.map(d=>+d[m]||0);
+  const mn=Math.min(...vals),mx=Math.max(...vals);
+  document.getElementById('leg-title').textContent=METRIC_META[m].label;
+
+  const isHeat=mapMode==='heatmap';
+  if(isHeat){
+    document.getElementById('leg-swatch').style.background=
+      'linear-gradient(to right,#000080,#0000ff,#00ffff,#00ff00,#ffff00,#ff0000)';
+    document.getElementById('leg-lo').textContent=fv(m,mn);
+    document.getElementById('leg-hi').textContent=fv(m,mx);
+    document.getElementById('leg-mid').textContent='';
+    document.getElementById('leg-scale-note').textContent='';
+  } else {
+    // Political mode: show bubble size guide instead of gradient
+    document.getElementById('leg-swatch').style.background=
+      'linear-gradient(to right,#90CAF9,#FFD54F,#FF8A65,#CE93D8)';
+    document.getElementById('leg-lo').textContent='Each colour = 1 region';
+    document.getElementById('leg-hi').textContent='';
+    document.getElementById('leg-mid').textContent='';
+    document.getElementById('leg-scale-note').textContent='Bubble size = '+METRIC_META[m].label;
+  }
+  document.getElementById('leg-choro').style.display='';
+  document.getElementById('leg-heat').style.display='none';
+}
+
+// ── LAYER MANAGEMENT ──────────────────────────────────────────────────────────
+function clearAll(){
+  if(geoLayer){map.removeLayer(geoLayer);geoLayer=null;}
+  if(heatLayer){map.removeLayer(heatLayer);heatLayer=null;}
+  cityMarkers.forEach(mk=>map.removeLayer(mk));
+  cityMarkers=[];
+}
+
+// ── CUSTOM GLOW HEATMAP (no leaflet-heat, no getImageData, no warnings) ────────
+// Pure radial-gradient canvas layer — visually richer and warning-free
+L.GlowHeat=L.Layer.extend({
+  options:{radius:55,globalAlpha:1},
+  initialize(pts,opts){this._pts=pts||[];L.setOptions(this,opts);},
+  onAdd(map){
+    this._map=map;
+    const pane=map.getPanes().overlayPane;
+    this._cv=L.DomUtil.create('canvas','');
+    Object.assign(this._cv.style,{position:'absolute',top:0,left:0,pointerEvents:'none'});
+    // Context created without willReadFrequently — we never read pixels back
+    this._ctx=this._cv.getContext('2d');
+    pane.appendChild(this._cv);
+    map.on('moveend zoomend resize viewreset',this._draw,this);
+    this._draw();
+  },
+  onRemove(map){
+    this._cv.remove();
+    map.off('moveend zoomend resize viewreset',this._draw,this);
+  },
+  setLatLngs(pts){this._pts=pts;this._draw();return this;},
+  _draw(){
+    const map=this._map, size=map.getSize();
+    const cv=this._cv, ctx=this._ctx;
+    cv.width=size.x; cv.height=size.y;
+    L.DomUtil.setPosition(cv, map.containerPointToLayerPoint([0,0]));
+    ctx.clearRect(0,0,size.x,size.y);
+    if(!this._pts.length) return;
+
+    const max=Math.max(...this._pts.map(p=>p[2]));
+    const R=this.options.radius;
+
+    // Sort ascending so bright points paint on top
+    const sorted=[...this._pts].sort((a,b)=>a[2]-b[2]);
+
+    sorted.forEach(([lat,lng,val])=>{
+      const p=map.latLngToContainerPoint([lat,lng]);
+      // t: 0..1, uses power curve so low-density regions are still visible
+      const t=Math.pow(Math.max(0,val)/max, 0.42);
+      const r=R*(0.35+t*0.95);
+
+      // Layer 1 — wide diffuse outer bloom (additive feel)
+      const bloom=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r*2.2);
+      const ba=(0.04+t*0.10).toFixed(3);
+      bloom.addColorStop(0,  `rgba(30,80,255,${ba})`);
+      bloom.addColorStop(0.4,`rgba(10,40,180,${(ba*0.5).toFixed(3)})`);
+      bloom.addColorStop(1,  'rgba(0,0,60,0)');
+      ctx.fillStyle=bloom;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r*2.2,0,Math.PI*2); ctx.fill();
+
+      // Layer 2 — main spectral gradient keyed to intensity t
+      const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r);
+      _applySpectrum(g,t);
+      ctx.fillStyle=g;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill();
+
+      // Layer 3 — white-hot core for the highest-intensity points
+      if(t>0.55){
+        const core=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r*0.22);
+        const ca=((t-0.55)*1.8).toFixed(2);
+        core.addColorStop(0,  `rgba(255,255,240,${Math.min(ca,0.92)})`);
+        core.addColorStop(0.5,`rgba(255,220,100,${(ca*0.4).toFixed(2)})`);
+        core.addColorStop(1,  'rgba(255,140,0,0)');
+        ctx.fillStyle=core;
+        ctx.beginPath(); ctx.arc(p.x,p.y,r*0.22,0,Math.PI*2); ctx.fill();
+      }
+    });
+  }
+});
+
+// Spectral colour gradient: cold-blue → cyan → green → yellow → red-hot
+function _applySpectrum(g,t){
+  if(t<0.20){
+    const a=(0.12+t*0.8).toFixed(2);
+    g.addColorStop(0,  `rgba(20,60,220,${a})`);
+    g.addColorStop(0.5,`rgba(0,30,160,${(a*0.4).toFixed(2)})`);
+    g.addColorStop(1,  'rgba(0,0,80,0)');
+  } else if(t<0.42){
+    const a=(0.18+t*0.7).toFixed(2);
+    g.addColorStop(0,  `rgba(0,210,255,${a})`);
+    g.addColorStop(0.35,`rgba(0,80,220,${(a*0.45).toFixed(2)})`);
+    g.addColorStop(1,  'rgba(0,20,100,0)');
+  } else if(t<0.64){
+    const a=(0.22+t*0.65).toFixed(2);
+    g.addColorStop(0,  `rgba(0,255,140,${a})`);
+    g.addColorStop(0.3,`rgba(0,160,255,${(a*0.4).toFixed(2)})`);
+    g.addColorStop(0.7,`rgba(0,40,160,${(a*0.12).toFixed(2)})`);
+    g.addColorStop(1,  'rgba(0,10,60,0)');
+  } else {
+    const a=(0.30+t*0.55).toFixed(2);
+    g.addColorStop(0,  `rgba(255,210,0,${a})`);
+    g.addColorStop(0.22,`rgba(255,80,0,${(a*0.85).toFixed(2)})`);
+    g.addColorStop(0.50,`rgba(200,0,60,${(a*0.45).toFixed(2)})`);
+    g.addColorStop(0.78,`rgba(80,0,120,${(a*0.15).toFixed(2)})`);
+    g.addColorStop(1,   'rgba(0,0,60,0)');
+  }
+}
+
+function buildHeatmap(rawPts,isIndia){
+  const vals=rawPts.map(p=>p[2]);
+  const mx=Math.max(...vals), mn=Math.min(...vals);
+  // sqrt-normalise so smaller countries/states remain visible
+  const pts=rawPts.map(([la,lo,v])=>[la,lo,Math.max(0.04,Math.sqrt(Math.max(0,v-mn)/(mx-mn||1)))]);
+  return new L.GlowHeat(pts,{radius:isIndia?38:58});
+}
+
+// ── WORLD VIEW ────────────────────────────────────────────────────────────────
+function renderWorldLayers(){
+  clearAll();
+  setBC([{label:'🌍 World'}]);
+  fetchWorldGeo().then(geo=>{
+    const m=currentMetric;
+    const byCode={};
+    worldData.forEach(d=>byCode[d.country_code]=d);
+    const vals=worldData.map(d=>+d[m]||0);
+    const mn=Math.min(...vals),mx=Math.max(...vals);
+
+    if(mapMode==='heatmap'){
+      const pts=worldData.map(d=>{
+        const c=COUNTRY_COORDS[d.country_code];
+        return c?[c[0],c[1],+d[m]||0]:null;
+      }).filter(Boolean);
+      heatLayer=buildHeatmap(pts,false);
+      heatLayer.addTo(map);
+    }
+
+    geoLayer=L.geoJSON(geo,{
+      style:feat=>{
+        const iso=(feat.properties.ISO_A2||feat.properties.iso_a2||'').toUpperCase();
+        const d=byCode[iso];
+        if(mapMode==='heatmap')
+          return{fillOpacity:0,color:'rgba(255,255,255,0.05)',weight:0.3};
+        // Political distinct colour per country
+        return{
+          fillColor:d?countryColor(iso):'#1a2234',
+          fillOpacity:d?0.82:0.08,
+          color:'#060a10',weight:0.6
+        };
+      },
+      onEachFeature:(feat,layer)=>{
+        const iso=(feat.properties.ISO_A2||feat.properties.iso_a2||'').toUpperCase();
+        const name=COUNTRY_NAMES[iso]||feat.properties.ADMIN||feat.properties.name||iso;
+        const d=byCode[iso];
+        const flag=COUNTRY_FLAGS[iso]||'';
+        layer.on('mouseover',e=>{
+          if(d) showTip(e,name,d,iso==='IN'?'🖱 Click to drill into India →':'',flag);
+          layer.setStyle({weight:2.5,color:'#fff',fillOpacity:0.95});
+        });
+        layer.on('mouseout',()=>{hideTip();geoLayer&&geoLayer.resetStyle(layer);});
+        layer.on('click',()=>{if(iso==='IN') drillIndia();});
+      }
+    }).addTo(map);
+
+    // Traffic bubbles on each country
+    const mxC=Math.max(...worldData.map(d=>+d[m]||0));
+    worldData.forEach(d=>{
+      const iso=d.country_code;
+      const c=COUNTRY_COORDS[iso]; if(!c) return;
+      const v=+d[m]||0; if(v<=0) return;
+      const r=Math.max(8,Math.min(38,Math.round(Math.sqrt(v/mxC)*38)));
+      const col=countryColor(iso);
+      const icon=L.divIcon({
+        className:'',
+        html:`<div class="bubble-lbl" style="
+          width:${r*2}px;height:${r*2}px;border-radius:50%;
+          background:${col};opacity:0.92;
+          border:2.5px solid rgba(255,255,255,0.7);
+          font-size:${Math.max(7,r*0.45)}px;
+          box-shadow:0 2px 12px rgba(0,0,0,0.5),0 0 ${r}px ${col}55;
+          cursor:pointer;
+        ">${iso}</div>`,
+        iconAnchor:[r,r]
+      });
+      const mk=L.marker(c,{icon,zIndexOffset:100}).addTo(map);
+      mk.on('mouseover',e=>showTip(e,COUNTRY_NAMES[iso]||iso,d,iso==='IN'?'🖱 Click to drill into India →':'',COUNTRY_FLAGS[iso]||''));
+      mk.on('mouseout',hideTip);
+      mk.on('click',()=>{if(iso==='IN') drillIndia();});
+      cityMarkers.push(mk);
+    });
+
+    updateSidebar(worldData,'Global · 25 countries','country_code');
+    updateLegend(worldData);
+  }).catch(e=>console.error('World GeoJSON failed',e));
+}
+
+// ── INDIA VIEW ────────────────────────────────────────────────────────────────
+function drillIndia(){
+  currentView='india';
+  document.getElementById('btn-back').style.display='inline-flex';
+  map.flyTo([22.5,82],5,{duration:1.0});
+  clearAll();
+  setBC([{label:'🌍 World',fn:goWorld},'🇮🇳 India']);
+  updateHierNav('state');
+  fetchIndiaGeo().then(renderIndiaLayers).catch(renderIndiaFallback);
+}
+
+function matchState(feat,byName){
+  const raw=(feat.properties.NAME_1||feat.properties.ST_NM||feat.properties.name||'').toLowerCase().trim();
+  if(byName[raw]) return byName[raw];
+  // fuzzy: first word match
+  return Object.values(byName).find(v=>
+    raw.includes(v.state_name.toLowerCase().split(' ')[0])||
+    v.state_name.toLowerCase().includes(raw.split(' ')[0])
+  );
+}
+
+function renderIndiaLayers(geo){
+  clearAll();
+  const m=currentMetric;
+  const byName={};
+  statesData.forEach(d=>byName[d.state_name.toLowerCase().trim()]=d);
+  const vals=statesData.map(d=>+d[m]||0);
+  const mn=Math.min(...vals),mx=Math.max(...vals);
+
+  if(mapMode==='heatmap'){
+    const pts=statesData.map(d=>{
+      const c=STATE_COORDS[d.state_name];
+      return c?[c[0],c[1],+d[m]||0]:null;
+    }).filter(Boolean);
+    heatLayer=buildHeatmap(pts,true);
+    heatLayer.addTo(map);
+  }
+
+  geoLayer=L.geoJSON(geo,{
+    style:feat=>{
+      const raw=(feat.properties.NAME_1||feat.properties.ST_NM||feat.properties.name||'').toLowerCase().trim();
+      if(mapMode==='heatmap')
+        return{fillOpacity:0,color:'rgba(255,255,255,0.08)',weight:0.4};
+      // Political distinct colour per state — always readable
+      return{
+        fillColor:stateColor(raw),
+        fillOpacity:0.80,
+        color:'#fff',weight:1.2
+      };
+    },
+    onEachFeature:(feat,layer)=>{
+      const name=feat.properties.NAME_1||feat.properties.ST_NM||'State';
+      const raw=name.toLowerCase().trim();
+      const d=matchState(feat,byName);
+      // Permanent readable label on each state
+      layer.bindTooltip(name,{
+        permanent:true,direction:'center',
+        className:'state-lbl',offset:[0,0]
+      });
+      layer.on('mouseover',e=>{
+        if(d) showTip(e,name,d,'','🇮🇳');
+        layer.setStyle({weight:3,color:'#fff',fillOpacity:0.97});
+        layer.bringToFront();
+      });
+      layer.on('mouseout',()=>{
+        hideTip();
+        if(geoLayer) geoLayer.resetStyle(layer);
+        layer.setStyle({color:'#fff',weight:1.2});
+      });
+    }
+  }).addTo(map);
+
+  // Traffic bubbles on each state (size = traffic volume)
+  const mxS=Math.max(...statesData.map(d=>+d[m]||0));
+  statesData.forEach(d=>{
+    const coords=STATE_COORDS[d.state_name]; if(!coords) return;
+    const v=+d[m]||0; if(v<=0) return;
+    const r=Math.max(7,Math.min(34,Math.round(Math.sqrt(v/mxS)*34)));
+    const col=stateColor(d.state_name.toLowerCase().trim());
+    const icon=L.divIcon({
+      className:'',
+      html:`<div style="
+        width:${r*2}px;height:${r*2}px;border-radius:50%;
+        background:${col};
+        border:2.5px solid rgba(255,255,255,0.85);
+        display:flex;align-items:center;justify-content:center;
+        font-size:${Math.max(6,r*0.42)}px;font-weight:800;
+        color:rgba(0,0,0,0.75);
+        box-shadow:0 2px 10px rgba(0,0,0,0.55),0 0 0 1px rgba(0,0,0,0.15);
+        cursor:pointer;
+      ">${fv(m,v)}</div>`,
+      iconAnchor:[r,r]
+    });
+    const mk=L.marker(coords,{icon,zIndexOffset:200}).addTo(map);
+    mk.on('mouseover',e=>showTip(e,d.state_name,d,'','🇮🇳'));
+    mk.on('mouseout',hideTip);
+    cityMarkers.push(mk);
+  });
+
+  // City star markers
+  const mxC=Math.max(...citiesData.map(c=>+c[m]||0));
+  citiesData.forEach(c=>{
+    const key=c.city_name.toUpperCase().replace(/\s/g,'');
+    const coords=CITY_COORDS[c.city_name.toUpperCase()]||CITY_COORDS[key];
+    if(!coords) return;
+    const v=+c[m]||0;
+    const r=Math.max(10,Math.min(28,Math.round((v/mxC)*28)));
+    const icon=L.divIcon({
+      className:'',
+      html:`<div style="
+        width:${r*2}px;height:${r*2}px;border-radius:50%;
+        background:rgba(30,30,30,0.82);
+        border:2px solid rgba(255,220,0,0.9);
+        display:flex;align-items:center;justify-content:center;
+        font-size:${Math.max(7,r*0.45)}px;font-weight:700;color:#FFD700;
+        box-shadow:0 0 ${r}px rgba(255,200,0,0.4),0 2px 8px rgba(0,0,0,0.6);
+        cursor:pointer;letter-spacing:-0.02em;
+      ">${cityAbbr(c.city_name)}</div>`,
+      iconAnchor:[r,r]
+    });
+    const mk=L.marker(coords,{icon,zIndexOffset:400}).addTo(map);
+    mk.on('mouseover',e=>showTip(e,c.city_name,c,'','🏙'));
+    mk.on('mouseout',hideTip);
+    cityMarkers.push(mk);
+  });
+
+  updateSidebar(statesData,'India · 25 states','state_name');
+  updateLegend(statesData);
+}
+
+function renderIndiaFallback(){
+  const m=currentMetric;
+  const pts=statesData.map(d=>{
+    const c=STATE_COORDS[d.state_name];
+    return c?[c[0],c[1],+d[m]||0]:null;
+  }).filter(Boolean);
+  heatLayer=buildHeatmap(pts,true);
+  heatLayer.addTo(map);
+  updateSidebar(statesData,'India · 25 states','state_name');
+  updateLegend(statesData);
+}
+
+
+// ── HIERARCHY NAVIGATOR ───────────────────────────────────────────────────────
+function updateHierNav(level){
+  ['world','state','city'].forEach(l=>{
+    const el=document.getElementById('hs-'+l);
+    if(!el) return;
+    el.className='hier-step';
+    const order={world:0,state:1,city:2};
+    if(order[l]<order[level]) el.classList.add('done');
+    else if(l===level) el.classList.add('active');
+  });
+  const badge=document.getElementById('level-badge');
+  if(badge){
+    const labels={world:'🌍 Country',state:'🗺️ State',city:'🏙️ City'};
+    badge.textContent=labels[level];
+    badge.setAttribute('data-lv',level);
+  }
+  const sb=document.querySelector('.sidebar');
+  if(sb) sb.setAttribute('data-level',level);
+}
+
+// ── CONTROLS ─────────────────────────────────────────────────────────────────
+function goWorld(){
+  currentView='india';// trick clearAll
+  currentView='world';
+  document.getElementById('btn-back').style.display='none';
+  map.flyTo([20,10],2,{duration:1.0});
+  updateHierNav('world');
+  renderWorldLayers();
+}
+
+function onMetricChange(){
+  currentMetric=document.getElementById('metric-sel').value;
+  if(currentView==='world') renderWorldLayers();
+  else fetchIndiaGeo().then(renderIndiaLayers).catch(renderIndiaFallback);
+}
+
+function setMapMode(mode){
+  mapMode=mode;
+  // header buttons
+  document.getElementById('btn-choro').classList.toggle('active',mode==='choropleth');
+  document.getElementById('btn-heat').classList.toggle('active',mode==='heatmap');
+  // map overlay buttons
+  document.getElementById('vt-choro').classList.toggle('active',mode==='choropleth');
+  document.getElementById('vt-heat').classList.toggle('active',mode==='heatmap');
+  if(currentView==='world') renderWorldLayers();
+  else fetchIndiaGeo().then(renderIndiaLayers).catch(renderIndiaFallback);
+}
+
+function setScale(s){
+  rankScale=s;
+  document.getElementById('sp-linear').classList.toggle('active',s==='linear');
+  document.getElementById('sp-log').classList.toggle('active',s==='log');
+  if(currentView==='world') renderWorldLayers();
+  else fetchIndiaGeo().then(renderIndiaLayers).catch(renderIndiaFallback);
+}
+
+function showTab(t){
+  ['rank','city'].forEach(id=>{
+    document.getElementById('panel-'+id).style.display=id===t?'flex':'none';
+    document.getElementById('tab-'+id).classList.toggle('active',id===t);
+  });
+  // rank-panel needs flex-direction:column
+  document.getElementById('panel-rank').style.flexDirection='column';
+}
+
+// ── CSV PARSER ────────────────────────────────────────────────────────────────
+function parseCSV(text){
+  const rows=[];let col='',row=[],inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i],nx=text[i+1];
+    if(inQ){if(c==='"'&&nx==='"'){col+='"';i++;}else if(c==='"'){inQ=false;}else{col+=c;}}
+    else{
+      if(c==='"'){inQ=true;}
+      else if(c===','){row.push(col);col='';}
+      else if(c==='\n'||(c==='\r'&&nx==='\n')){
+        if(c==='\r')i++;row.push(col);col='';
+        if(row.some(v=>v!==''))rows.push(row);row=[];
+      }else{col+=c;}
+    }
+  }
+  if(col||row.length)rows.push([...row,col]);
+  return rows;
+}
+function handleCSV(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const parsed=parseCSV(e.target.result.trim());
+    if(parsed.length<2){alert('CSV appears empty');return;}
+    const headers=parsed[0].map(h=>h.trim().toLowerCase());
+    const rows=parsed.slice(1).map(cols=>{
+      const o={};
+      headers.forEach((h,i)=>{const v=(cols[i]||'').trim();o[h]=v!==''&&!isNaN(v)?+v:v;});
+      return o;
+    });
+    if(headers.includes('country_code')){worldData=rows;goWorld();}
+    else if(headers.includes('city_name')){citiesData=rows;if(currentView==='india')fetchIndiaGeo().then(renderIndiaLayers).catch(renderIndiaFallback);}
+    else if(headers.includes('state_name')){statesData=rows;if(currentView==='india')fetchIndiaGeo().then(renderIndiaLayers).catch(renderIndiaFallback);}
+    else alert('CSV must have country_code, state_name, or city_name column');
+    // reset file input so same file can be re-uploaded
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.onload=function(){
+  map=L.map('map',{
+    zoomControl:true,
+    attributionControl:false,
+    zoomSnap:0.5,
+    minZoom:1.5
+  }).setView([20,10],2);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png',{
+    maxZoom:18,subdomains:'abcd'
+  }).addTo(map);
+
+  // subtle label layer on top
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png',{
+    maxZoom:18,subdomains:'abcd',pane:'overlayPane'
+  }).addTo(map);
+
+  L.control.attribution({prefix:'CDN Intelligence · Leaflet · CartoDB'}).addTo(map);
+  L.control.zoom({position:'bottomright'}).addTo(map);
+
+  updateHierNav('world');
+  renderWorldLayers();
+};
+</script>
+</body>
+</html>
