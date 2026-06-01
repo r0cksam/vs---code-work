@@ -11,9 +11,23 @@ Key Updates:
 Usage:  python generate_dashboard.py
 """
 
-import sys, json, urllib.request, csv
+import os, runpy, sys, json, urllib.request, csv
 from pathlib import Path
 from datetime import datetime
+
+# Route to the modular implementation by default while keeping a legacy escape hatch.
+_MODULAR_ENTRY = Path(__file__).resolve().parent / "overViewDashboard" / "generate_dashboard.py"
+_USE_LEGACY = ("--legacy" in sys.argv) or (os.environ.get("OVERVIEW_DASHBOARD_LEGACY") == "1")
+if "--legacy" in sys.argv:
+    sys.argv = [arg for arg in sys.argv if arg != "--legacy"]
+
+if __name__ == "__main__" and not _USE_LEGACY:
+    if _MODULAR_ENTRY.exists():
+        print(f"[Info] Using modular generator: {_MODULAR_ENTRY}")
+        sys.argv[0] = str(_MODULAR_ENTRY)
+        runpy.run_path(str(_MODULAR_ENTRY), run_name="__main__")
+        raise SystemExit(0)
+    print(f"[Warn] Modular generator not found at: {_MODULAR_ENTRY}. Falling back to legacy mode.")
 
 try:
     import openpyxl

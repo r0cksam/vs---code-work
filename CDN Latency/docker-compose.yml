@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   pushgateway:
     image: prom/pushgateway:latest
@@ -28,9 +26,13 @@ services:
     container_name: grafana
     restart: unless-stopped
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin   # change me
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
     depends_on:
@@ -41,14 +43,39 @@ services:
     container_name: log-consumer
     restart: unless-stopped
     environment:
-      - ENDPOINT_URL=https://in-maa-1.linodeobjects.com
-      - ACCESS_KEY_ID=W5LRU06PYI9F13JSIWAB
-      - SECRET_KEY=F5YVjfb0FLtenYCQWtWPtWCJVpE1BLE5ZhXYJYXs   # <-- rotate ASAP
-      - BUCKET_NAME=veto-stream-logs
+      - ENDPOINT_URL=${ENDPOINT_URL}
+      - ACCESS_KEY_ID=${ACCESS_KEY_ID}
+      - SECRET_KEY=${SECRET_KEY}
+      - BUCKET_NAME=${BUCKET_NAME}
       - PUSHGATEWAY_URL=pushgateway:9091
+      - PROCESSED_FILE=/state/processed_keys.txt
+      - S3_PREFIX=${S3_PREFIX:-}
+      - LOG_KEY_SUFFIXES=${LOG_KEY_SUFFIXES:-.gz}
+      - POLL_INTERVAL_SEC=${POLL_INTERVAL_SEC:-30}
+    volumes:
+      - log_consumer_state:/state
     depends_on:
       - pushgateway
+
+  kpi-exporter:
+    build: ./kpi_exporter
+    container_name: kpi-exporter
+    restart: unless-stopped
+    environment:
+      - KPI_EXPORTER_PORT=9108
+      - KPI_EXPORTER_REFRESH_SEC=${KPI_EXPORTER_REFRESH_SEC:-60}
+      - OVERVIEW_XLSX_PATH=/data/overview/overview_report.xlsx
+      - DEVICE_DAILY_CSV=/data/overview/device_daily.csv
+      - DEVICE_SNAPSHOT_CSV=/data/overview/device_snapshot.csv
+      - WATCH_DAILY_CSV=/data/profile/daily_volume.csv
+      - WATCH_CHANNEL_SUMMARY_CSV=/data/profile/channel_summary.csv
+    volumes:
+      - "./kpi_sources/overview:/data/overview:ro"
+      - "D:/Vs - Code Work/PC2 Full/Vs - Code Work/vglive_channel_profile/deep_profile_full:/data/profile:ro"
+    ports:
+      - "9108:9108"
 
 volumes:
   prometheus_data:
   grafana_data:
+  log_consumer_state:

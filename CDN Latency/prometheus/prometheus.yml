@@ -7,3 +7,6 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: ['pushgateway:9091']
+  - job_name: 'kpi-exporter'
+    static_configs:
+      - targets: ['kpi-exporter:9108']
