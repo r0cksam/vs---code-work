@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: pushgateway
+    restart: unless-stopped
+    ports:
+      - "9091:9091"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - pushgateway
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin   # change me
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  log-consumer:
+    build: ./consumer
+    container_name: log-consumer
+    restart: unless-stopped
+    environment:
+      - ENDPOINT_URL=https://in-maa-1.linodeobjects.com
+      - ACCESS_KEY_ID=W5LRU06PYI9F13JSIWAB
+      - SECRET_KEY=F5YVjfb0FLtenYCQWtWPtWCJVpE1BLE5ZhXYJYXs   # <-- rotate ASAP
+      - BUCKET_NAME=veto-stream-logs
+      - PUSHGATEWAY_URL=pushgateway:9091
+    depends_on:
+      - pushgateway
+
+volumes:
+  prometheus_data:
+  grafana_data:
