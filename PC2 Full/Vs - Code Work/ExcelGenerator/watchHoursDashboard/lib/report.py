@@ -147,12 +147,14 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     if not channel_daily.empty:
         channel_daily = with_numbers(
             channel_daily,
-            ["raw_ts_chunks", "raw_watch_hours", "status_200_ts_chunks", "status_200_watch_hours", "approx_unique_ips"],
+            ["raw_ts_chunks", "raw_watch_hours", "status_200_ts_chunks", "status_200_watch_hours", "m3u8_rows", "approx_unique_ips"],
         )
         if "status_200_ts_chunks" not in channel_daily.columns:
             channel_daily["status_200_ts_chunks"] = numeric(channel_daily, "raw_ts_chunks")
         if "status_200_watch_hours" not in channel_daily.columns:
             channel_daily["status_200_watch_hours"] = numeric(channel_daily, "raw_watch_hours")
+        if "m3u8_rows" not in channel_daily.columns:
+            channel_daily["m3u8_rows"] = 0
         channel_daily["log_date"] = pd.to_datetime(channel_daily["log_date"], errors="coerce").dt.strftime("%Y-%m-%d")
         channel_daily             = channel_daily.dropna(subset=["log_date"])
 
@@ -236,8 +238,8 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
              "raw_watch_hours", "status_200_watch_hours", "non_200_pct"],
         ),
         "daily_tables":       daily_tables,
-        "channels":           records(channel_summary, ["channel_name", "raw_watch_hours", "status_200_watch_hours", "approx_unique_ips", "share_pct", "first_seen", "last_seen"]),
-        "channel_daily_all":  records(channel_daily,   ["log_date", "channel_name", "raw_watch_hours", "status_200_watch_hours", "raw_ts_chunks", "status_200_ts_chunks", "approx_unique_ips"]),
+        "channels":           records(channel_summary, ["channel_name", "raw_watch_hours", "status_200_watch_hours", "raw_ts_chunks", "status_200_ts_chunks", "approx_unique_ips", "share_pct", "first_seen", "last_seen"]),
+        "channel_daily_all":  records(channel_daily,   ["log_date", "channel_name", "raw_watch_hours", "status_200_watch_hours", "raw_ts_chunks", "status_200_ts_chunks", "m3u8_rows", "approx_unique_ips"]),
         "channel_series":     channel_series,
         "status":             records(status.sort_values("rows", ascending=False),              ["statusCode", "meaning", "rows", "row_pct", "approx_unique_ips", "sample_reqPath"], 20),
         "extensions":         records(extensions.sort_values("rows", ascending=False),          ["extension", "rows", "approx_unique_ips", "sample_reqPath"], 20),

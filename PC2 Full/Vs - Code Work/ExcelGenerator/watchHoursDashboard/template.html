@@ -35,6 +35,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .label{font-size:10px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px;line-height:1.15;min-height:23px;text-align:center}
 .value{font-size:25px;font-weight:850;line-height:1.05;color:#172033}
 .small{font-size:11px;color:var(--muted);margin-top:5px}
+.state-pill{display:inline-block;padding:2px 7px;border-radius:999px;border:1px solid #d8e1ee;background:#f8fafc;color:#475569;font-size:10px;font-weight:800;white-space:nowrap;line-height:1.2}
+.state-pill.ok{background:#ecfdf3;border-color:#bbf7d0;color:#166534}
+.state-pill.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+.state-pill.zero{background:#f1f5f9;border-color:#d8e1ee;color:#475569}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 18px}
 .tab-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:750;cursor:pointer}
 .tab-btn.active{background:var(--brand);color:#fff;border-color:var(--brand)}
@@ -324,26 +328,66 @@ function statusMeaning(value){
   const code=String(value??'').replace(/\.0$/,'');
   return (D.status_meanings||{})[code]||'Status code was present in logs but is not in the built-in reference list.';
 }
+function channelTsStateText(row){
+  const ts=Number(row?.raw_ts_chunks||0);
+  const m3u8=Number(row?.m3u8_rows||0);
+  if(ts>0&&m3u8>0)return 'TS + M3U8';
+  if(ts>0&&m3u8<=0)return 'TS only';
+  if(ts<=0&&m3u8>0)return 'M3U8 only (No TS)';
+  return 'No media rows';
+}
+function channelTsStateClass(row){
+  const ts=Number(row?.raw_ts_chunks||0);
+  const m3u8=Number(row?.m3u8_rows||0);
+  if(ts>0)return 'ok';
+  if(m3u8>0)return 'warn';
+  return 'zero';
+}
+function channelTsStatePill(row){
+  return `<span class="state-pill ${channelTsStateClass(row)}">${escapeHtml(channelTsStateText(row))}</span>`;
+}
 
 // ── Channel aggregation ───────────────────────────────────────────────────────
 function aggregateChannels(dailyRows) {
-  if(!ALL_CHANNEL_DAILY.length) return (D.channels||[]).slice();
-  const dates=new Set(dailyRows.map(r=>r.log_date));
+  const normalizeRow=r=>({
+    channel_name:String(r?.channel_name||'Unknown'),
+    raw_watch_hours:Number(r?.raw_watch_hours||0),
+    status_200_watch_hours:Number(r?.status_200_watch_hours||0),
+    raw_ts_chunks:Number(r?.raw_ts_chunks||0),
+    status_200_ts_chunks:Number(r?.status_200_ts_chunks||0),
+    m3u8_rows:Number(r?.m3u8_rows||0),
+    approx_unique_ips:Number(r?.approx_unique_ips||0),
+    share_pct:Number(r?.share_pct||0),
+  });
+  if(!ALL_CHANNEL_DAILY.length){
+    const rows=(D.channels||[]).map(normalizeRow).sort((a,b)=>(b.raw_watch_hours-a.raw_watch_hours)||a.channel_name.localeCompare(b.channel_name));
+    const totalHours=sum(rows,'raw_watch_hours');
+    rows.forEach(r=>{r.share_pct=percent(r.raw_watch_hours,totalHours);r.ts_status=channelTsStateText(r);});
+    return rows;
+  }
+  const dates=new Set((dailyRows||[]).map(r=>String(r.log_date)));
   const buckets=new Map();
+  (D.channels||[]).forEach(r=>{
+    const key=String(r?.channel_name||'Unknown');
+    if(!buckets.has(key)){
+      buckets.set(key,{channel_name:key,raw_watch_hours:0,status_200_watch_hours:0,raw_ts_chunks:0,status_200_ts_chunks:0,m3u8_rows:0,approx_unique_ips:0,share_pct:0});
+    }
+  });
   ALL_CHANNEL_DAILY.forEach(r=>{
-    if(!dates.has(r.log_date))return;
-    const key=r.channel_name||'Unknown';
-    const item=buckets.get(key)||{channel_name:key,raw_watch_hours:0,status_200_watch_hours:0,raw_ts_chunks:0,status_200_ts_chunks:0,approx_unique_ips:0};
+    if(!dates.has(String(r.log_date)))return;
+    const key=String(r.channel_name||'Unknown');
+    const item=buckets.get(key)||{channel_name:key,raw_watch_hours:0,status_200_watch_hours:0,raw_ts_chunks:0,status_200_ts_chunks:0,m3u8_rows:0,approx_unique_ips:0,share_pct:0};
     item.raw_watch_hours+=Number(r.raw_watch_hours||0);
     item.status_200_watch_hours+=Number(r.status_200_watch_hours||0);
     item.raw_ts_chunks+=Number(r.raw_ts_chunks||0);
     item.status_200_ts_chunks+=Number(r.status_200_ts_chunks||0);
+    item.m3u8_rows+=Number(r.m3u8_rows||0);
     item.approx_unique_ips=Math.max(item.approx_unique_ips,Number(r.approx_unique_ips||0));
     buckets.set(key,item);
   });
-  const rows=[...buckets.values()].sort((a,b)=>b.raw_watch_hours-a.raw_watch_hours);
+  const rows=[...buckets.values()].sort((a,b)=>(b.raw_watch_hours-a.raw_watch_hours)||a.channel_name.localeCompare(b.channel_name));
   const totalHours=sum(rows,'raw_watch_hours');
-  rows.forEach(r=>r.share_pct=percent(r.raw_watch_hours,totalHours));
+  rows.forEach(r=>{r.share_pct=percent(r.raw_watch_hours,totalHours);r.ts_status=channelTsStateText(r);});
   return rows;
 }
 
@@ -748,7 +792,28 @@ function renderTables(){
   const cmcd=aggregateCmcd();
   const wh={fn:v=>fmtH(v),num:true};const n={fn:v=>fmt(v),num:true};const p={fn:v=>fmtPct(v),num:true};const gf={watch_hours:wh,share_pct:p,approx_unique_ips:n};
 
-  document.getElementById('channelTable').innerHTML=table(viewChannels||[],[{key:'channel_name',label:'Channel'},{key:'raw_watch_hours',label:'Raw Hours'},{key:'status_200_watch_hours',label:'Status 200 Hours'},{key:'share_pct',label:'Share'},{key:'approx_unique_ips',label:'Approx IPs'}],{raw_watch_hours:wh,status_200_watch_hours:wh,share_pct:p,approx_unique_ips:n});
+  document.getElementById('channelTable').innerHTML=table(
+    viewChannels||[],
+    [
+      {key:'channel_name',label:'Channel'},
+      {key:'raw_watch_hours',label:'Raw Hours'},
+      {key:'status_200_watch_hours',label:'Status 200 Hours'},
+      {key:'raw_ts_chunks',label:'Raw TS Chunks'},
+      {key:'m3u8_rows',label:'M3U8 Rows'},
+      {key:'ts_status',label:'TS Status'},
+      {key:'share_pct',label:'Share'},
+      {key:'approx_unique_ips',label:'Approx IPs'}
+    ],
+    {
+      raw_watch_hours:wh,
+      status_200_watch_hours:wh,
+      raw_ts_chunks:n,
+      m3u8_rows:n,
+      ts_status:{fn:(v,row)=>channelTsStatePill(row)},
+      share_pct:p,
+      approx_unique_ips:n
+    }
+  );
   document.getElementById('mappingMetrics').innerHTML=[mini('Unmapped Candidates',fmt(s.unmapped_candidates)),mini('Mapped Coverage',fmtPct(s.mapped_coverage_pct)),mini('Rows With QueryStr',fmt(qp.rows_with_querystr||0)),mini('Rows With CMCD',fmt(cmcd.rows_with_cmcd||0))].join('');
   document.getElementById('querySummaryTable').innerHTML=table(D.query_summary,[{key:'review_status',label:'Status'},{key:'rows',label:'Rows'},{key:'requests',label:'Requests'},{key:'sessions',label:'Sessions'},{key:'devices',label:'Devices'}],{rows:n,requests:n,sessions:n,devices:n});
   document.getElementById('queryNonOkTable').innerHTML=table(D.query_non_ok,[{key:'review_status',label:'Status'},{key:'pure_channel',label:'Pure Channel'},{key:'mapped_channel',label:'Mapped Channel'},{key:'reqHost',label:'Host'},{key:'candidate_id',label:'Candidate'},{key:'requests',label:'Requests'},{key:'sample_reqPath',label:'Sample Path'}],{requests:n});
