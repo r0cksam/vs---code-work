@@ -232,7 +232,7 @@
               }
             ]
           },
-          "unit": "dateTimeAsIso"
+          "unit": "time:DD/MM/YY hh:mm:ss A"
         },
         "overrides": []
       },
@@ -260,7 +260,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_kpi_exporter_last_success_timestamp_seconds",
+          "expr": "veto_kpi_exporter_last_success_timestamp_seconds * 1000",
           "legendFormat": "Last Success",
           "range": true,
           "refId": "A"
@@ -306,27 +306,27 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_overview_avg_rows_per_day",
+          "expr": "(sum(veto_overview_day_rows and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_rows and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
           "legendFormat": "Avg Rows / Day",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "veto_overview_avg_distinct_ips_per_day",
+          "expr": "(sum(veto_overview_day_distinct_ips and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_distinct_ips and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
           "legendFormat": "Avg Distinct IPs / Day",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
-          "expr": "veto_overview_avg_sessions_per_day",
+          "expr": "(sum(veto_overview_day_sessions and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_sessions and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
           "legendFormat": "Avg Sessions / Day",
           "range": true,
           "refId": "C"
         }
       ],
-      "title": "Overview Daily Averages",
+      "title": "Overview Daily Averages (Selected Range)",
       "type": "timeseries"
     },
     {
@@ -366,20 +366,20 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_watch_raw_watch_hours_total",
+          "expr": "sum(veto_watch_day_raw_watch_hours and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})) or vector(0)",
           "legendFormat": "Raw Watch Hours",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "veto_watch_status_200_watch_hours_total",
+          "expr": "sum(veto_watch_day_status_200_watch_hours and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})) or vector(0)",
           "legendFormat": "Status 200 Watch Hours",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Watch Hours Snapshot",
+      "title": "Watch Hours Snapshot (Selected Range)",
       "type": "timeseries"
     },
     {
@@ -430,13 +430,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_overview_active_devices_total",
+          "expr": "(sum(veto_overview_device_first_seen_count and on(day) (veto_overview_device_day_start_timestamp_seconds <= ${__to:date:seconds})) - sum(veto_overview_device_last_seen_count and on(day) (veto_overview_device_day_start_timestamp_seconds < ${__from:date:seconds}))) or vector(0)",
           "legendFormat": "Active",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Overview Active Devices",
+      "title": "Overview Active Devices (Selected Range)",
       "type": "stat"
     },
     {
@@ -487,13 +487,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_overview_new_devices_total",
+          "expr": "sum(veto_overview_device_first_seen_count and on(day) (veto_overview_device_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_device_day_start_timestamp_seconds <= ${__to:date:seconds})) or vector(0)",
           "legendFormat": "New",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Overview New Devices",
+      "title": "Overview New Devices (Selected Range)",
       "type": "stat"
     },
     {
@@ -544,13 +544,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_overview_returning_devices_total",
+          "expr": "((sum(veto_overview_device_first_seen_count and on(day) (veto_overview_device_day_start_timestamp_seconds <= ${__to:date:seconds})) - sum(veto_overview_device_last_seen_count and on(day) (veto_overview_device_day_start_timestamp_seconds < ${__from:date:seconds}))) - sum(veto_overview_device_first_seen_count and on(day) (veto_overview_device_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_device_day_start_timestamp_seconds <= ${__to:date:seconds}))) or vector(0)",
           "legendFormat": "Returning",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Overview Returning Devices",
+      "title": "Overview Returning Devices (Selected Range)",
       "type": "stat"
     },
     {
@@ -601,13 +601,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_watch_avg_raw_watch_hours_per_day",
+          "expr": "(sum(veto_watch_day_raw_watch_hours and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_watch_day_raw_watch_hours and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
           "legendFormat": "Watch Avg",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Watch Avg Hours / Day",
+      "title": "Watch Avg Hours / Day (Selected Range)",
       "type": "stat"
     },
     {
@@ -664,7 +664,7 @@
           "refId": "A"
         }
       ],
-      "title": "Watch Active Channels",
+      "title": "Watch Active Channels (All Data)",
       "type": "stat"
     },
     {
@@ -721,7 +721,7 @@
           "refId": "A"
         }
       ],
-      "title": "Top Channel Hours",
+      "title": "Top Channel Hours (All Data)",
       "type": "stat"
     },
     {
@@ -744,7 +744,7 @@
               }
             ]
           },
-          "unit": "dateTimeAsIso"
+          "unit": "time:DD/MM/YY hh:mm:ss A"
         },
         "overrides": []
       },
@@ -772,7 +772,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_overview_used_range_start_timestamp_seconds",
+          "expr": "veto_overview_used_range_start_timestamp_seconds * 1000",
           "legendFormat": "Overview Start",
           "range": true,
           "refId": "A"
@@ -801,7 +801,7 @@
               }
             ]
           },
-          "unit": "dateTimeAsIso"
+          "unit": "time:DD/MM/YY hh:mm:ss A"
         },
         "overrides": []
       },
@@ -829,7 +829,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_overview_used_range_end_timestamp_seconds",
+          "expr": "veto_overview_used_range_end_timestamp_seconds * 1000",
           "legendFormat": "Overview End",
           "range": true,
           "refId": "A"
@@ -858,7 +858,7 @@
               }
             ]
           },
-          "unit": "dateTimeAsIso"
+          "unit": "time:DD/MM/YY hh:mm:ss A"
         },
         "overrides": []
       },
@@ -886,7 +886,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_watch_used_range_start_timestamp_seconds",
+          "expr": "veto_watch_used_range_start_timestamp_seconds * 1000",
           "legendFormat": "Watch Start",
           "range": true,
           "refId": "A"
@@ -915,7 +915,7 @@
               }
             ]
           },
-          "unit": "dateTimeAsIso"
+          "unit": "time:DD/MM/YY hh:mm:ss A"
         },
         "overrides": []
       },
@@ -943,13 +943,583 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "veto_watch_used_range_end_timestamp_seconds",
+          "expr": "veto_watch_used_range_end_timestamp_seconds * 1000",
           "legendFormat": "Watch End",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Watch Used End",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 20
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(sum(veto_overview_day_bytes_gib and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_bytes_gib and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
+          "legendFormat": "Avg Volume / Day",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Volume / Day GiB (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 20
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(sum(veto_overview_day_distinct_ips and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_distinct_ips and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
+          "legendFormat": "Avg Distinct IPs / Day",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Distinct IPs / Day (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 20
+      },
+      "id": 19,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(sum(veto_overview_day_distinct_devices and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_distinct_devices and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
+          "legendFormat": "Avg Device IDs / Day",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Device IDs / Day (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 20
+      },
+      "id": 20,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(sum(veto_overview_day_sessions and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_sessions and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
+          "legendFormat": "Avg Sessions / Day",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Sessions / Day (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 24
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(sum(veto_overview_day_rows and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(count(veto_overview_day_rows and on(day) (veto_overview_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_overview_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
+          "legendFormat": "Avg Rows / Day",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Rows / Day (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 24
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(veto_watch_day_rows and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})) or vector(0)",
+          "legendFormat": "Watch Total Rows",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Watch Total Rows (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 24
+      },
+      "id": 23,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(veto_watch_day_status_200_rows and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})) or vector(0)",
+          "legendFormat": "Watch Status 200 Rows",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Watch Status 200 Rows (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 24
+      },
+      "id": 24,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(veto_watch_day_non_200_rows and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})) or vector(0)",
+          "legendFormat": "Watch Non-200 Rows",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Watch Non-200 Rows (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 28
+      },
+      "id": 25,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(100 * sum(veto_watch_day_non_200_rows and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})) / clamp_min(sum(veto_watch_day_rows and on(day) (veto_watch_day_start_timestamp_seconds >= ${__from:date:seconds} and veto_watch_day_start_timestamp_seconds <= ${__to:date:seconds})), 1)) or vector(0)",
+          "legendFormat": "Watch Non-200 %",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Watch Non-200 % (Selected Range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 28
+      },
+      "id": 26,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "veto_watch_top_channel_info",
+          "legendFormat": "{{channel_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Channel (All Data)",
       "type": "stat"
     }
   ],
@@ -966,13 +1536,13 @@
     "list": []
   },
   "time": {
-    "from": "now-24h",
+    "from": "now-90d",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "CDN Unified Executive",
   "uid": "cdn-unified-exec",
-  "version": 1,
+  "version": 42,
   "weekStart": ""
 }

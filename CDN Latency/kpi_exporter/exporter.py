@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import csv
+from collections import defaultdict
 import logging
 import os
 import time
@@ -85,6 +86,10 @@ def date_to_epoch_start(d: date) -> float:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()
 
 
+def day_key(d: date) -> str:
+    return d.strftime("%Y-%m-%d")
+
+
 def read_csv_rows(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -133,16 +138,15 @@ def parse_device_first_seen() -> dict[str, date]:
     return out
 
 
-def active_devices_in_range(start_d: date, end_d: date) -> set[str]:
-    active: set[str] = set()
+def load_device_daily_sets() -> dict[date, set[str]]:
+    by_day: dict[date, set[str]] = defaultdict(set)
     for r in read_csv_rows(DEVICE_DAILY_CSV):
         device_id = str(r.get("device_id", "")).strip()
         d = parse_date_any(r.get("utc_date"))
         if not device_id or not d:
             continue
-        if start_d <= d <= end_d:
-            active.add(device_id)
-    return active
+        by_day[d].add(device_id)
+    return by_day
 
 
 def load_watch_daily_rows() -> list[dict]:
@@ -163,6 +167,11 @@ def load_watch_daily_rows() -> list[dict]:
             {
                 "date": d,
                 "rows": sn(r.get("rows")),
+                "status_200_rows": sn(r.get("status_200_rows")),
+                "non_200_rows": sn(r.get("non_200_rows")),
+                "ts_rows": sn(r.get("ts_rows")),
+                "m3u8_rows": sn(r.get("m3u8_rows")),
+                "approx_unique_ips": sn(r.get("approx_unique_ips")),
                 "raw_watch_hours": raw_watch,
                 "status_200_watch_hours": status_200_watch,
             }
@@ -178,6 +187,7 @@ def load_watch_channel_summary() -> list[dict]:
             {
                 "channel_name": str(r.get("channel_name", "")).strip(),
                 "raw_watch_hours": sn(r.get("raw_watch_hours")),
+                "status_200_watch_hours": sn(r.get("status_200_watch_hours")),
             }
         )
     rows.sort(key=lambda x: x["raw_watch_hours"], reverse=True)
@@ -244,6 +254,66 @@ OV_RETURNING_DEVICES = Gauge(
     "Returning devices active in used overview range",
 )
 OV_NEW_DEVICES = Gauge("veto_overview_new_devices_total", "New devices active in used overview range")
+OV_DAY_START_TS = Gauge(
+    "veto_overview_day_start_timestamp_seconds",
+    "Start timestamp for each used overview day",
+    ["day"],
+)
+OV_DAY_ROWS = Gauge(
+    "veto_overview_day_rows",
+    "Overview total rows by day",
+    ["day"],
+)
+OV_DAY_BYTES_GIB = Gauge(
+    "veto_overview_day_bytes_gib",
+    "Overview GiB by day",
+    ["day"],
+)
+OV_DAY_DISTINCT_IPS = Gauge(
+    "veto_overview_day_distinct_ips",
+    "Overview distinct IP count by day",
+    ["day"],
+)
+OV_DAY_DISTINCT_DEVICES = Gauge(
+    "veto_overview_day_distinct_devices",
+    "Overview distinct device count by day",
+    ["day"],
+)
+OV_DAY_SESSIONS = Gauge(
+    "veto_overview_day_sessions",
+    "Overview distinct session count by day",
+    ["day"],
+)
+OV_DAY_ACTIVE_DEVICES = Gauge(
+    "veto_overview_day_active_devices",
+    "Active devices by day",
+    ["day"],
+)
+OV_DAY_NEW_DEVICES = Gauge(
+    "veto_overview_day_new_devices",
+    "New devices by day",
+    ["day"],
+)
+OV_DAY_RETURNING_DEVICES = Gauge(
+    "veto_overview_day_returning_devices",
+    "Returning devices by day",
+    ["day"],
+)
+OV_DEVICE_DAY_START_TS = Gauge(
+    "veto_overview_device_day_start_timestamp_seconds",
+    "Start timestamp for device first/last-seen day buckets",
+    ["day"],
+)
+OV_DEVICE_FIRST_SEEN_COUNT = Gauge(
+    "veto_overview_device_first_seen_count",
+    "Count of devices by first-seen day",
+    ["day"],
+)
+OV_DEVICE_LAST_SEEN_COUNT = Gauge(
+    "veto_overview_device_last_seen_count",
+    "Count of devices by last-seen day",
+    ["day"],
+)
 
 WH_TRUE_START_TS = Gauge(
     "veto_watch_true_range_start_timestamp_seconds",
@@ -281,6 +351,56 @@ WH_AVG_RAW_WATCH_HOURS_PER_DAY = Gauge(
     "Average raw watch hours per day in used range",
 )
 WH_AVG_ROWS_PER_DAY = Gauge("veto_watch_avg_rows_per_day", "Average rows per day in used range")
+WH_TOTAL_ROWS = Gauge("veto_watch_total_rows", "Total rows in used watch range")
+WH_STATUS_200_ROWS = Gauge("veto_watch_status_200_rows", "Status 200 rows in used watch range")
+WH_NON_200_ROWS = Gauge("veto_watch_non_200_rows", "Non-200 rows in used watch range")
+WH_NON_200_PCT = Gauge("veto_watch_non_200_pct", "Non-200 row percentage in used watch range")
+WH_TS_ROWS = Gauge("veto_watch_ts_rows", "TS rows in used watch range")
+WH_M3U8_ROWS = Gauge("veto_watch_m3u8_rows", "M3U8 rows in used watch range")
+WH_APPROX_UNIQUE_IPS = Gauge(
+    "veto_watch_approx_unique_ips",
+    "Approx unique IPs (max daily) in used watch range",
+)
+WH_TOP_CHANNEL_INFO = Gauge(
+    "veto_watch_top_channel_info",
+    "Top channel marker (value=1, label carries channel_name)",
+    ["channel_name"],
+)
+WH_DAY_START_TS = Gauge(
+    "veto_watch_day_start_timestamp_seconds",
+    "Start timestamp for each used watch day",
+    ["day"],
+)
+WH_DAY_ROWS = Gauge(
+    "veto_watch_day_rows",
+    "Watch total rows by day",
+    ["day"],
+)
+WH_DAY_RAW_WATCH_HOURS = Gauge(
+    "veto_watch_day_raw_watch_hours",
+    "Watch raw hours by day",
+    ["day"],
+)
+WH_DAY_STATUS_200_WATCH_HOURS = Gauge(
+    "veto_watch_day_status_200_watch_hours",
+    "Watch status-200 hours by day",
+    ["day"],
+)
+WH_DAY_STATUS_200_ROWS = Gauge(
+    "veto_watch_day_status_200_rows",
+    "Watch status-200 rows by day",
+    ["day"],
+)
+WH_DAY_NON_200_ROWS = Gauge(
+    "veto_watch_day_non_200_rows",
+    "Watch non-200 rows by day",
+    ["day"],
+)
+WH_DAY_TS_ROWS = Gauge(
+    "veto_watch_day_ts_rows",
+    "Watch TS rows by day",
+    ["day"],
+)
 
 
 def set_source_mtimes() -> None:
@@ -330,21 +450,72 @@ def refresh_overview_kpis() -> None:
     OV_AVG_SESSIONS_PER_DAY.set(total_sess / days if days else 0.0)
 
     first_seen = parse_device_first_seen()
-    active = active_devices_in_range(used_start, used_end)
+    first_seen_by_day: dict[date, int] = defaultdict(int)
+    for d in first_seen.values():
+        first_seen_by_day[d] += 1
+
+    daily_sets = load_device_daily_sets()
+    active: set[str] = set()
+    for d, devices in daily_sets.items():
+        if used_start <= d <= used_end:
+            active.update(devices)
+
     new_devices = 0
-    returning_devices = 0
     for device_id in active:
         fs = first_seen.get(device_id)
-        if fs is None:
-            continue
-        if used_start <= fs <= used_end:
+        if fs and used_start <= fs <= used_end:
             new_devices += 1
-        elif fs < used_start:
-            returning_devices += 1
+    returning_devices = max(0, len(active) - new_devices)
 
     OV_ACTIVE_DEVICES.set(float(len(active)))
     OV_RETURNING_DEVICES.set(float(returning_devices))
     OV_NEW_DEVICES.set(float(new_devices))
+
+    OV_DAY_START_TS.clear()
+    OV_DAY_ROWS.clear()
+    OV_DAY_BYTES_GIB.clear()
+    OV_DAY_DISTINCT_IPS.clear()
+    OV_DAY_DISTINCT_DEVICES.clear()
+    OV_DAY_SESSIONS.clear()
+    OV_DAY_ACTIVE_DEVICES.clear()
+    OV_DAY_NEW_DEVICES.clear()
+    OV_DAY_RETURNING_DEVICES.clear()
+    OV_DEVICE_DAY_START_TS.clear()
+    OV_DEVICE_FIRST_SEEN_COUNT.clear()
+    OV_DEVICE_LAST_SEEN_COUNT.clear()
+    for r in used:
+        d: date = r["date"]
+        key = day_key(d)
+        OV_DAY_START_TS.labels(day=key).set(date_to_epoch_start(d))
+        OV_DAY_ROWS.labels(day=key).set(r["rows"])
+        OV_DAY_BYTES_GIB.labels(day=key).set(r["bytes_gib"])
+        OV_DAY_DISTINCT_IPS.labels(day=key).set(r["dist_ip"])
+        OV_DAY_DISTINCT_DEVICES.labels(day=key).set(r["dist_dev"])
+        OV_DAY_SESSIONS.labels(day=key).set(r["dist_sess"])
+
+        day_active = len(daily_sets.get(d, set()))
+        day_new = int(first_seen_by_day.get(d, 0))
+        day_returning = max(0, day_active - day_new)
+        OV_DAY_ACTIVE_DEVICES.labels(day=key).set(float(day_active))
+        OV_DAY_NEW_DEVICES.labels(day=key).set(float(day_new))
+        OV_DAY_RETURNING_DEVICES.labels(day=key).set(float(day_returning))
+
+    first_seen_day_counts: dict[date, int] = defaultdict(int)
+    last_seen_day_counts: dict[date, int] = defaultdict(int)
+    for r in read_csv_rows(DEVICE_SNAPSHOT_CSV):
+        fs = parse_date_any(r.get("first_seen_utc_date"))
+        ls = parse_date_any(r.get("last_seen_utc_date"))
+        if fs:
+            first_seen_day_counts[fs] += 1
+        if ls:
+            last_seen_day_counts[ls] += 1
+
+    device_days = sorted(set(first_seen_day_counts.keys()) | set(last_seen_day_counts.keys()))
+    for d in device_days:
+        key = day_key(d)
+        OV_DEVICE_DAY_START_TS.labels(day=key).set(date_to_epoch_start(d))
+        OV_DEVICE_FIRST_SEEN_COUNT.labels(day=key).set(float(first_seen_day_counts.get(d, 0)))
+        OV_DEVICE_LAST_SEEN_COUNT.labels(day=key).set(float(last_seen_day_counts.get(d, 0)))
 
 
 def refresh_watch_kpis() -> None:
@@ -368,22 +539,54 @@ def refresh_watch_kpis() -> None:
     raw_hours = sum(r["raw_watch_hours"] for r in used)
     s200_hours = sum(r["status_200_watch_hours"] for r in used)
     rows_total = sum(r["rows"] for r in used)
+    status_200_rows_total = sum(r["status_200_rows"] for r in used)
+    non_200_rows_total = sum(r["non_200_rows"] for r in used)
+    ts_rows_total = sum(r["ts_rows"] for r in used)
+    m3u8_rows_total = sum(r["m3u8_rows"] for r in used)
+    approx_unique_ips = max((r["approx_unique_ips"] for r in used), default=0.0)
 
     WH_DAYS_USED.set(days)
+    WH_TOTAL_ROWS.set(rows_total)
+    WH_STATUS_200_ROWS.set(status_200_rows_total)
+    WH_NON_200_ROWS.set(non_200_rows_total)
+    WH_NON_200_PCT.set((non_200_rows_total / rows_total) if rows_total else 0.0)
+    WH_TS_ROWS.set(ts_rows_total)
+    WH_M3U8_ROWS.set(m3u8_rows_total)
+    WH_APPROX_UNIQUE_IPS.set(approx_unique_ips)
     WH_RAW_WATCH_HOURS_TOTAL.set(raw_hours)
     WH_STATUS_200_WATCH_HOURS_TOTAL.set(s200_hours)
     WH_AVG_RAW_WATCH_HOURS_PER_DAY.set(raw_hours / days if days else 0.0)
     WH_AVG_ROWS_PER_DAY.set(rows_total / days if days else 0.0)
+
+    WH_DAY_START_TS.clear()
+    WH_DAY_ROWS.clear()
+    WH_DAY_RAW_WATCH_HOURS.clear()
+    WH_DAY_STATUS_200_WATCH_HOURS.clear()
+    WH_DAY_STATUS_200_ROWS.clear()
+    WH_DAY_NON_200_ROWS.clear()
+    WH_DAY_TS_ROWS.clear()
+    for r in used:
+        d: date = r["date"]
+        key = day_key(d)
+        WH_DAY_START_TS.labels(day=key).set(date_to_epoch_start(d))
+        WH_DAY_ROWS.labels(day=key).set(r["rows"])
+        WH_DAY_RAW_WATCH_HOURS.labels(day=key).set(r["raw_watch_hours"])
+        WH_DAY_STATUS_200_WATCH_HOURS.labels(day=key).set(r["status_200_watch_hours"])
+        WH_DAY_STATUS_200_ROWS.labels(day=key).set(r["status_200_rows"])
+        WH_DAY_NON_200_ROWS.labels(day=key).set(r["non_200_rows"])
+        WH_DAY_TS_ROWS.labels(day=key).set(r["ts_rows"])
 
     channels = load_watch_channel_summary()
     active_channels = [c for c in channels if c["channel_name"] and c["channel_name"] != "Other" and c["raw_watch_hours"] > 0]
     WH_ACTIVE_CHANNELS.set(float(len(active_channels)))
 
     WH_TOP_CHANNEL_RAW_HOURS.clear()
+    WH_TOP_CHANNEL_INFO.clear()
     if channels:
         top = channels[0]
         channel_name = top["channel_name"] or "unknown"
         WH_TOP_CHANNEL_RAW_HOURS.labels(channel_name=channel_name).set(top["raw_watch_hours"])
+        WH_TOP_CHANNEL_INFO.labels(channel_name=channel_name).set(1.0)
 
 
 def refresh_all() -> None:
