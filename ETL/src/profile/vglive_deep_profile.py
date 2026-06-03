@@ -540,26 +540,23 @@ def write_daily_tables(
             ORDER BY 1, 2, raw_ts_rows DESC
         """,
         "channel_audience_daily": f"""
-            WITH media_base AS (
+            WITH ts_base AS (
                 SELECT
                     {date_expr} AS log_date,
                     COALESCE(CAST(source AS VARCHAR), 'stream') AS source,
                     cliIP,
                     lower(reqHost) AS reqHost,
                     {channel_candidate_sql("reqPath")} AS candidate_id,
-                    reqPath,
-                    statusCode,
-                    {query_param_sql("session_id")} AS session_id,
-                    {query_param_sql("device_id")} AS device_id
+                    statusCode
                 FROM lake_rows
-                WHERE (reqPath LIKE '%.ts' OR lower(reqPath) LIKE '%.m3u8')
+                WHERE reqPath LIKE '%.ts'
                   AND {where_sql}
             ),
-            resolved AS (
+            ts_resolved AS (
                 SELECT
                     b.*,
                     COALESCE(h.host_channel_name, p.path_channel_name, 'Other') AS channel_name
-                FROM media_base b
+                FROM ts_base b
                 LEFT JOIN host_map h ON b.reqHost = h.reqHost
                 LEFT JOIN path_map p ON b.candidate_id = p.candidate_id
             ),
@@ -573,9 +570,29 @@ def write_daily_tables(
                     COUNT(*) * {CHUNK_DURATION_HOURS} AS raw_watch_hours,
                     COUNT(*) FILTER (WHERE statusCode = '200') * {CHUNK_DURATION_HOURS} AS status_200_watch_hours,
                     approx_count_distinct(cliIP) AS approx_unique_ips
-                FROM resolved
-                WHERE reqPath LIKE '%.ts'
+                FROM ts_resolved
                 GROUP BY 1, 2, 3
+            ),
+            audience_base AS (
+                SELECT
+                    {date_expr} AS log_date,
+                    COALESCE(CAST(source AS VARCHAR), 'stream') AS source,
+                    lower(reqHost) AS reqHost,
+                    {channel_candidate_sql("reqPath")} AS candidate_id,
+                    {query_param_sql("session_id")} AS session_id,
+                    {query_param_sql("device_id")} AS device_id
+                FROM lake_rows
+                WHERE lower(reqPath) LIKE '%.m3u8'
+                  AND (queryStr LIKE '%session_id=%' OR queryStr LIKE '%device_id=%')
+                  AND {where_sql}
+            ),
+            audience_resolved AS (
+                SELECT
+                    b.*,
+                    COALESCE(h.host_channel_name, p.path_channel_name, 'Other') AS channel_name
+                FROM audience_base b
+                LEFT JOIN host_map h ON b.reqHost = h.reqHost
+                LEFT JOIN path_map p ON b.candidate_id = p.candidate_id
             ),
             audience AS (
                 SELECT
@@ -584,9 +601,9 @@ def write_daily_tables(
                     channel_name,
                     approx_count_distinct(NULLIF(session_id, '')) AS approx_sessions,
                     approx_count_distinct(NULLIF(device_id, '')) AS approx_devices
-                FROM resolved
-                WHERE lower(reqPath) LIKE '%.m3u8'
-                  AND (NULLIF(session_id, '') IS NOT NULL OR NULLIF(device_id, '') IS NOT NULL)
+                FROM audience_resolved
+                WHERE NULLIF(session_id, '') IS NOT NULL
+                   OR NULLIF(device_id, '') IS NOT NULL
                 GROUP BY 1, 2, 3
             )
             SELECT
