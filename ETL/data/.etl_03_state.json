@@ -1,0 +1,58 @@
+{
+  "fast_2026_05_31_final_clean.parquet": {
+    "status": "ok",
+    "partition_version": 3,
+    "partition_timezone": "Asia/Kolkata",
+    "source_key": "fast",
+    "file_prefix": "part_fast_2026_05_31",
+    "signature": "84a12b5a1c639865f79f60e89902c24e",
+    "src_prefix": "part_fast_2026_05_31",
+    "rows": 11979168,
+    "removed_previous_files": 1,
+    "promoted_files": 2,
+    "elapsed_sec": 10.02,
+    "processed_at_utc": "2026-06-02T06:56:23.764592+00:00"
+  },
+  "stream_2026_05_31_final_clean.parquet": {
+    "status": "ok",
+    "partition_version": 3,
+    "partition_timezone": "Asia/Kolkata",
+    "source_key": "stream",
+    "file_prefix": "part_stream_2026_05_31",
+    "signature": "fd46741bee07bda4c54e39f67dfbb449",
+    "src_prefix": "part_stream_2026_05_31",
+    "rows": 18179316,
+    "removed_previous_files": 1,
+    "promoted_files": 2,
+    "elapsed_sec": 13.73,
+    "processed_at_utc": "2026-06-02T06:56:37.497733+00:00"
+  },
+  "fast_2026_06_02_final_clean.parquet": {
+    "status": "ok",
+    "partition_version": 3,
+    "partition_timezone": "Asia/Kolkata",
+    "source_key": "fast",
+    "file_prefix": "part_fast_2026_06_02",
+    "signature": "e9122147b4bcb1f9399ce5f952659c9f",
+    "src_prefix": "part_fast_2026_06_02",
+    "rows": 12617764,
+    "removed_previous_files": 0,
+    "promoted_files": 2,
+    "elapsed_sec": 9.86,
+    "processed_at_utc": "2026-06-03T09:35:27.287551+00:00"
+  },
+  "stream_2026_06_02_final_clean.parquet": {
+    "status": "ok",
+    "partition_version": 3,
+    "partition_timezone": "Asia/Kolkata",
+    "source_key": "stream",
+    "file_prefix": "part_stream_2026_06_02",
+    "signature": "1ac8a3a1f46dcfb43237998a615456e8",
+    "src_prefix": "part_stream_2026_06_02",
+    "rows": 22277549,
+    "removed_previous_files": 0,
+    "promoted_files": 2,
+    "elapsed_sec": 16.1,
+    "processed_at_utc": "2026-06-03T09:35:43.397275+00:00"
+  }
+}

@@ -1,0 +1,4 @@
+2026-04-27 14:37:02 | INFO     | Log file: D:\Vs - Code Work\CDNDedup\dedup_log.txt
+2026-04-27 14:37:47 | INFO     | Interrupted by user (Ctrl+C)
+2026-04-27 14:37:51 | INFO     | Log file: D:\Vs - Code Work\CDNDedup\dedup_log.txt
+2026-04-27 14:53:43 | INFO     | Interrupted by user (Ctrl+C)
