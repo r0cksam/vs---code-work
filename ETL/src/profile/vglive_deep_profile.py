@@ -105,6 +105,13 @@ END
 """
 
 
+def url_decode_text_sql(column_expr: str) -> str:
+    return (
+        f"COALESCE(try(url_decode(CAST({column_expr} AS VARCHAR))), "
+        f"CAST({column_expr} AS VARCHAR))"
+    )
+
+
 def device_type_sql(ua_col: str = "UA", platform_col: str = "platform", device_col: str = "device_name") -> str:
     return f"""
 CASE
@@ -247,9 +254,9 @@ WITH base AS (
         statusCode,
         reqTimeSec,
         UA,
-        country,
-        state,
-        city,
+        {url_decode_text_sql("country")} AS country,
+        {url_decode_text_sql("state")} AS state,
+        {url_decode_text_sql("city")} AS city,
         queryStr,
         {query_param_sql("platform")} AS platform,
         {query_param_sql("device")} AS device_name,
@@ -353,9 +360,9 @@ def write_daily_tables(
             SELECT
                 {date_expr} AS log_date,
                 COALESCE(CAST(source AS VARCHAR), 'stream') AS source,
-                country,
-                state,
-                city,
+                {url_decode_text_sql("country")} AS country,
+                {url_decode_text_sql("state")} AS state,
+                {url_decode_text_sql("city")} AS city,
                 COUNT(*) AS raw_ts_rows,
                 COUNT(*) FILTER (WHERE statusCode = '200') AS status_200_ts_rows,
                 COUNT(*) * {CHUNK_DURATION_HOURS} AS raw_watch_hours,
@@ -960,9 +967,9 @@ def main() -> None:
         con,
         f"""
         SELECT
-            country,
-            state,
-            city,
+            {url_decode_text_sql("country")} AS country,
+            {url_decode_text_sql("state")} AS state,
+            {url_decode_text_sql("city")} AS city,
             COUNT(*) AS ts_rows,
             COUNT(*) FILTER (WHERE statusCode = '200') AS status_200_ts_rows,
             approx_count_distinct(cliIP) AS approx_unique_ips,
