@@ -2656,6 +2656,895 @@ def gda_region_isp_table(ip_device_df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+# ---------------------------------------------------------------------------
+# ETL watch-hours workflow helpers
+# ---------------------------------------------------------------------------
+
+ETL_PREFERRED_ROOTS = [
+    Path(r"Z:\Vs - Code Work\ETL"),
+    Path(r"D:\ETL"),
+]
+
+ETL_CHUNK_DURATION_HOURS = 6 / 3600.0
+
+ETL_HOST_MAP = {
+    "manorama-veto.akamaized.net": "Manorama",
+    "b4u-veto-m.akamaized.net": "B4U Movies",
+    "b4u-veto-music.akamaized.net": "B4U Music",
+    "b4u-veto-kadak.akamaized.net": "B4U Kadak",
+    "b4u-veto.akamaized.net": "B4U Bhojpuri",
+    "vetocricket.akamaized.net": "Veto Cricket Live",
+    "bmasala-live.akamaized.net": "Bollywood Masala",
+}
+
+ETL_PATH_MAP = {
+    "vglive-sk-238731": "NDTV Marathi",
+    "vglive-sk-639201": "IndiaTV Cricket",
+    "vglive-sk-834057": "Ndtv India",
+    "vglive-sk-274906": "India TV",
+    "vglive-sk-385006": "India TV Yoga",
+    "vglive-sk-479089": "India TV SpeedNews",
+    "vglive-sk-912213": "India TV Adalat",
+    "vglive-sk-699286": "India TV Yoga",
+    "national": "NewsNation",
+    "nnup": "NewsNation UP/UK",
+    "nnmp": "NewsNation MP/CH",
+    "nnbrjh": "NewsNation BR/JH",
+    "nnpunj": "NewsNation Punjab",
+    "sanskar": "Sanskaar TV",
+    "sanskaartv": "Sanskaar TV",
+    "satsang": "Satsangh TV",
+    "satsanghtv": "Satsangh TV",
+    "shubh": "Shubh TV",
+    "shubhtv": "Shubh TV",
+    "9xm": "9XM",
+    "9xjalwa": "9XM Jalwa",
+    "9xm_jalwa": "9XM Jalwa",
+    "9x_jalwa": "9XM Jalwa",
+    "9xtashan": "9XM Tashan",
+    "9xm_tashan": "9XM Tashan",
+    "9x_tashan": "9XM Tashan",
+    "9xjhakaas": "9XM Jhakaas",
+    "9xm_jhakaas": "9XM Jhakaas",
+    "9x_jhakaas": "9XM Jhakaas",
+    "gtcnews": "GTC News",
+    "gtc_news": "GTC News",
+    "gtcpunjabi": "GTC Punjabi",
+    "gtc_punjabi": "GTC Punjabi",
+    "punjabshort": "Punjabi Shorts",
+    "punjabi_shorts": "Punjabi Shorts",
+    "b4umo001": "B4U Movies",
+    "b4um001": "B4U Music",
+    "b4ua001": "B4U Kadak",
+    "b4u_bhojpuri": "B4U Bhojpuri",
+    "bollywoodmasala": "Bollywood Masala",
+    "vetocricketlive": "Veto Cricket Live",
+}
+
+ETL_QUERY_CHANNEL_ALIASES = {
+    "speednews": "India TV SpeedNews",
+    "yogatv": "India TV Yoga",
+    "aapkiadalat": "India TV Adalat",
+}
+
+ETL_SKIP_PATH_SEGMENTS = {"", "v1", "live", "stream", "hls", "nntv"}
+ETL_SENSITIVE_QUERY_PARAMS = {
+    "token", "hdnts", "hdntl", "auth", "signature", "sig", "policy",
+    "key-pair-id", "keypairid", "expires",
+}
+
+
+def etl_default_root() -> str:
+    for root in ETL_PREFERRED_ROOTS:
+        if root.exists():
+            return str(root)
+    return str(ETL_PREFERRED_ROOTS[0])
+
+
+def etl_read_table(path: Path) -> pd.DataFrame:
+    if path.exists():
+        return pd.read_parquet(path)
+    csv_path = path.with_suffix(".csv")
+    if csv_path.exists():
+        return pd.read_csv(csv_path)
+    return pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=900)
+def etl_load_watch_tables(etl_root_text: str) -> dict:
+    root = Path(str(etl_root_text).strip())
+    watch = root / "output" / "watch_hours"
+    profile = watch / "profile"
+    daily = watch / "daily_tables"
+    return {
+        "channel_summary": etl_read_table(profile / "channel_summary.parquet"),
+        "channel_daily": etl_read_table(profile / "channel_daily.parquet"),
+        "channel_audience_daily": etl_read_table(daily / "channel_audience_daily.parquet"),
+        "device_type_by_channel_daily": etl_read_table(daily / "device_type_by_channel_daily.parquet"),
+        "geo_daily": etl_read_table(daily / "geo_daily.parquet"),
+        "mapping_quality_daily": etl_read_table(daily / "mapping_quality_daily.parquet"),
+        "file_inventory": etl_read_table(profile / "file_inventory.parquet"),
+    }
+
+
+def etl_available_dates_and_sources(tables: dict, etl_root_text: str) -> tuple[list, list]:
+    dates = set()
+    sources = set()
+    for key in ["channel_audience_daily", "channel_daily", "geo_daily"]:
+        df = tables.get(key, pd.DataFrame())
+        if df is None or df.empty:
+            continue
+        if "log_date" in df.columns:
+            dates.update(pd.to_datetime(df["log_date"], errors="coerce").dropna().dt.date.tolist())
+        if "source" in df.columns:
+            sources.update(df["source"].dropna().astype(str).tolist())
+
+    lake = Path(str(etl_root_text).strip()) / "data" / "lake"
+    if lake.exists():
+        for day_dir in lake.glob("source=*/year=*/month=*/day=*"):
+            parts = {}
+            for piece in day_dir.parts:
+                if "=" in piece:
+                    k, v = piece.split("=", 1)
+                    parts[k] = v
+            try:
+                dates.add(datetime(int(parts["year"]), int(parts["month"]), int(parts["day"])).date())
+                sources.add(str(parts.get("source", "")).strip())
+            except Exception:
+                continue
+
+    return sorted(dates), sorted([s for s in sources if s])
+
+
+def etl_safe_filename(value: object) -> str:
+    text = re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "")).strip("_")
+    return text[:90] or "channel"
+
+
+def etl_compact_text(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    text = unquote_plus(str(value)).strip().casefold()
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def etl_display_compact_channel(value: object) -> str:
+    return etl_compact_text(normalize_channel_name_smart(value))
+
+
+def etl_query_alias_compacts_for_target(target: str) -> list:
+    target_compact = etl_display_compact_channel(target)
+    aliases = [target_compact]
+    for raw, mapped in ETL_QUERY_CHANNEL_ALIASES.items():
+        if etl_display_compact_channel(mapped) == target_compact:
+            aliases.append(etl_compact_text(raw))
+    return list(dict.fromkeys([a for a in aliases if a]))
+
+
+def etl_filter_table_by_range(df: pd.DataFrame, start_date, end_date, sources: list) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    if "log_date" in out.columns:
+        dates = pd.to_datetime(out["log_date"], errors="coerce").dt.date
+        out = out[(dates >= start_date) & (dates <= end_date)].copy()
+    if sources and "source" in out.columns:
+        out = out[out["source"].astype(str).isin([str(s) for s in sources])].copy()
+    return out
+
+
+def etl_channel_rollup(audience_df: pd.DataFrame, summary_df: pd.DataFrame) -> pd.DataFrame:
+    if audience_df is not None and not audience_df.empty and "channel_name" in audience_df.columns:
+        num_cols = [
+            "raw_ts_chunks", "status_200_ts_chunks", "raw_watch_hours",
+            "status_200_watch_hours", "approx_unique_ips", "approx_sessions",
+            "approx_devices",
+        ]
+        for c in num_cols:
+            if c in audience_df.columns:
+                audience_df[c] = pd.to_numeric(audience_df[c], errors="coerce").fillna(0)
+        agg = {
+            "active_days": ("log_date", "nunique") if "log_date" in audience_df.columns else ("channel_name", "size"),
+            "sources": ("source", lambda s: ", ".join(sorted(s.dropna().astype(str).unique()))) if "source" in audience_df.columns else ("channel_name", "size"),
+        }
+        for c in ["raw_ts_chunks", "status_200_ts_chunks", "raw_watch_hours", "status_200_watch_hours"]:
+            if c in audience_df.columns:
+                agg[c] = (c, "sum")
+        for c in ["approx_unique_ips", "approx_sessions", "approx_devices"]:
+            if c in audience_df.columns:
+                agg[c] = (c, "max")
+        return (
+            audience_df.groupby("channel_name", dropna=False)
+            .agg(**agg)
+            .reset_index()
+            .sort_values("raw_watch_hours" if "raw_watch_hours" in audience_df.columns else "channel_name", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    if summary_df is not None and not summary_df.empty:
+        return summary_df.copy()
+    return pd.DataFrame()
+
+
+def etl_filter_channels(channel_df: pd.DataFrame, search_text: str) -> pd.DataFrame:
+    if channel_df.empty or "channel_name" not in channel_df.columns:
+        return pd.DataFrame()
+    out = channel_df.copy()
+    q = str(search_text or "").strip()
+    if q:
+        q_compact = etl_compact_text(q)
+        name_compact = out["channel_name"].map(etl_compact_text)
+        out = out[
+            out["channel_name"].astype(str).str.contains(q, case=False, na=False)
+            | name_compact.str.contains(q_compact, na=False)
+        ].copy()
+    sort_col = "raw_watch_hours" if "raw_watch_hours" in out.columns else "raw_ts_chunks"
+    if sort_col in out.columns:
+        out[sort_col] = pd.to_numeric(out[sort_col], errors="coerce").fillna(0)
+        out = out.sort_values(sort_col, ascending=False)
+    return out.reset_index(drop=True)
+
+
+def etl_lake_partition_files(etl_root_text: str, start_date, end_date, sources: list) -> list:
+    lake = Path(str(etl_root_text).strip()) / "data" / "lake"
+    if not lake.exists():
+        return []
+    source_list = [str(s).strip() for s in sources if str(s).strip()] or [
+        p.name.split("=", 1)[1] for p in sorted(lake.glob("source=*")) if "=" in p.name
+    ]
+    files = []
+    for dt in pd.date_range(start_date, end_date, freq="D"):
+        for src in source_list:
+            folder = lake / f"source={src}" / f"year={dt.year:04d}" / f"month={dt.month:02d}" / f"day={dt.day:02d}"
+            if folder.exists():
+                files.extend(sorted(folder.glob("*.parquet")))
+    return [str(p).replace("\\", "/") for p in files]
+
+
+def etl_channel_candidate_sql(req_path_col: str = "reqPath") -> str:
+    skip_list = ", ".join(f"'{x}'" for x in sorted(ETL_SKIP_PATH_SEGMENTS))
+    return f"""
+lower(
+    CASE
+        WHEN {req_path_col} LIKE '%vglive-sk-%'
+            THEN regexp_extract({req_path_col}, '(vglive-sk-[0-9]+)', 1)
+        WHEN {req_path_col} LIKE '%/%' THEN
+            CASE
+                WHEN lower(split_part(ltrim({req_path_col}, '/'), '/', 1)) IN ({skip_list})
+                    THEN split_part(ltrim({req_path_col}, '/'), '/', 2)
+                ELSE split_part(ltrim({req_path_col}, '/'), '/', 1)
+            END
+        ELSE regexp_replace(
+            regexp_extract({req_path_col}, '([^/]+)\\.ts$', 1),
+            '[_-]?(1080p?|720p?|480p?|360p?|\\d+)$',
+            ''
+        )
+    END
+)
+"""
+
+
+def etl_query_param_sql(param_name: str, query_col: str = "queryStr") -> str:
+    return f"regexp_extract({query_col}, '(?i)(?:^|[?&]){param_name}=([^&]+)', 1)"
+
+
+def etl_register_channel_maps(con) -> None:
+    host_df = pd.DataFrame(
+        [{"reqHost": host, "host_channel_name": name} for host, name in ETL_HOST_MAP.items()]
+    )
+    path_df = pd.DataFrame(
+        [{"candidate_id": candidate, "path_channel_name": name} for candidate, name in ETL_PATH_MAP.items()]
+    )
+    con.register("etl_host_map_df", host_df)
+    con.register("etl_path_map_df", path_df)
+    con.execute("CREATE OR REPLACE TEMP TABLE etl_host_map AS SELECT * FROM etl_host_map_df")
+    con.execute("CREATE OR REPLACE TEMP TABLE etl_path_map AS SELECT * FROM etl_path_map_df")
+
+
+def etl_redact_query_string(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    parts = []
+    for item in str(value).split("&"):
+        if "=" not in item:
+            parts.append(item)
+            continue
+        key, val = item.split("=", 1)
+        key_clean = urllib.parse.unquote_plus(key).strip().lower()
+        parts.append(f"{key}=REDACTED" if key_clean in ETL_SENSITIVE_QUERY_PARAMS else f"{key}={val}")
+    return "&".join(parts)
+
+
+def etl_decode_cols(df: pd.DataFrame, cols: list) -> pd.DataFrame:
+    out = df.copy()
+    for c in cols:
+        if c in out.columns:
+            out[c] = out[c].fillna("").astype(str).map(unquote_plus).replace({"nan": "", "None": ""})
+    return out
+
+
+@st.cache_data(show_spinner="Scanning exact channel rows from ETL lake ...", ttl=600)
+def etl_load_channel_rows_from_lake(
+    etl_root_text: str,
+    start_date_text: str,
+    end_date_text: str,
+    sources: list,
+    channel_name: str,
+    match_mode: str = "Exact channel",
+    status_mode: str = "All statuses",
+    max_rows: int = 0,
+) -> pd.DataFrame:
+    files = etl_lake_partition_files(
+        etl_root_text,
+        pd.to_datetime(start_date_text).date(),
+        pd.to_datetime(end_date_text).date(),
+        sources,
+    )
+    if not files or not channel_name:
+        return pd.DataFrame()
+
+    con = ub_get_conn()
+    etl_register_channel_maps(con)
+    candidate_expr = etl_channel_candidate_sql("reqPath")
+    channel_qs = etl_query_param_sql("channel")
+    channel_name_qs = etl_query_param_sql("channel_name")
+    platform_qs = etl_query_param_sql("platform")
+    device_qs = etl_query_param_sql("device")
+    session_qs = etl_query_param_sql("session_id")
+    device_id_qs = etl_query_param_sql("device_id")
+    content_type_qs = etl_query_param_sql("content_type")
+    content_title_qs = etl_query_param_sql("content_title")
+    category_qs = etl_query_param_sql("category_name")
+    target = str(channel_name).strip()
+    target_compact = etl_display_compact_channel(target)
+    alias_compacts = etl_query_alias_compacts_for_target(target)
+
+    status_sql = ""
+    if status_mode == "Status 200 only":
+        status_sql = "AND CAST(statusCode AS VARCHAR) = '200'"
+
+    limit_sql = f"LIMIT {int(max_rows)}" if int(max_rows) > 0 else ""
+    params = []
+    if match_mode == "Contains":
+        where_sql = """
+        (
+            lower(COALESCE(channel_name, '')) LIKE ?
+            OR lower(COALESCE(channel_qs, '')) LIKE ?
+            OR lower(COALESCE(channel_name_qs, '')) LIKE ?
+            OR lower(COALESCE(reqPath, '')) LIKE ?
+            OR lower(COALESCE(reqHost, '')) LIKE ?
+        )
+        """
+        needle = f"%{target.casefold()}%"
+        params = [needle, needle, needle, needle, needle]
+    else:
+        alias_sql = ", ".join(["?"] * len(alias_compacts)) or "?"
+        where_sql = f"""
+        (
+            regexp_replace(lower(COALESCE(channel_name, '')), '[^a-z0-9]+', '', 'g') = ?
+            OR regexp_replace(lower(COALESCE(channel_qs, '')), '[^a-z0-9]+', '', 'g') IN ({alias_sql})
+            OR regexp_replace(lower(COALESCE(channel_name_qs, '')), '[^a-z0-9]+', '', 'g') IN ({alias_sql})
+            OR lower(COALESCE(candidate_id, '')) = lower(?)
+        )
+        """
+        params = [target_compact] + alias_compacts + alias_compacts + [target]
+
+    query = f"""
+    WITH base AS (
+        SELECT
+            COALESCE(CAST(source AS VARCHAR), '') AS source,
+            CAST(year AS VARCHAR) AS year,
+            CAST(month AS VARCHAR) AS month,
+            CAST(day AS VARCHAR) AS day,
+            cliIP,
+            asn,
+            UA,
+            lower(reqHost) AS reqHost,
+            {candidate_expr} AS candidate_id,
+            reqPath,
+            queryStr,
+            reqTimeSec,
+            statusCode,
+            transferTimeMSec,
+            country,
+            state,
+            city,
+            {channel_qs} AS channel_qs,
+            {channel_name_qs} AS channel_name_qs,
+            {platform_qs} AS platform,
+            {device_qs} AS device_name,
+            {session_qs} AS session_id,
+            {device_id_qs} AS device_id,
+            {content_type_qs} AS content_type,
+            {content_title_qs} AS content_title,
+            {category_qs} AS category_name
+        FROM read_parquet({files!r}, union_by_name=true, hive_partitioning=true)
+        WHERE reqPath IS NOT NULL
+          {status_sql}
+    ),
+    resolved AS (
+        SELECT
+            b.*,
+            COALESCE(h.host_channel_name, p.path_channel_name, 'Other') AS channel_name
+        FROM base b
+        LEFT JOIN etl_host_map h ON b.reqHost = h.reqHost
+        LEFT JOIN etl_path_map p ON b.candidate_id = p.candidate_id
+    )
+    SELECT *
+    FROM resolved
+    WHERE {where_sql}
+    ORDER BY TRY_CAST(reqTimeSec AS BIGINT)
+    {limit_sql}
+    """
+    try:
+        df = con.execute(query, params).df()
+    except Exception as e:
+        log_warning("etl_load_channel_rows_from_lake failed", e)
+        return pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    decode_cols = [
+        "queryStr", "channel_qs", "channel_name_qs", "platform", "device_name",
+        "session_id", "device_id", "content_type", "content_title", "category_name",
+        "country", "state", "city",
+    ]
+    df = etl_decode_cols(df, decode_cols)
+    df["reqTimeSec"] = pd.to_numeric(df["reqTimeSec"], errors="coerce")
+    df["event_time"] = gda_epoch_to_datetime(df["reqTimeSec"])
+    df["is_ts"] = df["reqPath"].fillna("").astype(str).str.lower().str.contains(r"\.ts(?:$|\?)", regex=True)
+    df["watch_hours_est"] = df["is_ts"].astype(float) * ETL_CHUNK_DURATION_HOURS
+    df["query_channel_raw"] = (
+        df["channel_qs"].replace("", pd.NA)
+        .fillna(df["channel_name_qs"].replace("", pd.NA))
+        .fillna(df["candidate_id"].replace("", pd.NA))
+        .fillna("")
+    )
+    df["query_channel_clean"] = df.apply(
+        lambda r: normalize_channel_name_smart(r.get("query_channel_raw", ""), r.get("platform", ""), r.get("device_name", "")),
+        axis=1,
+    )
+    df["queryStr"] = df["queryStr"].map(etl_redact_query_string)
+    df["content_label"] = (
+        df["content_title"].replace("", pd.NA)
+        .fillna(df["channel_name"].replace("", pd.NA))
+        .fillna(df["reqPath"])
+    )
+
+    if match_mode == "Contains":
+        target_cf = target.casefold()
+        mask = (
+            df["channel_name"].astype(str).str.casefold().str.contains(target_cf, na=False)
+            | df["query_channel_raw"].astype(str).str.casefold().str.contains(target_cf, na=False)
+            | df["reqPath"].astype(str).str.casefold().str.contains(target_cf, na=False)
+        )
+    else:
+        mapped_compact = df["channel_name"].map(etl_display_compact_channel)
+        query_compact = df["query_channel_clean"].map(etl_compact_text)
+        raw_compact = df["query_channel_raw"].map(etl_compact_text)
+        alias_set = set(alias_compacts)
+        mask = (
+            (mapped_compact == target_compact)
+            | (query_compact == target_compact)
+            | raw_compact.isin(alias_set)
+        )
+    return df[mask].sort_values("event_time").reset_index(drop=True)
+
+
+def etl_top_value(s: pd.Series) -> str:
+    vals = s.dropna().astype(str)
+    vals = vals[vals.str.strip() != ""]
+    return vals.mode().iloc[0] if not vals.mode().empty else ""
+
+
+def etl_top_join(s: pd.Series, n: int = 5) -> str:
+    vals = s.dropna().astype(str)
+    vals = vals[vals.str.strip() != ""]
+    if vals.empty:
+        return ""
+    return ", ".join(vals.value_counts().head(n).index.tolist())
+
+
+def etl_channel_device_summary(rows: pd.DataFrame) -> pd.DataFrame:
+    if rows.empty or "device_id" not in rows.columns:
+        return pd.DataFrame()
+    out = rows[rows["device_id"].astype(str).str.strip() != ""].copy()
+    if out.empty:
+        return pd.DataFrame()
+    return (
+        out.groupby("device_id", dropna=False)
+        .agg(
+            requests=("reqPath", "size"),
+            ts_requests=("is_ts", "sum"),
+            watch_hours_est=("watch_hours_est", "sum"),
+            sessions=("session_id", "nunique"),
+            first_seen=("event_time", "min"),
+            last_seen=("event_time", "max"),
+            source=("source", etl_top_value),
+            platform=("platform", etl_top_value),
+            device_name=("device_name", etl_top_value),
+            country=("country", etl_top_value),
+            state=("state", etl_top_value),
+            city=("city", etl_top_value),
+            unique_ips=("cliIP", "nunique"),
+            sample_ip=("cliIP", etl_top_value),
+            top_paths=("reqPath", etl_top_join),
+        )
+        .reset_index()
+        .sort_values(["sessions", "requests"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def etl_channel_region_summary(rows: pd.DataFrame) -> pd.DataFrame:
+    if rows.empty:
+        return pd.DataFrame()
+    out = rows.copy()
+    for c in ["country", "state", "city", "device_id", "session_id", "cliIP"]:
+        if c not in out.columns:
+            out[c] = ""
+    has_geo = (
+        out["country"].astype(str).str.strip().ne("")
+        | out["state"].astype(str).str.strip().ne("")
+        | out["city"].astype(str).str.strip().ne("")
+    )
+    out = out[has_geo].copy()
+    if out.empty:
+        return pd.DataFrame()
+    return (
+        out.groupby(["country", "state", "city"], dropna=False)
+        .agg(
+            unique_devices=("device_id", "nunique"),
+            sessions=("session_id", "nunique"),
+            requests=("reqPath", "size"),
+            ts_requests=("is_ts", "sum"),
+            watch_hours_est=("watch_hours_est", "sum"),
+            unique_ips=("cliIP", "nunique"),
+        )
+        .reset_index()
+        .sort_values(["unique_devices", "requests"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def etl_device_content_summary(rows: pd.DataFrame, top_n: int = 50) -> pd.DataFrame:
+    if rows.empty or "device_id" not in rows.columns:
+        return pd.DataFrame()
+    out = rows[rows["device_id"].astype(str).str.strip() != ""].copy()
+    if out.empty:
+        return pd.DataFrame()
+    content = (
+        out.groupby(["device_id", "content_label", "reqPath"], dropna=False)
+        .agg(
+            requests=("reqPath", "size"),
+            ts_requests=("is_ts", "sum"),
+            watch_hours_est=("watch_hours_est", "sum"),
+            sessions=("session_id", "nunique"),
+            country=("country", etl_top_value),
+            state=("state", etl_top_value),
+            city=("city", etl_top_value),
+        )
+        .reset_index()
+        .sort_values(["device_id", "requests"], ascending=[True, False])
+        .groupby("device_id", sort=False)
+        .head(int(top_n))
+        .reset_index(drop=True)
+    )
+    return content
+
+
+def render_etl_channel_workflow() -> None:
+    with st.expander("ETL Fast Channel Workflow - channel, devices, regions, CSV", expanded=True):
+        st.caption(
+            "Fast path: search channels from watch-hour parquet outputs, then scan the ETL lake only for the selected channel/date/source export."
+        )
+
+        etl_root_input = st.text_input(
+            "ETL root",
+            value=etl_default_root(),
+            key="etl_channel_root",
+            help=r"Expected layout: output\watch_hours plus data\lake under this folder.",
+        )
+        etl_root_path = Path(str(etl_root_input).strip())
+        if not etl_root_path.exists():
+            st.warning(f"ETL root not found: {etl_root_input}")
+            return
+
+        etl_tables = etl_load_watch_tables(str(etl_root_path))
+        etl_dates_all, etl_sources_all = etl_available_dates_and_sources(etl_tables, str(etl_root_path))
+        if not etl_dates_all:
+            st.info("No ETL watch-hour dates found under this root.")
+            return
+
+        etl_default_end = etl_dates_all[-1]
+        etl_default_start = etl_default_end
+        c1, c2, c3 = st.columns([2, 2, 1])
+        with c1:
+            etl_date_pick = st.date_input(
+                "ETL date range",
+                value=(etl_default_start, etl_default_end),
+                min_value=etl_dates_all[0],
+                max_value=etl_dates_all[-1],
+                key="etl_channel_date_range",
+            )
+            etl_start, etl_end = (
+                etl_date_pick if isinstance(etl_date_pick, tuple) and len(etl_date_pick) == 2
+                else (etl_default_start, etl_default_end)
+            )
+        with c2:
+            etl_sources = st.multiselect(
+                "Sources",
+                options=etl_sources_all,
+                default=etl_sources_all,
+                key="etl_channel_sources",
+            )
+        with c3:
+            etl_show_n = st.number_input(
+                "Channel rows",
+                min_value=10,
+                max_value=1000,
+                value=100,
+                step=10,
+                key="etl_channel_show_n",
+            )
+
+        etl_audience = etl_filter_table_by_range(
+            etl_tables.get("channel_audience_daily", pd.DataFrame()),
+            etl_start,
+            etl_end,
+            etl_sources,
+        )
+        etl_rollup = etl_channel_rollup(
+            etl_audience,
+            etl_tables.get("channel_summary", pd.DataFrame()),
+        )
+
+        etl_search = st.text_input(
+            "Find channel name",
+            placeholder="India TV, Ndtv India, NewsNation ...",
+            key="etl_channel_search",
+        )
+        etl_channel_list = etl_filter_channels(etl_rollup, etl_search).head(int(etl_show_n))
+        if etl_channel_list.empty:
+            st.info("No channels matched the selected ETL date/source filters.")
+        else:
+            show_cols = [
+                c for c in [
+                    "channel_name", "raw_watch_hours", "status_200_watch_hours",
+                    "raw_ts_chunks", "status_200_ts_chunks", "approx_unique_ips",
+                    "approx_sessions", "approx_devices", "active_days", "sources",
+                    "first_seen", "last_seen",
+                ]
+                if c in etl_channel_list.columns
+            ]
+            st.dataframe(etl_channel_list[show_cols], use_container_width=True, height=260, hide_index=True)
+            st.download_button(
+                "Download channel list CSV",
+                data=etl_channel_list.to_csv(index=False).encode("utf-8"),
+                file_name=f"etl_channels_{etl_start}_to_{etl_end}.csv",
+                mime="text/csv",
+                key="etl_dl_channels",
+            )
+
+        channel_options = (
+            etl_channel_list["channel_name"].dropna().astype(str).tolist()
+            if not etl_channel_list.empty and "channel_name" in etl_channel_list.columns
+            else []
+        )
+        p1, p2 = st.columns([2, 2])
+        with p1:
+            etl_pick = st.selectbox(
+                "Choose channel",
+                options=[""] + channel_options,
+                index=1 if channel_options else 0,
+                key="etl_channel_pick",
+            )
+        with p2:
+            etl_manual = st.text_input(
+                "Or type channel manually",
+                placeholder="exact channel name or path/channel evidence",
+                key="etl_channel_manual",
+            )
+        target_channel = etl_manual.strip() or etl_pick.strip()
+        if not target_channel:
+            return
+
+        target_compact = etl_display_compact_channel(target_channel)
+        selected_rollup = (
+            etl_rollup[etl_rollup["channel_name"].map(etl_display_compact_channel) == target_compact].copy()
+            if not etl_rollup.empty and "channel_name" in etl_rollup.columns
+            else pd.DataFrame()
+        )
+        if not selected_rollup.empty:
+            row = selected_rollup.iloc[0]
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Raw watch hrs", f"{float(row.get('raw_watch_hours', 0) or 0):,.2f}")
+            k2.metric("200 watch hrs", f"{float(row.get('status_200_watch_hours', 0) or 0):,.2f}")
+            k3.metric("Approx IPs", f"{int(float(row.get('approx_unique_ips', 0) or 0)):,}")
+            k4.metric("Approx sessions", f"{int(float(row.get('approx_sessions', 0) or 0)):,}" if "approx_sessions" in selected_rollup.columns else "n/a")
+            k5.metric("Approx devices", f"{int(float(row.get('approx_devices', 0) or 0)):,}" if "approx_devices" in selected_rollup.columns else "n/a")
+
+        etl_daily_for_channel = (
+            etl_audience[etl_audience["channel_name"].map(etl_display_compact_channel) == target_compact].copy()
+            if not etl_audience.empty and "channel_name" in etl_audience.columns
+            else pd.DataFrame()
+        )
+        if not etl_daily_for_channel.empty:
+            with st.expander("Daily audience table for selected channel", expanded=False):
+                st.dataframe(etl_daily_for_channel, use_container_width=True, height=240, hide_index=True)
+                st.download_button(
+                    "Download selected channel daily CSV",
+                    data=etl_daily_for_channel.to_csv(index=False).encode("utf-8"),
+                    file_name=f"etl_channel_daily_{etl_safe_filename(target_channel)}_{etl_start}_to_{etl_end}.csv",
+                    mime="text/csv",
+                    key="etl_dl_channel_daily",
+                )
+
+        device_type_daily = etl_filter_table_by_range(
+            etl_tables.get("device_type_by_channel_daily", pd.DataFrame()),
+            etl_start,
+            etl_end,
+            etl_sources,
+        )
+        device_type = pd.DataFrame()
+        if not device_type_daily.empty and "channel_name" in device_type_daily.columns:
+            device_type = device_type_daily[
+                device_type_daily["channel_name"].map(etl_display_compact_channel) == target_compact
+            ].copy()
+            for c in ["raw_ts_rows", "status_200_ts_rows", "approx_unique_ips"]:
+                if c in device_type.columns:
+                    device_type[c] = pd.to_numeric(device_type[c], errors="coerce").fillna(0)
+            if not device_type.empty:
+                device_type = (
+                    device_type.groupby("device_type", dropna=False)
+                    .agg(
+                        raw_ts_rows=("raw_ts_rows", "sum"),
+                        status_200_ts_rows=("status_200_ts_rows", "sum"),
+                        approx_unique_ips=("approx_unique_ips", "max"),
+                    )
+                    .reset_index()
+                )
+                device_type["raw_watch_hours"] = device_type["raw_ts_rows"] * ETL_CHUNK_DURATION_HOURS
+                device_type["status_200_watch_hours"] = device_type["status_200_ts_rows"] * ETL_CHUNK_DURATION_HOURS
+                device_type = device_type.sort_values("raw_watch_hours", ascending=False)
+        if not device_type.empty:
+            with st.expander("Device type breakdown from ETL daily table", expanded=False):
+                st.dataframe(device_type, use_container_width=True, height=220, hide_index=True)
+                st.download_button(
+                    "Download selected channel device types CSV",
+                    data=device_type.to_csv(index=False).encode("utf-8"),
+                    file_name=f"etl_device_types_{etl_safe_filename(target_channel)}_{etl_start}_to_{etl_end}.csv",
+                    mime="text/csv",
+                    key="etl_dl_device_types",
+                )
+
+        st.markdown("**Exact raw lake scan for devices, regions, and all row export**")
+        lake_files = etl_lake_partition_files(str(etl_root_path), etl_start, etl_end, etl_sources)
+        st.caption(
+            f"Will scan {len(lake_files):,} parquet file(s). Country, state, and city come from parquet columns; external geo lookup is not used here."
+        )
+        s1, s2, s3, s4 = st.columns([1, 1, 1, 1])
+        with s1:
+            match_mode = st.selectbox("Raw match", ["Exact channel", "Contains"], key="etl_raw_match_mode")
+        with s2:
+            status_mode = st.selectbox("Status", ["All statuses", "Status 200 only"], key="etl_raw_status_mode")
+        with s3:
+            max_rows = st.number_input(
+                "Max raw rows (0 = all)",
+                min_value=0,
+                max_value=20_000_000,
+                value=0,
+                step=100_000,
+                key="etl_raw_max_rows",
+            )
+        with s4:
+            top_paths = st.number_input(
+                "Top paths/device",
+                min_value=5,
+                max_value=200,
+                value=50,
+                step=5,
+                key="etl_raw_top_paths",
+            )
+
+        rows_key = (
+            str(etl_root_path), str(etl_start), str(etl_end), tuple(etl_sources),
+            target_channel, match_mode, status_mode, int(max_rows),
+        )
+        if st.button("Scan exact raw rows", type="primary", key="etl_scan_channel_rows", disabled=not lake_files):
+            with st.spinner("Scanning exact raw channel rows from ETL lake ..."):
+                rows = etl_load_channel_rows_from_lake(
+                    str(etl_root_path),
+                    str(etl_start),
+                    str(etl_end),
+                    list(etl_sources),
+                    target_channel,
+                    match_mode=match_mode,
+                    status_mode=status_mode,
+                    max_rows=int(max_rows),
+                )
+            st.session_state["etl_channel_rows_result"] = (rows_key, rows)
+
+        payload = st.session_state.get("etl_channel_rows_result")
+        if not payload or payload[0] != rows_key:
+            return
+
+        rows = payload[1]
+        if rows.empty:
+            st.info("No exact raw rows matched that channel/date/source selection.")
+            return
+
+        device_summary = etl_channel_device_summary(rows)
+        region_summary = etl_channel_region_summary(rows)
+        device_content = etl_device_content_summary(rows, top_n=int(top_paths))
+
+        r1, r2, r3, r4, r5 = st.columns(5)
+        r1.metric("Matched rows", f"{len(rows):,}")
+        r2.metric("Device IDs", f"{rows['device_id'].replace('', pd.NA).nunique():,}" if "device_id" in rows.columns else "0")
+        r3.metric("Sessions", f"{rows['session_id'].replace('', pd.NA).nunique():,}" if "session_id" in rows.columns else "0")
+        r4.metric("Regions", f"{len(region_summary):,}")
+        r5.metric("TS watch hrs", f"{rows['watch_hours_est'].sum():,.2f}" if "watch_hours_est" in rows.columns else "0.00")
+
+        safe_channel = etl_safe_filename(target_channel)
+        raw_cols = [
+            c for c in [
+                "event_time", "source", "channel_name", "query_channel_raw",
+                "device_id", "session_id", "content_label", "reqPath", "reqHost",
+                "candidate_id", "platform", "device_name", "cliIP", "country",
+                "state", "city", "statusCode", "is_ts", "watch_hours_est", "queryStr",
+            ]
+            if c in rows.columns
+        ]
+        st.markdown("**All matched raw rows**")
+        st.dataframe(rows[raw_cols].head(1000), use_container_width=True, height=340, hide_index=True)
+        st.caption(f"Preview shows first {min(len(rows), 1000):,} rows. CSV includes {len(rows):,} rows with sensitive query parameters redacted.")
+        st.download_button(
+            "Download all matched raw rows CSV",
+            data=rows.to_csv(index=False).encode("utf-8"),
+            file_name=f"etl_raw_rows_{safe_channel}_{etl_start}_to_{etl_end}.csv",
+            mime="text/csv",
+            key="etl_dl_raw_rows",
+        )
+
+        st.markdown("**Devices that watched this channel**")
+        if device_summary.empty:
+            st.info("No device_id values were present in the matched raw rows. FAST rows often have channel/watch evidence but no device_id in queryStr.")
+        else:
+            st.dataframe(device_summary, use_container_width=True, height=300, hide_index=True)
+            st.download_button(
+                "Download devices for channel CSV",
+                data=device_summary.to_csv(index=False).encode("utf-8"),
+                file_name=f"etl_channel_devices_{safe_channel}_{etl_start}_to_{etl_end}.csv",
+                mime="text/csv",
+                key="etl_dl_devices",
+            )
+
+        if not device_content.empty:
+            with st.expander("What each device watched on this channel", expanded=True):
+                st.dataframe(device_content, use_container_width=True, height=300, hide_index=True)
+                st.download_button(
+                    "Download device content paths CSV",
+                    data=device_content.to_csv(index=False).encode("utf-8"),
+                    file_name=f"etl_device_content_{safe_channel}_{etl_start}_to_{etl_end}.csv",
+                    mime="text/csv",
+                    key="etl_dl_device_content",
+                )
+
+        st.markdown("**Regions for this channel**")
+        if region_summary.empty:
+            st.info("No country/state/city values were present in the matched raw rows.")
+        else:
+            st.dataframe(region_summary, use_container_width=True, height=260, hide_index=True)
+            st.download_button(
+                "Download channel regions CSV",
+                data=region_summary.to_csv(index=False).encode("utf-8"),
+                file_name=f"etl_channel_regions_{safe_channel}_{etl_start}_to_{etl_end}.csv",
+                mime="text/csv",
+                key="etl_dl_regions",
+            )
+
+
 with st.sidebar:
     st.title("🗂️ Parquet Explorer")
     st.markdown("---")
@@ -4877,14 +5766,17 @@ with tab7:
     gi_cm = dict(st.session_state.ub_col_map)
     gi_geo_cols = gda_detect_geo_columns(columns)
     gi_cm.update(gi_geo_cols)
+    for optional_role in ["UA", "cliIP", "asn", "statusCode", "transferTimeMSec", "downloadTime"]:
+        if gi_cm.get(optional_role) not in columns:
+            gi_cm[optional_role] = ""
     gi_qs   = gi_cm.get("queryStr",   "")
     gi_ts   = gi_cm.get("reqTimeSec", "")
     gi_path = gi_cm.get("reqPath",    "")
     gi_ip   = gi_cm.get("cliIP",      "")
 
-    if not gi_qs or not gi_path:
+    if not gi_qs or not gi_ts or not gi_path:
         st.warning(
-            "Please configure at least **Query string** and **Request path** columns "
+            "Please configure at least **Query string**, **Timestamp**, and **Request path** columns "
             "in the User Behavior tab's column mapping before using this tab."
         )
         st.stop()
@@ -4905,6 +5797,10 @@ with tab7:
         )
 
     # ── Date range and controls ────────────────────────────────
+    st.markdown("---")
+    render_etl_channel_workflow()
+    st.markdown("---")
+
     gi_col1, gi_col2, gi_col3 = st.columns([2, 1, 1])
     with gi_col1:
         gi_default_end   = pd.to_datetime("today").date()
