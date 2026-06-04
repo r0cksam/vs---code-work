@@ -28,6 +28,8 @@ STATE_FILE = BASE_FOLDER / ".etl_02_state.json"
 
 THREADS = int(os.getenv("VG_ETL_THREADS", "12"))
 MEMORY_LIMIT = os.getenv("VG_ETL_MEMORY", "28GB")
+TEMP_DIR = Path(os.getenv("VG_ETL_DUCKDB_TEMP", str(ETL_ROOT / "output" / "cache" / "duckdb_temp"))).expanduser()
+MAX_TEMP_SIZE = os.getenv("VG_ETL_DUCKDB_MAX_TEMP", "120GB")
 COMPRESSION = os.getenv("VG_ETL_STAGE_COMPRESSION", "ZSTD")
 COMP_LEVEL = int(os.getenv("VG_ETL_STAGE_COMP_LEVEL", "3"))
 PROCESS_SOURCES = {
@@ -122,9 +124,12 @@ def parquet_row_count(con: duckdb.DuckDBPyConnection, path_or_glob: str) -> int:
 
 
 def main() -> None:
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
     con.execute(f"SET threads={THREADS};")
     con.execute(f"SET memory_limit='{MEMORY_LIMIT}';")
+    con.execute(f"SET temp_directory='{sql_path(TEMP_DIR)}';")
+    con.execute(f"SET max_temp_directory_size='{MAX_TEMP_SIZE}';")
     con.execute("SET preserve_insertion_order=false;")
     con.execute("SET enable_progress_bar=true;")
     con.execute("SET enable_progress_bar_print=true;")

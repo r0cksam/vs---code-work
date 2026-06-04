@@ -268,6 +268,12 @@ def main() -> None:
         default="Veto fast Backup",
         help="Fast raw folder name under the daily raw root.",
     )
+    parser.add_argument(
+        "--etl1-sources",
+        choices=["both", "stream", "fast"],
+        default="both",
+        help="Daily source folders to process when --etl1-daily-date is set.",
+    )
 
     # Deep profile controls
     parser.add_argument(
@@ -476,10 +482,11 @@ def main() -> None:
             day = target_date.strftime("%d")
             active_source_ids: list[str] = []
             stage_jobs: list[dict[str, str]] = []
-            daily_sources = [
-                ("stream", args.etl1_stream_name),
-                ("fast", args.etl1_fast_name),
-            ]
+            daily_sources = []
+            if args.etl1_sources in ("both", "stream"):
+                daily_sources.append(("stream", args.etl1_stream_name))
+            if args.etl1_sources in ("both", "fast"):
+                daily_sources.append(("fast", args.etl1_fast_name))
 
             for source_key, source_folder_name in daily_sources:
                 input_dir = daily_raw_root / source_folder_name / month / day
@@ -520,6 +527,7 @@ def main() -> None:
                 step_env["VG_ETL_001_MODE"] = "single"
                 step_env["VG_ETL_001_INPUT_DIR"] = str(input_dir)
                 step_env["VG_ETL_001_OUTPUT_DIR"] = str(output_dir)
+                step_env["VG_ETL_001_STREAMING_BATCHES"] = "1"
                 step_env.pop("VG_ETL_001_MASTER_DIR", None)
                 step_env.pop("VG_ETL_001_OUTPUT_ROOT", None)
 

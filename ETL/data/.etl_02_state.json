@@ -38,5 +38,15 @@
     "rows": 12617764,
     "updated_at_utc": "2026-06-03T09:35:16.480528+00:00",
     "elapsed_sec": 14.27
+  },
+  "stream_2026_06_01": {
+    "status": "ok",
+    "signature": "dbe624ce4fcece83b09f1d763b247f0f",
+    "source_id": "stream_2026_06_01",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=stream\\year=2026\\month=06\\day=01",
+    "output_file": "stream_2026_06_01_final_clean.parquet",
+    "rows": 22623383,
+    "updated_at_utc": "2026-06-03T13:42:28.370735+00:00",
+    "elapsed_sec": 56.83
   }
 }

@@ -9,7 +9,7 @@ import platform
 from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, as_completed, wait
 
 import orjson
 import pyarrow as pa
@@ -217,6 +217,46 @@ def _has_gz_fast(folder: Path) -> bool:
     except OSError:
         return False
     return False
+
+
+def list_gz_files_fast(input_dir: Path) -> list[str]:
+    """List .gz files with less Path-object overhead on very large Windows folders."""
+    paths: list[str] = []
+    for root, dirs, files in os.walk(input_dir):
+        dirs[:] = [
+            d for d in dirs
+            if not d.lower().endswith(("_parquet", "_parqut"))
+        ]
+        root_path = Path(root)
+        for filename in files:
+            if filename.lower().endswith(".gz"):
+                paths.append(str(root_path / filename))
+    paths.sort()
+    return paths
+
+
+def iter_gz_files_streaming(input_dir: Path):
+    """Yield .gz files without materializing a huge directory listing first."""
+    stack = [input_dir]
+    while stack:
+        root = stack.pop()
+        child_dirs: list[Path] = []
+        try:
+            with os.scandir(root) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            name = entry.name.lower()
+                            if not name.endswith(("_parquet", "_parqut")):
+                                child_dirs.append(Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(".gz"):
+                            yield entry.path
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+        child_dirs.sort(reverse=True)
+        stack.extend(child_dirs)
 
 
 def find_child_input_folders(master_dir: Path) -> list[Path]:
@@ -724,6 +764,209 @@ def prune_stale_batches(output_dir: Path, current_batch_ids: set[str], manifest:
     return removed
 
 
+def build_batch_task(
+    cfg: dict,
+    input_dir: Path,
+    output_dir: Path,
+    batch_idx: int,
+    chunk: list[str],
+    conv_sig: str,
+) -> dict:
+    batch_id = f"batch_{batch_idx:07d}"
+    out = output_dir / f"part_{batch_idx:07d}.parquet"
+    return {
+        "batch_id": batch_id,
+        "out_path": str(out),
+        "files": chunk,
+        "signature": batch_signature(chunk, input_dir),
+        "conversion_signature": conv_sig,
+        "file_count": len(chunk),
+        "compression": cfg["compression"],
+        "row_buffer": DEFAULT_ROW_BUFFER,
+        "row_group_size": DEFAULT_ROW_GROUP,
+        "add_meta": cfg["add_meta"],
+        "placeholders": list(PLACEHOLDERS),
+        "cols_to_keep": cfg["cols_to_keep"],
+        "cols_to_drop": cfg["cols_to_drop"],
+    }
+
+
+def can_skip_batch(cfg: dict, manifest: dict, task: dict) -> bool:
+    out = Path(task["out_path"])
+    rec = manifest.get(task["batch_id"], {})
+    return (
+        cfg["resume"]
+        and out.exists()
+        and out.stat().st_size > 0
+        and isinstance(rec, dict)
+        and rec.get("signature") == task["signature"]
+        and rec.get("conversion_signature") == task["conversion_signature"]
+        and rec.get("output") == out.name
+    )
+
+
+def apply_batch_result(cfg: dict, output_dir: Path, manifest: dict, error_log, task: dict, res: dict) -> tuple[int, int, int]:
+    failed = res.get("failed_files", [])
+    rows = res.get("rows", 0)
+    file_errors = len(failed)
+    batch_errors = 0
+
+    if res["status"] == "error":
+        batch_errors = 1
+        error_log.write_batch_error(task["batch_id"], res)
+    if failed:
+        error_log.write_file_errors(task["batch_id"], failed)
+    if res.get("status") == "ok" and not failed:
+        manifest[task["batch_id"]] = {
+            "signature": task["signature"],
+            "conversion_signature": task["conversion_signature"],
+            "output": Path(task["out_path"]).name,
+            "file_count": task["file_count"],
+            "columns": list(cfg["cols_to_keep"]),
+            "rows": rows,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        save_batch_manifest(output_dir, manifest)
+    return rows, file_errors, batch_errors
+
+
+def run_streaming(cfg: dict):
+    input_dir = cfg["input_dir"]
+    output_dir = cfg["output_dir"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print()
+    print(f"  Streaming scan/conversion {input_dir} ...")
+    t0 = time.time()
+
+    bs = cfg["batch_size"]
+    manifest = load_batch_manifest(output_dir)
+    conv_sig = conversion_signature(cfg)
+    current_batch_ids: set[str] = set()
+
+    err_path = output_dir / "conversion_errors.csv"
+    error_log = ErrorLog(err_path)
+
+    total_rows = 0
+    total_errs = 0
+    batch_errs = 0
+    found_files = 0
+    submitted = 0
+    skipped = 0
+    batch_idx = 0
+    pending = {}
+    max_pending = max(1, int(cfg["workers"]) * 2)
+
+    def finish(done_futs, bar):
+        nonlocal total_rows, total_errs, batch_errs
+        for fut in done_futs:
+            task = pending.pop(fut)
+            try:
+                res = fut.result()
+            except Exception as exc:
+                res = {
+                    "status": "error",
+                    "rows": 0,
+                    "failed_files": [],
+                    "out": task["out_path"],
+                    "error": str(exc),
+                }
+            rows, file_errors, batch_errors = apply_batch_result(
+                cfg, output_dir, manifest, error_log, task, res
+            )
+            total_rows += rows
+            total_errs += file_errors
+            batch_errs += batch_errors
+            bar.set_postfix(
+                {"rows": f"{total_rows:,}", "errors": total_errs + batch_errs},
+                refresh=False,
+            )
+            bar.update(1)
+
+    print()
+    bar = tqdm(
+        total=None,
+        unit="batch",
+        desc="  Converting",
+        ascii=True,
+        dynamic_ncols=True,
+    )
+
+    with ProcessPoolExecutor(max_workers=cfg["workers"]) as pool:
+        chunk: list[str] = []
+        for path in iter_gz_files_streaming(input_dir):
+            chunk.append(path)
+            if len(chunk) < bs:
+                continue
+
+            task = build_batch_task(cfg, input_dir, output_dir, batch_idx, chunk, conv_sig)
+            current_batch_ids.add(task["batch_id"])
+            found_files += len(chunk)
+            batch_idx += 1
+            chunk = []
+
+            if can_skip_batch(cfg, manifest, task):
+                skipped += 1
+                continue
+
+            pending[pool.submit(_convert_batch, task)] = task
+            submitted += 1
+            if len(pending) >= max_pending:
+                done, _ = wait(pending.keys(), return_when=FIRST_COMPLETED)
+                finish(done, bar)
+
+        if chunk:
+            task = build_batch_task(cfg, input_dir, output_dir, batch_idx, chunk, conv_sig)
+            current_batch_ids.add(task["batch_id"])
+            found_files += len(chunk)
+            batch_idx += 1
+            if can_skip_batch(cfg, manifest, task):
+                skipped += 1
+            else:
+                pending[pool.submit(_convert_batch, task)] = task
+                submitted += 1
+
+        while pending:
+            done, _ = wait(pending.keys(), return_when=FIRST_COMPLETED)
+            finish(done, bar)
+
+    bar.close()
+    error_log.close()
+
+    stale_removed = prune_stale_batches(output_dir, current_batch_ids, manifest)
+    if stale_removed:
+        save_batch_manifest(output_dir, manifest)
+
+    print(f"\n  Found {found_files:,} .gz files  ({time.time()-t0:.1f}s)")
+    print(f"  Batches total   : {batch_idx:,}")
+    if skipped:
+        print(f"  Skipped (done)  : {skipped:,}")
+    print(f"  Batches to run  : {submitted:,}")
+    if stale_removed:
+        print(f"  Removed stale batch parquet files: {stale_removed:,}")
+
+    if not found_files:
+        print("\n  No .gz files found. Check your input folder.\n")
+        return {"status": "no_files", "output_dir": str(output_dir), "rows": 0, "errors": 0}
+
+    if not submitted and skipped:
+        print("\n  Nothing left to do -- all batches already converted!\n")
+        return {"status": "skipped", "output_dir": str(output_dir), "rows": 0, "errors": 0}
+
+    print(f"\n{'='*60}")
+    print("  Conversion complete!")
+    print(f"  Rows written    : {total_rows:,}")
+    print(f"  Batch errors    : {batch_errs:,}")
+    print(f"  File errors     : {total_errs:,}")
+    if total_errs or batch_errs:
+        print(f"  Error log       : {err_path}")
+    print(f"  Output folder   : {output_dir}")
+    print(f"{'='*60}\n")
+
+    status = "error" if (batch_errs or total_errs) else "ok"
+    return {"status": status, "output_dir": str(output_dir), "rows": total_rows, "errors": total_errs + batch_errs}
+
+
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Pipeline
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -733,10 +976,13 @@ def run(cfg: dict):
     output_dir = cfg["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if _env_bool("VG_ETL_001_STREAMING_BATCHES", False):
+        return run_streaming(cfg)
+
     print()
     print(f"  Scanning {input_dir} ...")
     t0    = time.time()
-    paths = [str(p) for p in sorted(input_dir.rglob("*.gz"))]   # sorted for stable batch IDs
+    paths = list_gz_files_fast(input_dir)   # sorted for stable batch IDs
     print(f"  Found {len(paths):,} .gz files  ({time.time()-t0:.1f}s)")
 
     if not paths:

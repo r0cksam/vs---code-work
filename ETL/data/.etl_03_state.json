@@ -54,5 +54,19 @@
     "promoted_files": 2,
     "elapsed_sec": 16.1,
     "processed_at_utc": "2026-06-03T09:35:43.397275+00:00"
+  },
+  "stream_2026_06_01_final_clean.parquet": {
+    "status": "ok",
+    "partition_version": 3,
+    "partition_timezone": "Asia/Kolkata",
+    "source_key": "stream",
+    "file_prefix": "part_stream_2026_06_01",
+    "signature": "d741608cf964659b77be4a0348d81cf2",
+    "src_prefix": "part_stream_2026_06_01",
+    "rows": 22623383,
+    "removed_previous_files": 0,
+    "promoted_files": 2,
+    "elapsed_sec": 23.75,
+    "processed_at_utc": "2026-06-03T13:45:09.386764+00:00"
   }
 }
