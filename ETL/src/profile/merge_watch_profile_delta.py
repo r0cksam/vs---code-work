@@ -27,9 +27,11 @@ DAILY_TABLE_NAMES = [
     "query_param_keys_daily",
     "query_m_channel_daily",
     "channel_audience_daily",
+    "region_channel_audience_daily",
     "cmcd_daily",
     "user_agents_daily",
     "device_type_by_channel_daily",
+    "region_channel_device_daily",
     "mapping_quality_daily",
     "unmapped_candidates_daily",
 ]
@@ -200,7 +202,24 @@ def merge_date_rows(base: pd.DataFrame, delta: pd.DataFrame, dates: set[str]) ->
     else:
         merged = delta
 
-    sort_cols = [c for c in ["log_date", "source", "channel_name", "reqHost", "statusCode", "extension", "asn", "param_key", "m_value"] if c in merged.columns]
+    sort_cols = [
+        c for c in [
+            "log_date",
+            "source",
+            "country",
+            "state",
+            "city",
+            "channel_name",
+            "device_type",
+            "reqHost",
+            "statusCode",
+            "extension",
+            "asn",
+            "param_key",
+            "m_value",
+        ]
+        if c in merged.columns
+    ]
     if sort_cols:
         merged = merged.sort_values(sort_cols, kind="mergesort").reset_index(drop=True)
     return merged

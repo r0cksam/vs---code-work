@@ -283,6 +283,7 @@ def write_daily_tables(
     where_sql: str,
     ext_expr: str,
     quality_expr: str,
+    only_tables: set[str] | None = None,
 ) -> None:
     daily_out = out.parent / "daily_tables"
     daily_out.mkdir(parents=True, exist_ok=True)
@@ -621,6 +622,103 @@ def write_daily_tables(
             FULL OUTER JOIN audience a USING (log_date, source, channel_name)
             ORDER BY 1, 2, raw_watch_hours DESC
         """,
+        "region_channel_audience_daily": f"""
+            WITH ts_base AS (
+                SELECT
+                    {date_expr} AS log_date,
+                    COALESCE(CAST(source AS VARCHAR), 'stream') AS source,
+                    {url_decode_text_sql("country")} AS country,
+                    {url_decode_text_sql("state")} AS state,
+                    cliIP,
+                    lower(reqHost) AS reqHost,
+                    {channel_candidate_sql("reqPath")} AS candidate_id,
+                    statusCode
+                FROM lake_rows
+                WHERE reqPath LIKE '%.ts'
+                  AND {where_sql}
+            ),
+            ts_resolved AS (
+                SELECT
+                    b.*,
+                    COALESCE(h.host_channel_name, p.path_channel_name, 'Other') AS channel_name
+                FROM ts_base b
+                LEFT JOIN host_map h ON b.reqHost = h.reqHost
+                LEFT JOIN path_map p ON b.candidate_id = p.candidate_id
+            ),
+            ts AS (
+                SELECT
+                    log_date,
+                    source,
+                    country,
+                    state,
+                    channel_name,
+                    COUNT(*) AS raw_ts_rows,
+                    COUNT(*) FILTER (WHERE statusCode = '200') AS status_200_ts_rows,
+                    COUNT(*) * {CHUNK_DURATION_HOURS} AS raw_watch_hours,
+                    COUNT(*) FILTER (WHERE statusCode = '200') * {CHUNK_DURATION_HOURS} AS status_200_watch_hours,
+                    approx_count_distinct(cliIP) AS approx_unique_ips
+                FROM ts_resolved
+                GROUP BY 1, 2, 3, 4, 5
+            ),
+            audience_base AS (
+                SELECT
+                    {date_expr} AS log_date,
+                    COALESCE(CAST(source AS VARCHAR), 'stream') AS source,
+                    {url_decode_text_sql("country")} AS country,
+                    {url_decode_text_sql("state")} AS state,
+                    lower(reqHost) AS reqHost,
+                    {channel_candidate_sql("reqPath")} AS candidate_id,
+                    {query_param_sql("session_id")} AS session_id,
+                    {query_param_sql("device_id")} AS device_id
+                FROM lake_rows
+                WHERE lower(reqPath) LIKE '%.m3u8'
+                  AND (queryStr LIKE '%session_id=%' OR queryStr LIKE '%device_id=%')
+                  AND {where_sql}
+            ),
+            audience_resolved AS (
+                SELECT
+                    b.*,
+                    COALESCE(h.host_channel_name, p.path_channel_name, 'Other') AS channel_name
+                FROM audience_base b
+                LEFT JOIN host_map h ON b.reqHost = h.reqHost
+                LEFT JOIN path_map p ON b.candidate_id = p.candidate_id
+            ),
+            audience AS (
+                SELECT
+                    log_date,
+                    source,
+                    country,
+                    state,
+                    channel_name,
+                    approx_count_distinct(NULLIF(session_id, '')) AS approx_sessions,
+                    approx_count_distinct(NULLIF(device_id, '')) AS approx_devices
+                FROM audience_resolved
+                WHERE NULLIF(session_id, '') IS NOT NULL
+                   OR NULLIF(device_id, '') IS NOT NULL
+                GROUP BY 1, 2, 3, 4, 5
+            )
+            SELECT
+                t.log_date,
+                t.source,
+                t.country,
+                t.state,
+                t.channel_name,
+                t.raw_ts_rows,
+                t.status_200_ts_rows,
+                t.raw_watch_hours,
+                t.status_200_watch_hours,
+                t.approx_unique_ips,
+                COALESCE(a.approx_sessions, 0) AS approx_sessions,
+                COALESCE(a.approx_devices, 0) AS approx_devices
+            FROM ts t
+            LEFT JOIN audience a
+              ON t.log_date = a.log_date
+             AND t.source = a.source
+             AND COALESCE(t.country, '') = COALESCE(a.country, '')
+             AND COALESCE(t.state, '') = COALESCE(a.state, '')
+             AND t.channel_name = a.channel_name
+            ORDER BY 1, 2, raw_watch_hours DESC
+        """,
         "cmcd_daily": f"""
             SELECT
                 {date_expr} AS log_date,
@@ -669,6 +767,24 @@ def write_daily_tables(
             GROUP BY 1, 2, 3, 4
             ORDER BY 1, 2, raw_ts_rows DESC
         """,
+        "region_channel_device_daily": f"""
+            {cte}
+            SELECT
+                printf('%04d-%02d-%02d', year, CAST(month AS INTEGER), CAST(day AS INTEGER)) AS log_date,
+                source,
+                country,
+                state,
+                channel_name,
+                {device_type_sql()} AS device_type,
+                COUNT(*) AS raw_ts_rows,
+                COUNT(*) FILTER (WHERE statusCode = '200') AS status_200_ts_rows,
+                COUNT(*) * {CHUNK_DURATION_HOURS} AS raw_watch_hours,
+                COUNT(*) FILTER (WHERE statusCode = '200') * {CHUNK_DURATION_HOURS} AS status_200_watch_hours,
+                approx_count_distinct(cliIP) AS approx_unique_ips
+            FROM resolved
+            GROUP BY 1, 2, 3, 4, 5, 6
+            ORDER BY 1, 2, raw_ts_rows DESC
+        """,
         "mapping_quality_daily": f"""
             {cte}
             SELECT
@@ -709,6 +825,13 @@ def write_daily_tables(
             ORDER BY 1, 2, raw_ts_chunks DESC
         """,
     }
+
+    if only_tables:
+        unknown = sorted(only_tables - set(queries))
+        if unknown:
+            known = ", ".join(sorted(queries))
+            raise SystemExit(f"Unknown daily table(s): {', '.join(unknown)}. Known tables: {known}")
+        queries = {name: sql for name, sql in queries.items() if name in only_tables}
 
     for name, sql in queries.items():
         copy_query(con, sql, daily_out / f"{name}.csv")
@@ -758,6 +881,12 @@ def main() -> None:
         "--progress",
         action="store_true",
         help="Show DuckDB progress bars. Keep this off for scheduled runs to keep logs compact.",
+    )
+    parser.add_argument(
+        "--only-daily-tables",
+        nargs="+",
+        default=None,
+        help="Write only the listed daily_tables and skip the wider profile artifacts.",
     )
     args = parser.parse_args()
     ACTIVE_OUTPUT_FORMAT = args.output_format
@@ -810,14 +939,21 @@ def main() -> None:
     """)
     register_maps(con)
 
+    ext_expr = extension_sql("reqPath")
+    quality_expr = quality_sql("reqPath")
+    if args.only_daily_tables:
+        only_tables = set(args.only_daily_tables)
+        print(f"Only daily tables: {', '.join(sorted(only_tables))}")
+        write_daily_tables(con, out, where_sql, ext_expr, quality_expr, only_tables=only_tables)
+        con.close()
+        print("Deep profile daily-table subset complete.")
+        return
+
     write_schema(con, glob, out)
     write_file_inventory(args.lake, out)
     column_fill_path = out / "column_fill_rate.csv"
     if refresh_artifact(args.column_fill, column_fill_path, ["column_name", "total_rows", "non_empty_rows", "empty_rows", "non_empty_pct"]):
         write_column_fill(con, glob, out, where_sql)
-
-    ext_expr = extension_sql("reqPath")
-    quality_expr = quality_sql("reqPath")
 
     copy_query(
         con,

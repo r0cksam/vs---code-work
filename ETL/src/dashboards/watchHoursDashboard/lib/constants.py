@@ -53,9 +53,11 @@ DAILY_TABLE_NAMES: list[str] = [
     "query_param_keys_daily",
     "query_m_channel_daily",
     "channel_audience_daily",
+    "region_channel_audience_daily",
     "cmcd_daily",
     "user_agents_daily",
     "device_type_by_channel_daily",
+    "region_channel_device_daily",
     "mapping_quality_daily",
     "unmapped_candidates_daily",
 ]

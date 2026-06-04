@@ -39,7 +39,11 @@ except Exception:
 
 # ── Low-level readers ─────────────────────────────────────────────────────────
 
-OPTIONAL_DAILY_TABLES = {"channel_geo_daily"}
+OPTIONAL_DAILY_TABLES = {
+    "channel_geo_daily",
+    "region_channel_audience_daily",
+    "region_channel_device_daily",
+}
 
 
 def read_csv(profile_dir: Path, key: str) -> pd.DataFrame:
