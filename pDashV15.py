@@ -1908,6 +1908,48 @@ def gb_get_switching(parquet_glob: list, col_map: dict, start_date: str, end_dat
 # IP & Geo Intelligence helpers  (Tab 7)
 # ─────────────────────────────────────────────
 
+def gda_sql_epoch_ts(ts_col: str) -> str:
+    """DuckDB timestamp expression for epoch seconds or milliseconds."""
+    return (
+        "to_timestamp("
+        f"CASE WHEN TRY_CAST({ts_col} AS DOUBLE) > 100000000000 "
+        f"THEN TRY_CAST({ts_col} AS DOUBLE) / 1000 "
+        f"ELSE TRY_CAST({ts_col} AS DOUBLE) END"
+        ")"
+    )
+
+
+def gda_epoch_to_datetime(series: pd.Series) -> pd.Series:
+    vals = pd.to_numeric(series, errors="coerce")
+    vals = vals.where(vals <= 100000000000, vals / 1000)
+    return pd.to_datetime(vals, unit="s", errors="coerce")
+
+
+def gda_detect_geo_columns(available_columns: list) -> dict:
+    """Map common parquet geo column names to normalized aliases used by this tab."""
+    norm_to_col = {re.sub(r"[^a-z0-9]+", "", str(c).lower()): c for c in available_columns}
+    candidates = {
+        "country": ["country", "countryname", "geocountry", "clientcountry", "viewercountry"],
+        "region": ["region", "regionname", "state", "statename", "province", "georegion", "clientregion"],
+        "city": ["city", "cityname", "geocity", "clientcity", "viewercity"],
+        "isp": ["isp", "org", "operator", "provider", "network", "asnorg"],
+        "timezone": ["timezone", "timezoneid", "timezoneinfo", "tz"],
+    }
+    detected = {}
+    for role, names in candidates.items():
+        for name in names:
+            key = re.sub(r"[^a-z0-9]+", "", name.lower())
+            if key in norm_to_col:
+                detected[role] = norm_to_col[key]
+                break
+    return detected
+
+
+def gda_optional_select(col_map: dict, role: str, alias: str) -> str:
+    actual = col_map.get(role, "")
+    return f"{actual} AS {alias}" if actual else f"NULL AS {alias}"
+
+
 @st.cache_data(show_spinner=False, ttl=900)
 def gda_load_raw(parquet_glob: list, col_map: dict, start_date: str, end_date: str, sample_limit: int = 2_000_000) -> pd.DataFrame:
     """
@@ -1923,11 +1965,19 @@ def gda_load_raw(parquet_glob: list, col_map: dict, start_date: str, end_date: s
     path = _cm(col_map, "reqPath")
     ip   = _cm(col_map, "cliIP")
     asn  = _cm(col_map, "asn")
+    ts_expr = gda_sql_epoch_ts(ts)
 
     ip_sel   = f"{ip} AS cliIP"   if ip   else "NULL AS cliIP"
     asn_sel  = f"{asn} AS asn"    if asn  else "NULL AS asn"
+    geo_sels = ", ".join([
+        gda_optional_select(col_map, "country", "country"),
+        gda_optional_select(col_map, "region", "region"),
+        gda_optional_select(col_map, "city", "city"),
+        gda_optional_select(col_map, "isp", "isp"),
+        gda_optional_select(col_map, "timezone", "timezone"),
+    ])
     date_filter = (
-        f"AND to_timestamp(TRY_CAST({ts} AS BIGINT))::DATE BETWEEN DATE '{start_date}' AND DATE '{end_date}'"
+        f"AND {ts_expr}::DATE BETWEEN DATE '{start_date}' AND DATE '{end_date}'"
         if ts else ""
     )
 
@@ -1935,28 +1985,27 @@ def gda_load_raw(parquet_glob: list, col_map: dict, start_date: str, end_date: s
     SELECT
         {ip_sel},
         {asn_sel},
-        NULLIF(regexp_extract({qs}, '(?:^|&)device_id=([^&]+)',   1), '') AS device_id,
-        NULLIF(regexp_extract({qs}, '(?:^|&)session_id=([^&]+)',  1), '') AS session_id,
-        NULLIF(regexp_extract({qs}, '(?:^|&)platform=([^&]+)',    1), '') AS platform,
-        NULLIF(regexp_extract({qs}, '(?:^|&)device=([^&]+)',      1), '') AS device_name,
+        {geo_sels},
+        NULLIF(regexp_extract({qs}, '(?:^|[?&])device_id=([^&]+)',   1), '') AS device_id,
+        NULLIF(regexp_extract({qs}, '(?:^|[?&])session_id=([^&]+)',  1), '') AS session_id,
+        NULLIF(regexp_extract({qs}, '(?:^|[?&])platform=([^&]+)',    1), '') AS platform,
+        NULLIF(regexp_extract({qs}, '(?:^|[?&])device=([^&]+)',      1), '') AS device_name,
         {path} AS reqPath,
         TRY_CAST({ts} AS BIGINT) AS reqTimeSec
     FROM read_parquet({parquet_glob!r}, union_by_name=true)
     WHERE {qs} IS NOT NULL
-      AND {qs} LIKE '%device_id=%'
+      AND regexp_extract({qs}, '(?:^|[?&])device_id=([^&]+)', 1) <> ''
       {date_filter}
     LIMIT {int(sample_limit)}
     """
     try:
         df = con.execute(query).df()
         # URL-decode text columns
-        for c in ["device_id", "session_id", "platform", "device_name"]:
+        for c in ["device_id", "session_id", "platform", "device_name", "country", "region", "city", "isp", "timezone"]:
             if c in df.columns:
                 df[c] = df[c].fillna("").astype(str).map(unquote_plus).replace("", None)
         if "reqTimeSec" in df.columns:
-            df["event_time"] = pd.to_datetime(
-                pd.to_numeric(df["reqTimeSec"], errors="coerce"), unit="s", errors="coerce"
-            )
+            df["event_time"] = gda_epoch_to_datetime(df["reqTimeSec"])
         return df
     except Exception as e:
         log_warning("gda_load_raw failed", e)
@@ -1967,15 +2016,23 @@ def gda_ip_device_table(df: pd.DataFrame) -> pd.DataFrame:
     """One row per (cliIP, device_id) pair with request count, session count, and unique paths."""
     if df.empty or "cliIP" not in df.columns or "device_id" not in df.columns:
         return pd.DataFrame()
+    def top_value(s):
+        s = s.dropna().astype(str)
+        s = s[s != ""]
+        return s.mode().iloc[0] if not s.mode().empty else ""
+    agg = {
+        "requests": ("reqPath", "size"),
+        "sessions": ("session_id", "nunique"),
+        "unique_paths": ("reqPath", "nunique"),
+        "platform": ("platform", top_value),
+    }
+    for c in ["country", "region", "city", "isp", "timezone"]:
+        if c in df.columns:
+            agg[c] = (c, top_value)
     grp = (
         df.dropna(subset=["cliIP", "device_id"])
         .groupby(["cliIP", "device_id"], sort=False)
-        .agg(
-            requests     = ("reqPath",    "size"),
-            sessions     = ("session_id", "nunique"),
-            unique_paths = ("reqPath",    "nunique"),
-            platform     = ("platform",   lambda s: s.mode().iloc[0] if not s.mode().empty else ""),
-        )
+        .agg(**agg)
         .reset_index()
         .sort_values("requests", ascending=False)
         .reset_index(drop=True)
@@ -2005,6 +2062,445 @@ def gda_device_content_table(df: pd.DataFrame, top_paths: int = 20) -> pd.DataFr
         .reset_index(drop=True)
     )
     return grp
+
+
+@st.cache_data(show_spinner="Finding channel names ...", ttl=900)
+def gda_find_channels(parquet_glob: list, col_map: dict, start_date: str, end_date: str,
+                      search_text: str = "", top_n: int = 500) -> pd.DataFrame:
+    """Return clean channel names found in the selected date range."""
+    con = ub_get_conn()
+    qs   = _cm(col_map, "queryStr")
+    ts   = _cm(col_map, "reqTimeSec")
+    path = _cm(col_map, "reqPath")
+    ts_expr = gda_sql_epoch_ts(ts)
+    search_raw = str(search_text).strip()
+    search_terms = [
+        search_raw.casefold(),
+        urllib.parse.quote_plus(search_raw).casefold(),
+        urllib.parse.quote(search_raw).casefold(),
+    ]
+    search_needles = [f"%{term}%" for term in dict.fromkeys(search_terms) if term]
+    search_filter = ""
+    params = [start_date, end_date]
+    if search_needles:
+        search_parts = []
+        for needle in search_needles:
+            search_parts.append(
+                "(lower(COALESCE(raw_channel, '')) LIKE ? "
+                "OR lower(COALESCE(queryStr, '')) LIKE ? "
+                "OR lower(COALESCE(reqPath, '')) LIKE ?)"
+            )
+            params.extend([needle, needle, needle])
+        search_filter = "AND (" + " OR ".join(search_parts) + ")"
+
+    query = f"""
+    WITH base AS (
+        SELECT
+            {qs} AS queryStr,
+            {path} AS reqPath,
+            COALESCE(
+                NULLIF(regexp_extract({qs}, '(?:^|[?&])channel=([^&]+)', 1), ''),
+                NULLIF(regexp_extract({qs}, '(?:^|[?&])channel_name=([^&]+)', 1), ''),
+                NULLIF(regexp_extract({path}, '(vglive-sk-[0-9]+)', 1), ''),
+                'Unknown'
+            ) AS raw_channel,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])platform=([^&]+)', 1), '') AS platform,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])device=([^&]+)', 1), '') AS device_name,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])session_id=([^&]+)', 1), '') AS session_id,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])device_id=([^&]+)', 1), '') AS device_id
+        FROM read_parquet({parquet_glob!r}, union_by_name=true)
+        WHERE {qs} IS NOT NULL
+          AND {ts_expr}::DATE BETWEEN ? AND ?
+    )
+    SELECT
+        raw_channel,
+        platform,
+        device_name,
+        COUNT(*) AS requests,
+        COUNT(DISTINCT session_id) AS sessions,
+        COUNT(DISTINCT device_id) AS devices
+    FROM base
+    WHERE raw_channel <> 'Unknown'
+      {search_filter}
+    GROUP BY raw_channel, platform, device_name
+    ORDER BY requests DESC
+    LIMIT {int(top_n)}
+    """
+    try:
+        df = con.execute(query, params).df()
+    except Exception as e:
+        log_warning("gda_find_channels failed", e)
+        return pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    for c in ["raw_channel", "platform", "device_name"]:
+        df[c] = df[c].fillna("").astype(str).map(unquote_plus)
+    df["channel_name"] = df.apply(
+        lambda r: normalize_channel_name_smart(r.get("raw_channel", ""), r.get("platform", ""), r.get("device_name", "")),
+        axis=1,
+    )
+    return (
+        df.groupby("channel_name", dropna=False)
+        .agg(
+            requests=("requests", "sum"),
+            sessions=("sessions", "sum"),
+            devices=("devices", "sum"),
+            raw_variants=("raw_channel", "nunique"),
+            sample_raw_channel=("raw_channel", lambda s: s.mode().iloc[0] if not s.mode().empty else ""),
+        )
+        .reset_index()
+        .sort_values(["requests", "devices"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+@st.cache_data(show_spinner="Loading channel rows ...", ttl=600)
+def gda_load_channel_rows(parquet_glob: list, col_map: dict, start_date: str, end_date: str,
+                          channel_name: str, match_mode: str = "Exact clean channel",
+                          max_rows: int = 0) -> pd.DataFrame:
+    """Load parquet rows that match a channel name, then final-filter after URL decoding."""
+    target = str(channel_name).strip()
+    if not target:
+        return pd.DataFrame()
+
+    con = ub_get_conn()
+    qs   = _cm(col_map, "queryStr")
+    ts   = _cm(col_map, "reqTimeSec")
+    path = _cm(col_map, "reqPath")
+    ts_expr = gda_sql_epoch_ts(ts)
+    ua   = _cm(col_map, "UA")
+    ip   = _cm(col_map, "cliIP")
+    asn  = _cm(col_map, "asn")
+    sc   = _cm(col_map, "statusCode")
+    tt   = _cm(col_map, "transferTimeMSec")
+    dt   = _cm(col_map, "downloadTime")
+
+    def sel(actual, alias):
+        if actual and actual != alias:
+            return f"{actual} AS {alias}"
+        return actual if actual else f"NULL AS {alias}"
+
+    extra_sels = ", ".join([
+        sel(ua,  "UA"),
+        sel(ip,  "cliIP"),
+        sel(asn, "asn"),
+        sel(sc,  "statusCode"),
+        sel(tt,  "transferTimeMSec"),
+        sel(dt,  "downloadTime"),
+        gda_optional_select(col_map, "country", "country"),
+        gda_optional_select(col_map, "region", "region"),
+        gda_optional_select(col_map, "city", "city"),
+        gda_optional_select(col_map, "isp", "isp"),
+        gda_optional_select(col_map, "timezone", "timezone"),
+    ])
+
+    limit_sql = f"LIMIT {int(max_rows)}" if int(max_rows) > 0 else ""
+    search_terms = [
+        target.casefold(),
+        urllib.parse.quote_plus(target).casefold(),
+        urllib.parse.quote(target).casefold(),
+    ]
+    search_needles = [f"%{term}%" for term in dict.fromkeys(search_terms) if term]
+    search_parts = []
+    query_params = [start_date, end_date]
+    for needle in search_needles:
+        search_parts.append(
+            "(lower(COALESCE(channel_name_raw, '')) LIKE ? "
+            "OR lower(COALESCE(queryStr, '')) LIKE ? "
+            "OR lower(COALESCE(reqPath, '')) LIKE ?)"
+        )
+        query_params.extend([needle, needle, needle])
+    search_sql = " OR ".join(search_parts) or "1 = 0"
+    query = f"""
+    WITH base AS (
+        SELECT
+            {qs} AS queryStr,
+            {path} AS reqPath,
+            TRY_CAST({ts} AS BIGINT) AS reqTimeSec,
+            {extra_sels},
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])device_id=([^&]+)', 1), '') AS device_id,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])session_id=([^&]+)', 1), '') AS session_id,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])channel=([^&]+)', 1), '') AS channel_param,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])channel_name=([^&]+)', 1), '') AS channel_name_param,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])content_type=([^&]+)', 1), '') AS content_type,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])content_title=([^&]+)', 1), '') AS content_title,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])platform=([^&]+)', 1), '') AS platform,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])device=([^&]+)', 1), '') AS device_name,
+            NULLIF(regexp_extract({qs}, '(?:^|[?&])category_name=([^&]+)', 1), '') AS category_name,
+            COALESCE(
+                NULLIF(regexp_extract({qs}, '(?:^|[?&])channel=([^&]+)', 1), ''),
+                NULLIF(regexp_extract({qs}, '(?:^|[?&])channel_name=([^&]+)', 1), ''),
+                NULLIF(regexp_extract({path}, '(vglive-sk-[0-9]+)', 1), ''),
+                'Unknown'
+            ) AS channel_name_raw
+        FROM read_parquet({parquet_glob!r}, union_by_name=true)
+        WHERE {qs} IS NOT NULL
+          AND {ts_expr}::DATE BETWEEN ? AND ?
+    )
+    SELECT *
+    FROM base
+    WHERE {search_sql}
+    ORDER BY reqTimeSec
+    {limit_sql}
+    """
+    try:
+        df = con.execute(query, query_params).df()
+    except Exception as e:
+        log_warning("gda_load_channel_rows failed", e)
+        return pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    for c in [
+        "device_id", "session_id", "channel_param", "channel_name_param", "content_type",
+        "content_title", "platform", "device_name", "category_name", "channel_name_raw",
+        "country", "region", "city", "isp", "timezone",
+    ]:
+        if c in df.columns:
+            df[c] = df[c].fillna("").astype(str).map(unquote_plus)
+
+    df["reqTimeSec"] = pd.to_numeric(df["reqTimeSec"], errors="coerce")
+    df["event_time"] = gda_epoch_to_datetime(df["reqTimeSec"])
+    df["channel_from_path"] = ub_extract_channel_from_path(df["reqPath"]) if "reqPath" in df.columns else ""
+    df["quality"] = ub_extract_quality(df["reqPath"]) if "reqPath" in df.columns else "unknown"
+    df["channel_name_raw"] = (
+        df.get("channel_param", pd.Series("", index=df.index)).replace("", pd.NA)
+        .fillna(df.get("channel_name_param", pd.Series("", index=df.index)).replace("", pd.NA))
+        .fillna(df.get("channel_from_path", pd.Series("", index=df.index)).replace("", pd.NA))
+        .fillna("Unknown")
+    )
+    df["channel_name"] = df.apply(
+        lambda r: normalize_channel_name_smart(r.get("channel_name_raw", ""), r.get("platform", ""), r.get("device_name", "")),
+        axis=1,
+    )
+    df["content_label"] = df["content_title"].replace("", pd.NA).fillna(df["channel_name"]).fillna(df.get("reqPath", ""))
+
+    clean_target = normalize_channel_name_smart(target)
+    if match_mode == "Exact clean channel":
+        mask = df["channel_name"].astype(str).str.casefold() == clean_target
+    else:
+        target_cf = target.casefold()
+        mask = (
+            df["channel_name"].astype(str).str.casefold().str.contains(target_cf, na=False)
+            | df["channel_name_raw"].astype(str).str.casefold().str.contains(target_cf, na=False)
+            | df["reqPath"].astype(str).str.casefold().str.contains(target_cf, na=False)
+        )
+    return df[mask].sort_values("event_time").reset_index(drop=True)
+
+
+def gda_channel_device_summary(channel_rows: pd.DataFrame) -> pd.DataFrame:
+    """Summarize matched channel rows by device_id, including geo columns when present."""
+    if channel_rows.empty or "device_id" not in channel_rows.columns:
+        return pd.DataFrame()
+
+    def top_value(s):
+        s = s.dropna().astype(str)
+        s = s[s != ""]
+        return s.mode().iloc[0] if not s.mode().empty else ""
+
+    agg = {
+        "requests": ("reqPath", "size"),
+        "sessions": ("session_id", "nunique"),
+        "first_seen": ("event_time", "min"),
+        "last_seen": ("event_time", "max"),
+        "platform": ("platform", top_value),
+        "device_name": ("device_name", top_value),
+        "unique_ips": ("cliIP", "nunique"),
+        "sample_ip": ("cliIP", top_value),
+    }
+    for c in ["country", "region", "city", "isp", "timezone"]:
+        if c in channel_rows.columns:
+            agg[c] = (c, top_value)
+
+    return (
+        channel_rows.dropna(subset=["device_id"])
+        .groupby("device_id", sort=False)
+        .agg(**agg)
+        .reset_index()
+        .sort_values(["sessions", "requests"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def gda_channel_region_summary(channel_rows: pd.DataFrame) -> pd.DataFrame:
+    """Summarize matched channel rows by country and region."""
+    if channel_rows.empty:
+        return pd.DataFrame()
+    out = channel_rows.copy()
+    for c in ["country", "region", "city"]:
+        if c not in out.columns:
+            out[c] = ""
+    has_geo = (
+        (out["country"].astype(str).str.strip() != "")
+        | (out["region"].astype(str).str.strip() != "")
+        | (out["city"].astype(str).str.strip() != "")
+    )
+    out = out[has_geo].copy()
+    if out.empty:
+        return pd.DataFrame()
+    group_cols = ["country", "region", "city"]
+    if "cliIP" not in out.columns:
+        out["cliIP"] = ""
+    if "session_id" not in out.columns:
+        out["session_id"] = ""
+    if "device_id" not in out.columns:
+        out["device_id"] = ""
+    if "reqPath" not in out.columns:
+        out["reqPath"] = ""
+    return (
+        out.groupby(group_cols, dropna=False)
+        .agg(
+            unique_devices=("device_id", "nunique"),
+            sessions=("session_id", "nunique"),
+            requests=("reqPath", "size"),
+            unique_ips=("cliIP", "nunique"),
+        )
+        .reset_index()
+        .sort_values(["unique_devices", "requests"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def _gda_geo_group_cols(df: pd.DataFrame) -> list:
+    return [c for c in ["country", "region", "city"] if c in df.columns]
+
+
+def _gda_has_any_geo(df: pd.DataFrame, cols: list) -> pd.Series:
+    if not cols:
+        return pd.Series(False, index=df.index)
+    mask = pd.Series(False, index=df.index)
+    for c in cols:
+        mask = mask | (df[c].astype(str).str.strip() != "")
+    return mask
+
+
+def gda_region_device_table(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Devices per parquet geo region, using country/region/city columns when available."""
+    if ip_device_df.empty:
+        return pd.DataFrame()
+    group_cols = _gda_geo_group_cols(ip_device_df)
+    if not group_cols:
+        return pd.DataFrame()
+    geo_df = ip_device_df[_gda_has_any_geo(ip_device_df, group_cols)].copy()
+    if geo_df.empty:
+        return pd.DataFrame()
+    return (
+        geo_df.groupby(group_cols, sort=False)
+        .agg(
+            unique_devices=("device_id", "nunique"),
+            total_requests=("requests", "sum"),
+            unique_ips=("cliIP", "nunique"),
+        )
+        .reset_index()
+        .sort_values("unique_devices", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def gda_region_isp_table(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Top ISPs per parquet geo region."""
+    if ip_device_df.empty or "isp" not in ip_device_df.columns:
+        return pd.DataFrame()
+    group_cols = _gda_geo_group_cols(ip_device_df)
+    if not group_cols:
+        return pd.DataFrame()
+    geo_df = ip_device_df[_gda_has_any_geo(ip_device_df, group_cols)].copy()
+    geo_df = geo_df[geo_df["isp"].astype(str).str.strip() != ""].copy()
+    if geo_df.empty:
+        return pd.DataFrame()
+    return (
+        geo_df.groupby(group_cols + ["isp"], sort=False)
+        .agg(
+            unique_devices=("device_id", "nunique"),
+            total_requests=("requests", "sum"),
+            unique_ips=("cliIP", "nunique"),
+        )
+        .reset_index()
+        .sort_values(group_cols + ["unique_devices"], ascending=[True] * len(group_cols) + [False])
+        .reset_index(drop=True)
+    )
+
+
+def gda_enrich_with_geo(df: pd.DataFrame, geo_data: dict) -> pd.DataFrame:
+    """Add country, region, city, isp columns by mapping cliIP â†’ geo_data dict."""
+    if df.empty or not geo_data or "cliIP" not in df.columns:
+        return df
+    out = df.copy()
+    out["country"] = out.get("country", pd.Series("", index=out.index)).replace("", pd.NA)
+    out["region"] = out.get("region", pd.Series("", index=out.index)).replace("", pd.NA)
+    out["city"] = out.get("city", pd.Series("", index=out.index)).replace("", pd.NA)
+    out["isp"] = out.get("isp", pd.Series("", index=out.index)).replace("", pd.NA)
+    out["timezone"] = out.get("timezone", pd.Series("", index=out.index)).replace("", pd.NA)
+    out["country"] = out["country"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("country", "")))
+    out["region"] = out["region"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("region", "")))
+    out["city"] = out["city"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("city", "")))
+    out["isp"] = out["isp"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("isp", "") or geo_data.get(str(ip), {}).get("org", "")))
+    out["timezone"] = out["timezone"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("timezone", "")))
+    out["lat"] = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("lat", None))
+    out["lon"] = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("lon", None))
+    return out.fillna("")
+
+
+def gda_region_device_table_old(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Deprecated: retained only to avoid name collisions in stale Streamlit sessions."""
+    if ip_device_df.empty or "country" not in ip_device_df.columns:
+        return pd.DataFrame()
+    return (
+        ip_device_df.dropna(subset=["country"])
+        .groupby(["country", "region"], sort=False)
+        .agg(
+            unique_devices = ("device_id", "nunique"),
+            total_requests = ("requests",  "sum"),
+            unique_ips     = ("cliIP",     "nunique"),
+        )
+        .reset_index()
+        .sort_values("unique_devices", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def gda_region_isp_table_old(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Deprecated: retained only to avoid name collisions in stale Streamlit sessions."""
+    if ip_device_df.empty or "country" not in ip_device_df.columns or "isp" not in ip_device_df.columns:
+        return pd.DataFrame()
+    return (
+        ip_device_df.dropna(subset=["country", "isp"])
+        .query("isp != ''")
+        .groupby(["country", "region", "isp"], sort=False)
+        .agg(
+            unique_devices = ("device_id", "nunique"),
+            total_requests = ("requests",  "sum"),
+            unique_ips     = ("cliIP",     "nunique"),
+        )
+        .reset_index()
+        .sort_values(["country", "unique_devices"], ascending=[True, False])
+        .reset_index(drop=True)
+    )
+
+
+def gda_ip_device_content_table(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Full three-way join: cliIP Ã— device_id Ã— reqPath with counts."""
+    if raw_df.empty:
+        return pd.DataFrame()
+    needed = [c for c in ["cliIP", "device_id", "reqPath", "session_id"] if c in raw_df.columns]
+    sub = raw_df.dropna(subset=["cliIP", "device_id", "reqPath"])
+    if channel_rows.empty:
+        return pd.DataFrame()
+    return (
+        channel_rows.groupby(["country", "region"], dropna=False)
+        .agg(
+            unique_devices=("device_id", "nunique"),
+            sessions=("session_id", "nunique"),
+            requests=("reqPath", "size"),
+            unique_ips=("cliIP", "nunique"),
+        )
+        .reset_index()
+        .sort_values(["unique_devices", "requests"], ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def gda_enrich_with_geo(df: pd.DataFrame, geo_data: dict) -> pd.DataFrame:
@@ -2082,6 +2578,83 @@ def gda_ip_device_content_table(raw_df: pd.DataFrame) -> pd.DataFrame:
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
+
+def gda_enrich_with_geo(df: pd.DataFrame, geo_data: dict) -> pd.DataFrame:
+    """Fill missing geo fields from API data while preserving parquet geo columns."""
+    if df.empty or not geo_data or "cliIP" not in df.columns:
+        return df
+    out = df.copy()
+    for c in ["country", "region", "city", "isp", "timezone"]:
+        if c not in out.columns:
+            out[c] = ""
+        out[c] = out[c].replace("", pd.NA)
+    out["country"] = out["country"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("country", "")))
+    out["region"] = out["region"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("region", "")))
+    out["city"] = out["city"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("city", "")))
+    out["isp"] = out["isp"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("isp", "") or geo_data.get(str(ip), {}).get("org", "")))
+    out["timezone"] = out["timezone"].fillna(out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("timezone", "")))
+    out["lat"] = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("lat", None))
+    out["lon"] = out["cliIP"].map(lambda ip: geo_data.get(str(ip), {}).get("lon", None))
+    return out.fillna("")
+
+
+def gda_region_device_table(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Devices per region using parquet geo columns first."""
+    if ip_device_df.empty:
+        return pd.DataFrame()
+    out = ip_device_df.copy()
+    for c in ["country", "region", "city"]:
+        if c not in out.columns:
+            out[c] = ""
+    has_geo = (
+        (out["country"].astype(str).str.strip() != "")
+        | (out["region"].astype(str).str.strip() != "")
+        | (out["city"].astype(str).str.strip() != "")
+    )
+    out = out[has_geo].copy()
+    if out.empty:
+        return pd.DataFrame()
+    return (
+        out.groupby(["country", "region", "city"], sort=False)
+        .agg(
+            unique_devices=("device_id", "nunique"),
+            total_requests=("requests", "sum"),
+            unique_ips=("cliIP", "nunique"),
+        )
+        .reset_index()
+        .sort_values("unique_devices", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def gda_region_isp_table(ip_device_df: pd.DataFrame) -> pd.DataFrame:
+    """Top ISPs per region using parquet geo columns first."""
+    if ip_device_df.empty or "isp" not in ip_device_df.columns:
+        return pd.DataFrame()
+    out = ip_device_df.copy()
+    for c in ["country", "region", "city"]:
+        if c not in out.columns:
+            out[c] = ""
+    has_geo = (
+        (out["country"].astype(str).str.strip() != "")
+        | (out["region"].astype(str).str.strip() != "")
+        | (out["city"].astype(str).str.strip() != "")
+    )
+    out = out[has_geo & (out["isp"].astype(str).str.strip() != "")].copy()
+    if out.empty:
+        return pd.DataFrame()
+    return (
+        out.groupby(["country", "region", "city", "isp"], sort=False)
+        .agg(
+            unique_devices=("device_id", "nunique"),
+            total_requests=("requests", "sum"),
+            unique_ips=("cliIP", "nunique"),
+        )
+        .reset_index()
+        .sort_values(["country", "region", "city", "unique_devices"], ascending=[True, True, True, False])
+        .reset_index(drop=True)
+    )
+
 
 with st.sidebar:
     st.title("🗂️ Parquet Explorer")
@@ -3232,7 +3805,7 @@ with tab4:
                     # Distribution
                     sess_bins = pd.cut(
                         dev_sess["session_count"],
-                        bins=[0, 1, 5, 10, 25, 50, 100, dev_sess["session_count"].max() + 1],
+                        bins=[0, 1, 5, 10, 25, 50, 100, float("inf")],
                         labels=["1", "2–5", "6–10", "11–25", "26–50", "51–100", "100+"],
                     )
                     dist_df = sess_bins.value_counts().sort_index().reset_index()
@@ -4301,7 +4874,9 @@ with tab7:
         st.stop()
 
     # ── Column mapping ────────────────────────────────────────
-    gi_cm = st.session_state.ub_col_map
+    gi_cm = dict(st.session_state.ub_col_map)
+    gi_geo_cols = gda_detect_geo_columns(columns)
+    gi_cm.update(gi_geo_cols)
     gi_qs   = gi_cm.get("queryStr",   "")
     gi_ts   = gi_cm.get("reqTimeSec", "")
     gi_path = gi_cm.get("reqPath",    "")
@@ -4314,7 +4889,16 @@ with tab7:
         )
         st.stop()
 
-    if not gi_ip:
+    if gi_geo_cols:
+        st.caption(
+            "Using parquet geo columns: "
+            + ", ".join(f"{role}=`{col}`" for role, col in gi_geo_cols.items())
+        )
+
+    if not gi_ip and not gi_geo_cols:
+        st.warning("No Client IP or parquet geo columns were detected. Region summaries need columns like country, state/region, or city.")
+
+    if False and not gi_ip:
         st.warning(
             "⚠️ No **Client IP** column is mapped. Geo and ISP sections will be unavailable. "
             "Map it in the User Behavior tab → Column Mapping → Client IP column."
@@ -4367,18 +4951,23 @@ with tab7:
                 sample_limit=int(gi_sample * 1_000_000),
             )
         if gi_raw.empty:
-            st.warning("No rows with device_id found in the selected date range.")
-            st.stop()
+            st.warning("No rows with device_id found for the optional IP/device preload. You can still use Channel -> Devices & Regions below.")
+            gi_raw = pd.DataFrame(columns=["device_id", "cliIP", "reqPath", "session_id"])
+        else:
+            st.success(
+                f"Loaded {len(gi_raw):,} rows | "
+                f"{gi_raw['device_id'].nunique():,} unique devices | "
+                f"{gi_raw['cliIP'].nunique() if 'cliIP' in gi_raw.columns else 0:,} unique IPs"
+            )
         st.session_state["gi_raw_df"]  = gi_raw
         st.session_state["gi_geo_data"] = {}   # reset geo on new load
-        st.success(
-            f"Loaded {len(gi_raw):,} rows | "
-            f"{gi_raw['device_id'].nunique():,} unique devices | "
-            f"{gi_raw['cliIP'].nunique() if 'cliIP' in gi_raw.columns else 0:,} unique IPs"
-        )
 
     gi_raw = st.session_state.get("gi_raw_df")
     if gi_raw is None or gi_raw.empty:
+        st.info("Optional: click **Load IP & Device data** for IP/device relationship tables. Channel export works below without this preload.")
+        gi_raw = pd.DataFrame(columns=["device_id", "cliIP", "reqPath", "session_id"])
+
+    if False and (gi_raw is None or gi_raw.empty):
         st.info("👆 Click **Load IP & Device data** to begin.")
         st.stop()
 
@@ -4558,10 +5147,210 @@ with tab7:
 
     st.markdown("---")
 
+    # SECTION 3 - Channel audience and export
+    st.subheader("3) Channel -> Devices & Regions")
+    st.caption("Find a channel, export every matching row, and see which device IDs watched it by region.")
+
+    find_c1, find_c2, find_c3 = st.columns([2, 1, 1])
+    with find_c1:
+        gi_channel_search = st.text_input(
+            "Find channel name",
+            placeholder="type part of a channel name ...",
+            key="gi_channel_search",
+        )
+    with find_c2:
+        gi_channel_top_n = st.number_input(
+            "Channel results",
+            min_value=25, max_value=2000, value=500, step=25,
+            key="gi_channel_top_n",
+        )
+    with find_c3:
+        find_channels_btn = st.button("Find channels", key="gi_find_channels_btn")
+
+    channel_find_key = (str(gi_start), str(gi_end), gi_channel_search.strip(), int(gi_channel_top_n), tuple(gi_glob))
+    if find_channels_btn:
+        channel_find_df = gda_find_channels(
+            gi_glob, gi_cm, str(gi_start), str(gi_end),
+            search_text=gi_channel_search.strip(),
+            top_n=int(gi_channel_top_n),
+        )
+        st.session_state["gi_channel_find_result"] = (channel_find_key, channel_find_df)
+
+    channel_find_payload = st.session_state.get("gi_channel_find_result")
+    channel_find_df = pd.DataFrame()
+    if channel_find_payload and channel_find_payload[0] == channel_find_key:
+        channel_find_df = channel_find_payload[1]
+        if channel_find_df.empty:
+            st.info("No matching channel names found in this date range.")
+        else:
+            st.dataframe(channel_find_df, use_container_width=True, height=260, hide_index=True)
+            st.download_button(
+                "Download found channel list CSV",
+                data=channel_find_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"channels_{gi_start}_to_{gi_end}.csv",
+                mime="text/csv",
+                key="gi_dl_channel_find",
+            )
+
+    found_channel_options = (
+        channel_find_df["channel_name"].dropna().astype(str).tolist()
+        if not channel_find_df.empty and "channel_name" in channel_find_df.columns
+        else []
+    )
+    pick_c1, pick_c2, pick_c3 = st.columns([2, 2, 1])
+    with pick_c1:
+        gi_channel_pick = st.selectbox(
+            "Choose found channel",
+            options=[""] + found_channel_options,
+            key="gi_channel_pick",
+        )
+    with pick_c2:
+        gi_channel_manual = st.text_input(
+            "Or type channel to export",
+            placeholder="exact clean name or partial raw name ...",
+            key="gi_channel_manual",
+        )
+    with pick_c3:
+        gi_channel_match_mode = st.selectbox(
+            "Match",
+            ["Exact clean channel", "Contains"],
+            key="gi_channel_match_mode",
+        )
+
+    row_c1, row_c2 = st.columns([1, 1])
+    with row_c1:
+        gi_channel_max_rows = st.number_input(
+            "Max rows to load/export (0 = all)",
+            min_value=0, max_value=10_000_000, value=0, step=100_000,
+            key="gi_channel_max_rows",
+        )
+    with row_c2:
+        target_channel = gi_channel_manual.strip() or gi_channel_pick.strip()
+        load_channel_btn = st.button(
+            "Load channel rows",
+            key="gi_load_channel_rows_btn",
+            disabled=not bool(target_channel),
+        )
+
+    channel_rows_key = (
+        str(gi_start), str(gi_end), target_channel, gi_channel_match_mode,
+        int(gi_channel_max_rows), tuple(gi_glob)
+    )
+    if load_channel_btn and target_channel:
+        channel_rows = gda_load_channel_rows(
+            gi_glob, gi_cm, str(gi_start), str(gi_end),
+            channel_name=target_channel,
+            match_mode=gi_channel_match_mode,
+            max_rows=int(gi_channel_max_rows),
+        )
+        st.session_state["gi_channel_rows_result"] = (channel_rows_key, channel_rows)
+
+    channel_rows_payload = st.session_state.get("gi_channel_rows_result")
+    if channel_rows_payload and channel_rows_payload[0] == channel_rows_key:
+        channel_rows = channel_rows_payload[1]
+        if channel_rows.empty:
+            st.info("No rows matched that channel and date range.")
+        else:
+            channel_has_parquet_geo = any(
+                c in channel_rows.columns and channel_rows[c].astype(str).str.strip().ne("").any()
+                for c in ["country", "region", "city"]
+            )
+            if channel_has_parquet_geo:
+                st.caption("Region summary is using geo columns already present in parquet.")
+
+            if (not channel_has_parquet_geo) and gi_ip and "cliIP" in channel_rows.columns:
+                channel_ips = channel_rows["cliIP"].dropna().astype(str).unique().tolist()
+                channel_uncached_ips = [
+                    ip for ip in channel_ips
+                    if ip not in geo_data and ip not in ("", "nan", "None")
+                ]
+                gch1, gch2 = st.columns([3, 1])
+                with gch1:
+                    st.caption(
+                        f"Channel has {len(channel_ips):,} unique IPs. "
+                        f"{len(channel_uncached_ips):,} still need region lookup."
+                    )
+                with gch2:
+                    channel_geo_btn = st.button(
+                        "Lookup channel regions",
+                        key="gi_channel_geo_btn",
+                        disabled=(len(channel_uncached_ips) == 0),
+                    )
+                if channel_geo_btn and channel_uncached_ips:
+                    batch_total = (len(channel_uncached_ips) + 99) // 100
+                    ch_geo_bar = st.progress(0, text="Looking up channel regions ...")
+                    new_channel_geo = {}
+                    for b_idx in range(0, len(channel_uncached_ips), 100):
+                        batch = channel_uncached_ips[b_idx:b_idx + 100]
+                        pct = min(int((b_idx / len(channel_uncached_ips)) * 100), 99)
+                        ch_geo_bar.progress(pct, text=f"Region lookup batch {b_idx // 100 + 1} / {batch_total}")
+                        new_channel_geo.update(ub_lookup_geo(batch))
+                    ch_geo_bar.progress(100, text="Region lookup done")
+                    ch_geo_bar.empty()
+                    geo_data.update(new_channel_geo)
+                    st.session_state["gi_geo_data"] = geo_data
+
+            channel_rows_geo = gda_enrich_with_geo(channel_rows, geo_data) if geo_data else channel_rows.copy()
+            device_summary_df = gda_channel_device_summary(channel_rows_geo)
+            region_summary_df = gda_channel_region_summary(channel_rows_geo)
+
+            chm1, chm2, chm3, chm4, chm5 = st.columns(5)
+            chm1.metric("Matched rows", f"{len(channel_rows_geo):,}")
+            chm2.metric("Devices", f"{channel_rows_geo['device_id'].nunique():,}")
+            chm3.metric("Sessions", f"{channel_rows_geo['session_id'].nunique():,}")
+            chm4.metric("IPs", f"{channel_rows_geo['cliIP'].nunique():,}" if "cliIP" in channel_rows_geo.columns else "N/A")
+            chm5.metric("Regions", f"{region_summary_df['region'].nunique():,}" if not region_summary_df.empty else "N/A")
+
+            safe_channel = re.sub(r"[^A-Za-z0-9_-]+", "_", str(target_channel)).strip("_")[:80] or "channel"
+            row_cols = [
+                c for c in [
+                    "event_time", "channel_name", "channel_name_raw", "device_id", "session_id",
+                    "content_label", "reqPath", "platform", "device_name", "cliIP",
+                    "country", "region", "city", "isp", "statusCode", "quality", "queryStr",
+                ]
+                if c in channel_rows_geo.columns
+            ]
+
+            st.markdown("**All matched rows**")
+            st.dataframe(channel_rows_geo[row_cols].head(1000), use_container_width=True, height=360, hide_index=True)
+            st.caption(f"Preview shows first {min(len(channel_rows_geo), 1000):,} rows. Download includes {len(channel_rows_geo):,} rows.")
+            st.download_button(
+                "Download all matched channel rows CSV",
+                data=channel_rows_geo.to_csv(index=False).encode("utf-8"),
+                file_name=f"channel_rows_{safe_channel}_{gi_start}_to_{gi_end}.csv",
+                mime="text/csv",
+                key="gi_dl_channel_rows",
+            )
+
+            st.markdown("**Devices that watched this channel**")
+            st.dataframe(device_summary_df, use_container_width=True, height=320, hide_index=True)
+            st.download_button(
+                "Download channel devices CSV",
+                data=device_summary_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"channel_devices_{safe_channel}_{gi_start}_to_{gi_end}.csv",
+                mime="text/csv",
+                key="gi_dl_channel_devices",
+            )
+
+            if region_summary_df.empty:
+                st.info("Region summary will appear after client IP geo lookup is available for this channel.")
+            else:
+                st.markdown("**Regions for this channel**")
+                st.dataframe(region_summary_df, use_container_width=True, height=260, hide_index=True)
+                st.download_button(
+                    "Download channel regions CSV",
+                    data=region_summary_df.to_csv(index=False).encode("utf-8"),
+                    file_name=f"channel_regions_{safe_channel}_{gi_start}_to_{gi_end}.csv",
+                    mime="text/csv",
+                    key="gi_dl_channel_regions",
+                )
+
+    st.markdown("---")
+
     # ══════════════════════════════════════════════
-    # SECTION 3 — Full 3-way: IP × Device × Content
+    # SECTION 4 — Full 3-way: IP × Device × Content
     # ══════════════════════════════════════════════
-    st.subheader("3) 🔀 IP × Device × Content (three-way join)")
+    st.subheader("4) 🔀 IP × Device × Content (three-way join)")
     st.caption("Every unique combination of cliIP + device_id + reqPath with request and session counts.")
 
     with st.expander("Build three-way IP × Device × Content table (can be large — click to run)"):
@@ -4596,9 +5385,9 @@ with tab7:
     st.markdown("---")
 
     # ══════════════════════════════════════════════
-    # SECTION 4 — Region × Device Distribution
+    # SECTION 5 — Region × Device Distribution
     # ══════════════════════════════════════════════
-    st.subheader("4) 🗺️ Region → Device Distribution")
+    st.subheader("5) 🗺️ Region → Device Distribution")
     st.caption("Which regions have the most unique viewer devices? Requires geo lookup above.")
 
     if not geo_data:
@@ -4677,9 +5466,9 @@ with tab7:
     st.markdown("---")
 
     # ══════════════════════════════════════════════
-    # SECTION 5 — Region → Top ISP
+    # SECTION 6 — Region → Top ISP
     # ══════════════════════════════════════════════
-    st.subheader("5) 📡 Region → Top ISP")
+    st.subheader("6) 📡 Region → Top ISP")
     st.caption("Which ISPs dominate each country and region? Requires geo lookup above.")
 
     if not geo_data:
@@ -4747,9 +5536,9 @@ with tab7:
     st.markdown("---")
 
     # ══════════════════════════════════════════════
-    # SECTION 6 — Summary Download Bundle
+    # SECTION 7 — Summary Download Bundle
     # ══════════════════════════════════════════════
-    st.subheader("6) 📦 Download All Relationship Tables")
+    st.subheader("7) 📦 Download All Relationship Tables")
     st.caption("One-click downloads for every relationship table built in this tab.")
 
     dl_c1, dl_c2, dl_c3 = st.columns(3)
