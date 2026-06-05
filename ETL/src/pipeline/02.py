@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,12 +27,16 @@ if not _env_base:
 OUTPUT_FILE_SUFFIX = "_final_clean.parquet"
 STATE_FILE = BASE_FOLDER / ".etl_02_state.json"
 
-THREADS = int(os.getenv("VG_ETL_THREADS", "12"))
-MEMORY_LIMIT = os.getenv("VG_ETL_MEMORY", "28GB")
+THREADS = int(os.getenv("VG_ETL_THREADS", "8"))
+MEMORY_LIMIT = os.getenv("VG_ETL_MEMORY", "20GB")
 TEMP_DIR = Path(os.getenv("VG_ETL_DUCKDB_TEMP", str(ETL_ROOT / "output" / "cache" / "duckdb_temp"))).expanduser()
 MAX_TEMP_SIZE = os.getenv("VG_ETL_DUCKDB_MAX_TEMP", "120GB")
 COMPRESSION = os.getenv("VG_ETL_STAGE_COMPRESSION", "ZSTD")
 COMP_LEVEL = int(os.getenv("VG_ETL_STAGE_COMP_LEVEL", "3"))
+DEDUPE_MODE = os.getenv("VG_ETL_DEDUPE_MODE", "auto").strip().lower()
+DEDUPE_BUCKETS = int(os.getenv("VG_ETL_DEDUPE_BUCKETS", "32"))
+DEDUPE_BUCKET_THRESHOLD_ROWS = int(os.getenv("VG_ETL_DEDUPE_BUCKET_THRESHOLD_ROWS", "15000000"))
+SHOW_PROGRESS = os.getenv("VG_ETL_PROGRESS", "0").strip().lower() in {"1", "true", "yes", "on"}
 PROCESS_SOURCES = {
     item.strip()
     for item in os.getenv("VG_ETL_PROCESS_SOURCES", "").split(",")
@@ -112,6 +117,10 @@ def sql_path(path: Path) -> str:
     return path.as_posix().replace("'", "''")
 
 
+def sql_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
 def parquet_row_count(con: duckdb.DuckDBPyConnection, path_or_glob: str) -> int:
     row = con.execute(f"""
         SELECT COALESCE(SUM(row_group_num_rows), 0)::BIGINT
@@ -123,6 +132,115 @@ def parquet_row_count(con: duckdb.DuckDBPyConnection, path_or_glob: str) -> int:
     return int(row[0] or 0)
 
 
+def parquet_columns(con: duckdb.DuckDBPyConnection, path_or_glob: str) -> list[str]:
+    rows = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{path_or_glob}')").fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def is_memory_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "out of memory" in text or "allocation failure" in text
+
+
+def dedupe_single(con: duckdb.DuckDBPyConnection, input_glob: str, tmp_output_file: Path) -> str:
+    con.execute(f"""
+        COPY (
+            SELECT DISTINCT *
+            FROM read_parquet('{input_glob}')
+        )
+        TO '{sql_path(tmp_output_file)}'
+        (
+            FORMAT PARQUET,
+            COMPRESSION {COMPRESSION},
+            COMPRESSION_LEVEL {COMP_LEVEL}
+        );
+    """)
+    return "single"
+
+
+def dedupe_bucketed(
+    con: duckdb.DuckDBPyConnection,
+    input_glob: str,
+    tmp_output_file: Path,
+    buckets: int,
+) -> str:
+    buckets = max(2, buckets)
+    columns = parquet_columns(con, input_glob)
+    if not columns:
+        raise RuntimeError("Input parquet has no columns.")
+
+    bucket_dir = tmp_output_file.with_name(f"{tmp_output_file.stem}.dedupe_parts")
+    shutil.rmtree(bucket_dir, ignore_errors=True)
+    bucket_dir.mkdir(parents=True, exist_ok=True)
+
+    hash_expr = "hash(" + ", ".join(sql_ident(c) for c in columns) + ")"
+    try:
+        for bucket in range(buckets):
+            part_file = bucket_dir / f"part_{bucket:04d}.parquet"
+            print(f"  [bucket {bucket + 1:02d}/{buckets:02d}] distinct")
+            con.execute(f"""
+                COPY (
+                    SELECT DISTINCT *
+                    FROM read_parquet('{input_glob}')
+                    WHERE ({hash_expr} % {buckets}) = {bucket}
+                )
+                TO '{sql_path(part_file)}'
+                (
+                    FORMAT PARQUET,
+                    COMPRESSION {COMPRESSION},
+                    COMPRESSION_LEVEL {COMP_LEVEL}
+                );
+            """)
+
+        con.execute(f"""
+            COPY (
+                SELECT *
+                FROM read_parquet('{sql_path(bucket_dir)}/*.parquet')
+            )
+            TO '{sql_path(tmp_output_file)}'
+            (
+                FORMAT PARQUET,
+                COMPRESSION {COMPRESSION},
+                COMPRESSION_LEVEL {COMP_LEVEL}
+            );
+        """)
+    finally:
+        shutil.rmtree(bucket_dir, ignore_errors=True)
+
+    return f"bucketed_{buckets}"
+
+
+def dedupe_to_parquet(
+    con: duckdb.DuckDBPyConnection,
+    folder: Path,
+    tmp_output_file: Path,
+    input_rows: int,
+) -> str:
+    mode = DEDUPE_MODE if DEDUPE_MODE in {"auto", "single", "bucketed"} else "auto"
+    input_glob = f"{sql_path(folder)}/*.parquet"
+    use_bucketed = mode == "bucketed" or (
+        mode == "auto" and input_rows >= DEDUPE_BUCKET_THRESHOLD_ROWS
+    )
+
+    if use_bucketed:
+        print(
+            f"[dedupe] using bucketed mode: rows={input_rows:,}, "
+            f"buckets={max(2, DEDUPE_BUCKETS)}"
+        )
+        return dedupe_bucketed(con, input_glob, tmp_output_file, DEDUPE_BUCKETS)
+
+    try:
+        print(f"[dedupe] using single-pass mode: rows={input_rows:,}")
+        return dedupe_single(con, input_glob, tmp_output_file)
+    except Exception as exc:
+        if mode == "auto" and is_memory_error(exc):
+            tmp_output_file.unlink(missing_ok=True)
+            print(f"[warn] single-pass dedupe hit memory error: {exc}")
+            print("[dedupe] retrying with bucketed mode.")
+            return dedupe_bucketed(con, input_glob, tmp_output_file, DEDUPE_BUCKETS)
+        raise
+
+
 def main() -> None:
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
@@ -131,8 +249,8 @@ def main() -> None:
     con.execute(f"SET temp_directory='{sql_path(TEMP_DIR)}';")
     con.execute(f"SET max_temp_directory_size='{MAX_TEMP_SIZE}';")
     con.execute("SET preserve_insertion_order=false;")
-    con.execute("SET enable_progress_bar=true;")
-    con.execute("SET enable_progress_bar_print=true;")
+    con.execute(f"SET enable_progress_bar={'true' if SHOW_PROGRESS else 'false'};")
+    con.execute(f"SET enable_progress_bar_print={'true' if SHOW_PROGRESS else 'false'};")
 
     state = load_state()
 
@@ -192,18 +310,8 @@ def main() -> None:
 
         try:
             tmp_output_file.unlink(missing_ok=True)
-            con.execute(f"""
-                COPY (
-                    SELECT DISTINCT *
-                    FROM read_parquet('{sql_path(folder)}/*.parquet')
-                )
-                TO '{sql_path(tmp_output_file)}'
-                (
-                    FORMAT PARQUET,
-                    COMPRESSION {COMPRESSION},
-                    COMPRESSION_LEVEL {COMP_LEVEL}
-                );
-            """)
+            input_rows = parquet_row_count(con, f"{sql_path(folder)}/*.parquet")
+            dedupe_method = dedupe_to_parquet(con, folder, tmp_output_file, input_rows)
 
             rows = parquet_row_count(con, sql_path(tmp_output_file))
             tmp_output_file.replace(output_file)
@@ -214,6 +322,8 @@ def main() -> None:
                 "source_id": source_id,
                 "input_folder": str(folder),
                 "output_file": output_file.name,
+                "dedupe_method": dedupe_method,
+                "input_rows": input_rows,
                 "rows": rows,
                 "updated_at_utc": datetime.now(timezone.utc).isoformat(),
                 "elapsed_sec": round(elapsed, 2),

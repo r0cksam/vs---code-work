@@ -25,6 +25,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .channel-select{border:1px solid #cbd5e1;background:#fff;color:var(--brand);border-radius:5px;padding:5px 8px;font-size:11px;font-weight:800;outline:none;cursor:pointer;min-width:190px}
 .channel-select.compare-count{min-width:112px;display:none}
 .channel-select.compare-select{min-width:150px;display:none}
+.channel-select.compare-picker{min-width:150px}
+.compare-channel-controls{display:none;align-items:center;gap:6px;flex-wrap:wrap}
+.compare-channel-controls.active{display:inline-flex}
 .channel-select:hover{background:#edf2f7;border-color:#94a3b8}
 .channel-select:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(23,59,92,.12)}
 .filter-sep{width:1px;height:24px;background:#d8e1ee;flex:0 0 auto}
@@ -150,11 +153,7 @@ tr:hover td{background:#f6f9ff}
       <select class="channel-select" id="trendFocus" onchange="setTrendFocus(this.value)"></select>
       <button class="filter-btn" id="trendCompareBtn" onclick="setTrendFocus('compare')">Compare</button>
       <select class="channel-select compare-count" id="compareCount" onchange="setCompareCount(this.value)"></select>
-      <select class="channel-select compare-select" id="compareCh0" onchange="setCompareChannel(0,this.value)"></select>
-      <select class="channel-select compare-select" id="compareCh1" onchange="setCompareChannel(1,this.value)"></select>
-      <select class="channel-select compare-select" id="compareCh2" onchange="setCompareChannel(2,this.value)"></select>
-      <select class="channel-select compare-select" id="compareCh3" onchange="setCompareChannel(3,this.value)"></select>
-      <select class="channel-select compare-select" id="compareCh4" onchange="setCompareChannel(4,this.value)"></select>
+      <span class="compare-channel-controls" id="compareChannelControls"></span>
       <span class="filter-range" id="channelLimitText"></span>
     </div>
     <div class="grid-2">
@@ -170,7 +169,11 @@ tr:hover td{background:#f6f9ff}
     <div class="section-title"><h2>Channel Cards</h2><span class="count-chip" id="channelCardsCount"></span></div>
     <div class="grid-2">
       <div class="panel"><h2>Channel Watch Hours<span class="chart-actions"><span class="chart-sub">selected range</span><button class="expand-btn" onclick="openChartModal('channelInsightHours')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="channelInsightHoursWrap"><canvas id="channelInsightHours"></canvas></div></div>
-      <div class="panel"><h2>Channel Average Minutes<span class="chart-actions"><span class="chart-sub">per IP, session, device</span><button class="expand-btn" onclick="openChartModal('channelInsightAvg')">Expand</button></span></h2><div class="chart-box tall" id="channelInsightAvgWrap"><canvas id="channelInsightAvg"></canvas></div></div>
+      <div class="panel"><h2>Average Minutes / IP<span class="chart-actions"><span class="chart-sub">watch hours divided by approx IPs</span><button class="expand-btn" onclick="openChartModal('channelAvgIp')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="channelAvgIpWrap"><canvas id="channelAvgIp"></canvas></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><h2>Average Minutes / Session<span class="chart-actions"><span class="chart-sub">watch hours divided by sessions</span><button class="expand-btn" onclick="openChartModal('channelAvgSession')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="channelAvgSessionWrap"><canvas id="channelAvgSession"></canvas></div></div>
+      <div class="panel"><h2>Average Minutes / Device<span class="chart-actions"><span class="chart-sub">watch hours divided by devices</span><button class="expand-btn" onclick="openChartModal('channelAvgDevice')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="channelAvgDeviceWrap"><canvas id="channelAvgDevice"></canvas></div></div>
     </div>
     <div class="grid-2">
       <div class="panel"><h2>FAST Platform Watch Hours<span class="chart-actions"><span class="chart-sub">platform from reqHost</span><button class="expand-btn" onclick="openChartModal('fastPlatformChart')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="fastPlatformChartWrap"><canvas id="fastPlatformChart"></canvas></div></div>
@@ -293,11 +296,7 @@ tr:hover td{background:#f6f9ff}
         <select class="channel-select" id="modalTrendFocus" onchange="setTrendFocus(this.value)"></select>
         <button class="filter-btn" id="modalTrendCompareBtn" onclick="setTrendFocus('compare')">Compare</button>
         <select class="channel-select compare-count" id="modalCompareCount" onchange="setCompareCount(this.value)"></select>
-        <select class="channel-select compare-select" id="modalCompareCh0" onchange="setCompareChannel(0,this.value)"></select>
-        <select class="channel-select compare-select" id="modalCompareCh1" onchange="setCompareChannel(1,this.value)"></select>
-        <select class="channel-select compare-select" id="modalCompareCh2" onchange="setCompareChannel(2,this.value)"></select>
-        <select class="channel-select compare-select" id="modalCompareCh3" onchange="setCompareChannel(3,this.value)"></select>
-        <select class="channel-select compare-select" id="modalCompareCh4" onchange="setCompareChannel(4,this.value)"></select>
+        <span class="compare-channel-controls" id="modalCompareChannelControls"></span>
         <input type="date" id="modalStart" onchange="setModalCustom()"/>
         <span style="font-size:12px;color:#64748b;font-weight:700">to</span>
         <input type="date" id="modalEnd" onchange="setModalCustom()"/>
@@ -802,7 +801,9 @@ function selectableChannels(rows){return (rows||viewChannels||[]).filter(c=>c.ch
 function ensureCompareDefaults(rows){
   const channels=selectableChannels(rows);
   if(!channels.length)return;
-  compareCount=Math.max(2,Math.min(5,Number(compareCount)||2,Math.max(2,channels.length)));
+  const maxCount=channels.length;
+  const minCount=Math.min(2,maxCount);
+  compareCount=Math.max(minCount,Math.min(maxCount,Number(compareCount)||minCount));
   const available=channels.map(c=>c.channel_name);
   const chosen=[];
   for(let i=0;i<compareCount;i++){
@@ -811,10 +812,24 @@ function ensureCompareDefaults(rows){
     compareChannels[i]=cur;
     if(cur)chosen.push(cur);
   }
-  compareChannels=compareChannels.slice(0,5);
+  compareChannels=compareChannels.slice(0,compareCount);
 }
 
 function selectedCompareNames(rows){ensureCompareDefaults(rows);return compareChannels.slice(0,compareCount).filter(Boolean);}
+
+function compareCountOptions(maxCount){
+  if(maxCount<=0)return [];
+  const presets=[2,3,4,5,10,15,20,50].filter(n=>n<=maxCount);
+  if(!presets.includes(maxCount))presets.push(maxCount);
+  return [...new Set(presets)].sort((a,b)=>a-b);
+}
+
+function normalizeCompareCount(value,rows){
+  const maxCount=selectableChannels(rows||viewChannels).length;
+  if(maxCount<=0)return 0;
+  const minCount=Math.min(2,maxCount);
+  return Math.max(minCount,Math.min(maxCount,Number(value)||minCount));
+}
 
 function trendChannelsFrom(rows){
   const source=rows||[];
@@ -838,17 +853,28 @@ function renderTrendFocusOptions(){
   const html=baseOpts.concat(chanOpts).map(([v,l])=>`<option value="${escapeHtml(v)}"${v===trendFocus?' selected':''}>${escapeHtml(l)}</option>`).join('');
   ['trendFocus','modalTrendFocus'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=html;});
   ['trendCompareBtn','modalTrendCompareBtn'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.toggle('active',trendFocus==='compare');});
-  const maxC=Math.min(5,Math.max(2,selectableChannels(viewChannels).length||2));
-  const cntHtml=Array.from({length:maxC-1},(_,i)=>i+2).map(n=>`<option value="${n}"${n===compareCount?' selected':''}>${n} channels</option>`).join('');
+  const maxC=selectableChannels(viewChannels).length;
+  compareCount=normalizeCompareCount(compareCount,viewChannels);
+  const cntHtml=compareCountOptions(maxC).map(n=>`<option value="${n}"${n===compareCount?' selected':''}>${n===maxC&&maxC>20?'All channels':n+' channels'}</option>`).join('');
   ['compareCount','modalCompareCount'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=cntHtml;});
-  const compHtml=(cur,lbl)=>[`<option value="">${lbl}</option>`].concat(selectableChannels(viewChannels).map(c=>`<option value="${escapeHtml(c.channel_name)}"${c.channel_name===cur?' selected':''}>${escapeHtml(c.channel_name)}</option>`)).join('');
-  for(let i=0;i<5;i++){[['compareCh'+i,compareChannels[i],'Channel '+(i+1)],['modalCompareCh'+i,compareChannels[i],'Channel '+(i+1)]].forEach(([id,cur,lbl])=>{const el=document.getElementById(id);if(el)el.innerHTML=compHtml(cur,lbl);});}
   const showC=trendFocus==='compare';
-  ['compareCount'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showC?'':'none';});
-  for(let i=0;i<5;i++){const el=document.getElementById('compareCh'+i);if(el)el.style.display=showC&&i<compareCount?'':'none';}
+  ['compareCount'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showC?'inline-block':'none';});
   const showMC=showC&&modalChartSourceId==='channelTrend';
-  ['modalCompareCount'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showMC?'':'none';});
-  for(let i=0;i<5;i++){const el=document.getElementById('modalCompareCh'+i);if(el)el.style.display=showMC&&i<compareCount?'':'none';}
+  ['modalCompareCount'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showMC?'inline-block':'none';});
+  renderComparePickers('compareChannelControls',showC);
+  renderComparePickers('modalCompareChannelControls',showMC);
+}
+
+function renderComparePickers(containerId,show){
+  const el=document.getElementById(containerId);
+  if(!el)return;
+  el.classList.toggle('active',!!show);
+  el.style.display=show?'inline-flex':'none';
+  if(!show){el.innerHTML='';return;}
+  const channels=selectableChannels(viewChannels);
+  if(!channels.length){el.innerHTML='';return;}
+  const options=(cur,lbl)=>[`<option value="">${lbl}</option>`].concat(channels.map(c=>`<option value="${escapeHtml(c.channel_name)}"${c.channel_name===cur?' selected':''}>${escapeHtml(c.channel_name)}</option>`)).join('');
+  el.innerHTML=Array.from({length:compareCount},(_,i)=>`<select class="channel-select compare-picker" onchange="setCompareChannel(${i},this.value)">${options(compareChannels[i],'Channel '+(i+1))}</select>`).join('');
 }
 
 function setActiveSource(){
@@ -877,7 +903,7 @@ function updateChannelLimitText(){
 
 function setChannelLimit(limit){chartChannelLimit=limit;setActiveChannelLimit(limit==='all'?'channelAll':limit===10?'channelTop10':'channelTop15');renderCharts();updateChannelLimitText();}
 function setTrendFocus(value){trendFocus=value||'all';if(trendFocus==='compare')ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
-function setCompareCount(value){compareCount=Math.max(2,Math.min(5,Number(value)||2));trendFocus='compare';ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
+function setCompareCount(value){compareCount=normalizeCompareCount(value,viewChannels);trendFocus='compare';ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
 function setCompareChannel(index,value){compareChannels[index]=value;trendFocus='compare';ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
 
 // ── Date filter ───────────────────────────────────────────────────────────────
@@ -1056,14 +1082,29 @@ function renderChannelInsightHours(targetId='channelInsightHours',expanded=false
   return makeBarChart(targetId,ch.map(r=>r.channel_name),ch.map(r=>r.raw_watch_hours),expanded,true);
 }
 
-function renderChannelInsightAvg(targetId='channelInsightAvg',expanded=false,rows=null){
-  const ch=(rows||aggregateChannelAudience()).slice();
-  if(targetId==='channelInsightAvg')syncTallChartHeight('channelInsightAvgWrap',ch.length,380,760);
-  return makeGroupedBarChart(targetId,ch.map(r=>r.channel_name),[
-    {label:'Min / IP',data:ch.map(r=>Number(r.avg_hours_per_ip||0)*60),backgroundColor:'#0f766e'},
-    {label:'Min / Session',data:ch.map(r=>Number(r.avg_hours_per_session||0)*60),backgroundColor:'#b58517'},
-    {label:'Min / Device',data:ch.map(r=>Number(r.avg_hours_per_device||0)*60),backgroundColor:'#5b55a3'}
-  ],expanded,' min');
+const CHANNEL_AVG_CHARTS={
+  channelAvgIp:{key:'avg_hours_per_ip',wrap:'channelAvgIpWrap',label:'Average minutes per IP',short:'Avg Min / IP'},
+  channelAvgSession:{key:'avg_hours_per_session',wrap:'channelAvgSessionWrap',label:'Average minutes per session',short:'Avg Min / Session'},
+  channelAvgDevice:{key:'avg_hours_per_device',wrap:'channelAvgDeviceWrap',label:'Average minutes per device',short:'Avg Min / Device'}
+};
+
+function channelAverageRows(rows,key){
+  return (rows||aggregateChannelAudience())
+    .map(r=>({...r,avg_minutes:Number(r[key]||0)*60}))
+    .filter(r=>Number(r.avg_minutes||0)>0)
+    .sort((a,b)=>Number(b.avg_minutes||0)-Number(a.avg_minutes||0));
+}
+
+function renderChannelAverageChart(targetId='channelAvgIp',expanded=false,rows=null,metricId=null){
+  const chartId=metricId||targetId;
+  const cfg=CHANNEL_AVG_CHARTS[chartId]||CHANNEL_AVG_CHARTS.channelAvgIp;
+  const ch=channelAverageRows(rows,cfg.key);
+  if(targetId===chartId)syncTallChartHeight(cfg.wrap,ch.length,380,760);
+  return makeBarChart(targetId,ch.map(r=>r.channel_name),ch.map(r=>r.avg_minutes),expanded,false,cfg.label);
+}
+
+function renderChannelAverageCharts(){
+  Object.keys(CHANNEL_AVG_CHARTS).forEach(id=>renderChannelAverageChart(id));
 }
 
 function renderFastPlatformChart(targetId='fastPlatformChart',expanded=false,rows=null){
@@ -1106,7 +1147,7 @@ function renderCharts(){
   renderChannelTrend();
   renderChannelBar();
   renderChannelInsightHours();
-  renderChannelInsightAvg();
+  renderChannelAverageCharts();
   renderFastPlatformChart();
   renderRegionInsightChart();
   renderRegionCountryChart();
@@ -1122,10 +1163,10 @@ function renderSingleChart(sourceId,targetId,expanded=false,dailyRows=null){
     if(sourceId==='channelTrend')return renderChannelTrend(targetId,expanded,daily,channels);
     return renderChannelBar(targetId,expanded,channels);
   }
-  if(sourceId==='channelInsightHours'||sourceId==='channelInsightAvg'){
+  if(sourceId==='channelInsightHours'||CHANNEL_AVG_CHARTS[sourceId]){
     const audience=channelAudienceForDaily(daily);
     if(sourceId==='channelInsightHours')return renderChannelInsightHours(targetId,expanded,audience);
-    return renderChannelInsightAvg(targetId,expanded,audience);
+    return renderChannelAverageChart(targetId,expanded,audience,sourceId);
   }
   if(sourceId==='fastPlatformChart')return renderFastPlatformChart(targetId,expanded,fastPlatformRowsForDaily(daily));
   if(sourceId==='regionInsightChart'||sourceId==='regionCountryChart'){
@@ -1141,18 +1182,14 @@ function setActiveModalPreset(id){['modalDashboard','modalAll','modal30','modal7
 function openChartModal(id){
   if(typeof Chart==='undefined')return;
   modalChartSourceId=id;
-  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelInsightAvg:'Channel Average Minutes',fastPlatformChart:'FAST Platform Watch Hours',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split'};
+  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split'};
   document.getElementById('modalTitle').textContent=titles[id]||'Chart';
-  document.querySelector('#chartModal .chart-modal')?.classList.toggle('rank-modal',id==='channelBar');
-  document.querySelector('#chartModal .modal-chart-wrap')?.classList.toggle('rank-modal-wrap',id==='channelBar');
+  const isRankModal=id==='channelBar'||!!CHANNEL_AVG_CHARTS[id];
+  document.querySelector('#chartModal .chart-modal')?.classList.toggle('rank-modal',isRankModal);
+  document.querySelector('#chartModal .modal-chart-wrap')?.classList.toggle('rank-modal-wrap',isRankModal);
   const isTrend=id==='channelTrend';
   ['modalTrendFocus','modalTrendCompareBtn'].forEach(elId=>{const el=document.getElementById(elId);if(el)el.style.display=isTrend?'':'none';});
-  ['modalCompareCount','modalCompareCh0','modalCompareCh1','modalCompareCh2','modalCompareCh3','modalCompareCh4'].forEach(elId=>{
-    const el=document.getElementById(elId);
-    const isSlot=elId.includes('Ch');
-    const slot=isSlot?Number(elId.slice(-1)):-1;
-    if(el)el.style.display=isTrend&&trendFocus==='compare'&&(!isSlot||slot<compareCount)?'':'none';
-  });
+  renderTrendFocusOptions();
   document.getElementById('chartModal').classList.add('open');
   setModalPreset('dashboard');
 }

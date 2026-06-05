@@ -427,10 +427,16 @@
       "mtime_ns_sum": 7122062722312043800
     },
     "2026-06-04": {
-      "bytes": 77768532,
+      "bytes": 1228788193,
+      "files": 4,
+      "mtime_ns_max": 1780635483132576000,
+      "mtime_ns_sum": 7122375001648641500
+    },
+    "2026-06-05": {
+      "bytes": 77618483,
       "files": 2,
-      "mtime_ns_max": 1780552033870980700,
-      "mtime_ns_sum": 3561104052003673600
+      "mtime_ns_max": 1780635483145171700,
+      "mtime_ns_sum": 3561270949764664000
     }
   },
   "signature_basis": "parquet files grouped by lake year/month/day, using count, bytes, and mtimes",
