@@ -81,7 +81,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .chart-sub{font-size:11px;color:#94a3b8;font-weight:600}
 .expand-btn{border:1px solid #cbd5e1;background:#fff;color:var(--brand);border-radius:5px;padding:3px 8px;font-size:10px;font-weight:800;cursor:pointer}
 .expand-btn:hover{background:#edf2f7;border-color:#94a3b8}
-.chart-box{height:clamp(240px,30vh,360px)}.chart-box.channel-trend{height:clamp(280px,36vh,440px)}.chart-box.tall{height:clamp(320px,42vh,500px)}.chart-box.channel-rank{height:clamp(440px,58vh,720px)}.chart-box.channel-rank-wide{height:clamp(620px,72vh,880px)}
+.chart-box{height:clamp(240px,30vh,360px)}.chart-box.channel-trend{height:clamp(280px,36vh,440px)}.chart-box.status-pie{height:clamp(320px,38vh,460px)}.chart-box.tall{height:clamp(320px,42vh,500px)}.chart-box.channel-rank{height:clamp(440px,58vh,720px)}.chart-box.channel-rank-wide{height:clamp(620px,72vh,880px)}
 canvas{width:100%!important;height:100%!important}
 .table-wrap{overflow:auto;max-height:520px;border:1px solid #e2e8f0;border-radius:7px;background:#fff}
 .chart-box + .table-wrap{margin-top:12px;max-height:260px}
@@ -92,7 +92,7 @@ tr:hover td{background:#f6f9ff}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .metric-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:12px}
 .mini{border:1px solid #e2e8f0;border-radius:7px;padding:8px 10px;background:#fbfcfe}
-.mini b{display:block;font-size:10px;text-transform:uppercase;color:#64748b;margin-bottom:3px}.mini span{font-size:17px;font-weight:850}
+.mini b{display:block;font-size:10px;text-transform:uppercase;color:#64748b;margin-bottom:3px}.mini span{font-size:17px;font-weight:850;line-height:1.15;overflow-wrap:anywhere}
 .footer{font-size:11px;color:#94a3b8;text-align:center;padding:20px 0 4px}
 .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:50;display:none;align-items:center;justify-content:center;padding:22px}
 .modal-backdrop.open{display:flex}
@@ -257,9 +257,30 @@ tr:hover td{background:#f6f9ff}
       <div class="panel"><h2>Top User Agents<span class="count-chip" id="uaCount"></span></h2><div class="table-wrap" id="uaTable"></div></div>
     </div>
   </section>
-  <section class="tab" id="reliability">
+  <section class="tab" id="devices">
+    <div class="metric-strip" id="deviceDecodeMetrics"></div>
     <div class="grid-3">
-      <div class="panel"><h2>Status Codes<span class="count-chip" id="statusCount"></span></h2><div class="chart-box"><canvas id="statusChart"></canvas></div><div class="table-wrap" id="statusTable"></div></div>
+      <div class="panel"><h2>Device Decode Coverage<span class="chart-actions"><span class="count-chip" id="deviceStatusCount"></span><button class="expand-btn" onclick="openChartModal('deviceStatusChart')">Expand</button></span></h2><div class="chart-box status-pie"><canvas id="deviceStatusChart"></canvas></div></div>
+      <div class="panel"><h2>Top Known Devices<span class="chart-actions"><span class="count-chip" id="knownDeviceCount"></span><button class="expand-btn" onclick="openChartModal('knownDeviceChart')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="knownDeviceChartWrap"><canvas id="knownDeviceChart"></canvas></div></div>
+      <div class="panel"><h2>Top Unknown Device Codes<span class="chart-actions"><span class="count-chip" id="unknownDeviceCount"></span><button class="expand-btn" onclick="openChartModal('unknownDeviceChart')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="unknownDeviceChartWrap"><canvas id="unknownDeviceChart"></canvas></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><h2>Known Decoded Devices<span class="count-chip" id="decodedDeviceTableCount"></span></h2><div class="table-wrap" id="decodedDeviceTable"></div></div>
+      <div class="panel"><h2>Unknown / Unmapped Device Codes<span class="count-chip" id="unknownDeviceTableCount"></span></h2><div class="table-wrap" id="unknownDeviceTable"></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><h2>OS / Device Buckets<span class="count-chip" id="deviceBucketCount"></span></h2><div class="table-wrap" id="deviceBucketTable"></div></div>
+      <div class="panel"><h2>Top UA Evidence<span class="count-chip" id="decodedUaCount"></span></h2><div class="table-wrap" id="decodedUaTable"></div></div>
+    </div>
+  </section>
+  <section class="tab" id="reliability">
+    <div class="grid-2">
+      <div class="panel"><h2>Watch Hours By Status<span class="chart-actions"><span class="chart-sub">raw vs status 200</span><button class="expand-btn" onclick="openChartModal('reliabilityWatchHoursTrend')">Expand</button></span></h2><div class="chart-box channel-trend"><canvas id="reliabilityWatchHoursTrend"></canvas></div></div>
+      <div class="panel"><h2>Non-200 Status Watch Hours<span class="chart-actions"><span class="chart-sub">top status codes plus other</span><button class="expand-btn" onclick="openChartModal('reliabilityNon200Trend')">Expand</button></span></h2><div class="chart-box channel-trend"><canvas id="reliabilityNon200Trend"></canvas></div></div>
+    </div>
+    <div class="panel"><h2>Status Meaning Reference<span class="count-chip" id="statusMeaningCount"></span></h2><div class="table-wrap" id="statusMeaningTable"></div></div>
+    <div class="grid-3">
+      <div class="panel"><h2>Status Codes<span class="chart-actions"><span class="count-chip" id="statusCount"></span><button class="expand-btn" onclick="openChartModal('statusChart')">Expand</button></span></h2><div class="chart-box status-pie"><canvas id="statusChart"></canvas></div><div class="table-wrap" id="statusTable"></div></div>
       <div class="panel"><h2>Cache By Host<span class="count-chip" id="cacheCount"></span></h2><div class="table-wrap" id="cacheTable"></div></div>
       <div class="panel"><h2>Host Overview<span class="count-chip" id="hostCount"></span></h2><div class="table-wrap" id="hostTable"></div></div>
     </div>
@@ -311,6 +332,7 @@ tr:hover td{background:#f6f9ff}
 const D = $DATA_BLOB;
 const COLORS = ['#173b5c','#0f766e','#b58517','#5b55a3','#2f6b2f','#b42318','#1f6f8b','#7c5800','#6b4ab6','#64748b'];
 const CHUNK_HOURS = 6 / 3600;
+const DEVICE_DECODE = D.device_decode || {summary:[],unknown_codes:[],top_user_agents:[],ua_cache:[]};
 
 // ── Bootstrap: strip first/last partial days (same logic as Python side) ──────
 const DAILY_TABLES_RAW = D.daily_tables || {};
@@ -490,6 +512,10 @@ function decodeText(value){
   try{text=decodeURIComponent(text.replace(/\+/g,' '));}catch(e){}
   return text.replace(/\s+/g,' ').trim();
 }
+function clipText(value,max=130){
+  const text=decodeText(value);
+  return escapeHtml(text.length>max?text.slice(0,max)+'...':text);
+}
 function geoText(value,fallback){const t=decodeText(value);return t||fallback;}
 function isUnknownGeo(value){
   const t=String(value||'').trim().toLowerCase();
@@ -638,7 +664,7 @@ function fastPlatformRowsForDaily(dailyRows) {
 function aggregateFastPlatforms() {
   return getAgg('fastPlatforms',()=>fastPlatformRowsForDaily(viewDaily));
 }
-function aggregateStatus()   { return getAgg('status',   ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.status_codes_daily),['statusCode'],['rows','raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']); const tot=sum(rows,'rows'); rows.forEach(r=>{r.statusCode=String(r.statusCode??'').replace(/\.0$/,'');r.meaning=statusMeaning(r.statusCode);r.row_pct=percent(r.rows,tot);}); return topRows(rows,'rows',20); }); }
+function aggregateStatus()   { return getAgg('status',   ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.status_codes_daily),['statusCode'],['rows','raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']); const tot=sum(rows,'rows'); const whTot=sum(rows,'raw_watch_hours'); rows.forEach(r=>{r.statusCode=String(r.statusCode??'').replace(/\.0$/,'');r.meaning=statusMeaning(r.statusCode);r.row_pct=percent(r.rows,tot);r.watch_share_pct=percent(r.raw_watch_hours,whTot);}); return topRows(rows,'rows',20); }); }
 function aggregateExtensions(){ return getAgg('extensions',()=>topRows(groupRows(rowsForDates(DAILY_TABLES.extensions_daily),['extension'],['rows','status_200_rows'],['approx_unique_ips'],['sample_reqPath']),'rows',20)); }
 function aggregateHosts()    { return getAgg('hosts',    ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.hosts_daily),['reqHost'],['rows','status_200_rows','non_200_rows','raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips']); rows.forEach(r=>{r.non_200_pct=percent(r.non_200_rows,r.rows);r.ts_rows=r.raw_ts_rows;}); return topRows(rows,'rows',25); }); }
 function aggregateCache()    { return getAgg('cache',    ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.cache_daily),['reqHost','cacheStatus','cacheable'],['rows','raw_ts_rows','status_200_ts_rows'],['approx_unique_ips']); const byHost=new Map(); rows.forEach(r=>{const k=r.reqHost||'';const item=byHost.get(k)||{reqHost:k,rows:0,cache_hit_rows:0};item.rows+=Number(r.rows||0);if(String(r.cacheStatus)==='1')item.cache_hit_rows+=Number(r.rows||0);byHost.set(k,item);}); const out=[...byHost.values()];out.forEach(r=>r.cache_hit_pct=percent(r.cache_hit_rows,r.rows));return topRows(out,'rows',25); }); }
@@ -646,6 +672,111 @@ function aggregateErrors()   { return getAgg('errors',   ()=>topRows(groupRows(r
 function aggregateDevice()   { return getAgg('device',   ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.device_type_by_channel_daily),['channel_name','device_type'],['raw_ts_rows','status_200_ts_rows'],['approx_unique_ips']); rows.forEach(r=>{r.watch_hours=Number(r.raw_ts_rows||0)*CHUNK_HOURS;r.status_200_watch_hours=Number(r.status_200_ts_rows||0)*CHUNK_HOURS;}); return topRows(rows,'watch_hours',30); }); }
 function aggregateAsn()      { return getAgg('asn',      ()=>{ const meta=new Map((D.asn||[]).map(r=>[String(r.asn),r])); const rows=groupRows(rowsForDates(DAILY_TABLES.asn_daily),['asn'],['raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips','distinct_hosts'],['sample_reqHost']); rows.forEach(r=>{const m=meta.get(String(r.asn))||{};r.as_name=m.as_name||('AS'+(r.asn||''));r.as_country=m.as_country||'';r.asn_type=m.asn_type||'';r.watch_hours=r.raw_watch_hours;}); return topRows(rows,'watch_hours',25); }); }
 function aggregateUa()       { return getAgg('ua',       ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.user_agents_daily),['userAgent'],['rows','raw_ts_rows','status_200_ts_rows'],['approx_unique_ips','distinct_hosts']); rows.forEach(r=>r.UA=r.userAgent); return topRows(rows,'rows',20); }); }
+function deviceDecodeStatusLabel(value){
+  const key=String(value||'').trim();
+  if(key==='decoded')return 'Known decoded device';
+  if(key==='unknown_model_code')return 'Unknown model code';
+  if(key==='bucketed_not_model_specific')return 'OS / device bucket';
+  return key||'Unknown';
+}
+function deviceSignalLabel(value){
+  const key=String(value||'').trim();
+  const labels={ua_fire_tv:'UA Fire TV model',query_device_code:'queryStr device code',ua_android:'Android UA',ua_samsung_tizen:'Samsung/Tizen UA',ua_iphone:'iPhone UA',ua_ipad:'iPad UA',ua_roku:'Roku UA',ua_apple_tv:'Apple TV UA',ua_other_or_query_only:'Other / weak signal'};
+  return labels[key]||key||'Unknown';
+}
+function deviceDecodeRowsForDaily(dailyRows=viewDaily){
+  return rowsForDates(sourceRows(DEVICE_DECODE.summary||[],sourceFilter),dailyRows);
+}
+function dateRangeOverlap(row,dailyRows=viewDaily){
+  const dates=dailyRows||[];
+  if(!dates.length)return false;
+  const start=String(dates[0].log_date);
+  const end=String(dates[dates.length-1].log_date);
+  const first=String(row.first_date||row.log_date||start);
+  const last=String(row.last_date||row.log_date||end);
+  return first<=end&&last>=start;
+}
+function finalizeDeviceRows(rows){
+  const totalRows=sum(rows,'rows');
+  rows.forEach(r=>{
+    r.watch_hours=Number(r.ts_rows||0)*CHUNK_HOURS;
+    r.row_share_pct=percent(r.rows,totalRows);
+    r.status_label=deviceDecodeStatusLabel(r.decode_status);
+    r.signal_label=deviceSignalLabel(r.signal_source);
+    r.device_display=decodeText(r.decoded_device_name||r.device_code||'Unknown / NA');
+  });
+  return rows;
+}
+function knownDeviceRowsForDaily(dailyRows=viewDaily){
+  const rows=deviceDecodeRowsForDaily(dailyRows).filter(r=>String(r.decode_status)==='decoded');
+  const grouped=groupRows(rows,['decoded_device_name','vendor','product_family','generation','device_code'],['rows','ts_rows','status_200_rows'],['approx_ips','distinct_device_ids'],['sample_UA','sample_reqHost','signal_source']);
+  return topRows(finalizeDeviceRows(grouped),'rows',80);
+}
+function unknownDeviceRowsForDaily(dailyRows=viewDaily){
+  const rows=deviceDecodeRowsForDaily(dailyRows).filter(r=>String(r.decode_status)==='unknown_model_code');
+  const grouped=groupRows(rows,['device_code'],['rows','ts_rows','status_200_rows'],['approx_ips','distinct_device_ids'],['sample_UA','sample_reqHost','sample_reqPath','signal_source']);
+  return topRows(finalizeDeviceRows(grouped),'rows',80);
+}
+function deviceBucketRowsForDaily(dailyRows=viewDaily){
+  const rows=deviceDecodeRowsForDaily(dailyRows).filter(r=>String(r.decode_status)==='bucketed_not_model_specific');
+  const grouped=groupRows(rows,['decoded_device_name','signal_source'],['rows','ts_rows','status_200_rows'],['approx_ips','distinct_device_ids'],['sample_UA','sample_reqHost']);
+  return topRows(finalizeDeviceRows(grouped),'rows',80);
+}
+function deviceStatusRowsForDaily(dailyRows=viewDaily){
+  const rows=deviceDecodeRowsForDaily(dailyRows);
+  const grouped=groupRows(rows,['decode_status'],['rows','ts_rows','status_200_rows'],['approx_ips','distinct_device_ids']);
+  return topRows(finalizeDeviceRows(grouped),'rows',20);
+}
+function decodedUaRowsForDaily(dailyRows=viewDaily){
+  const cached=DEVICE_DECODE.ua_cache||[];
+  if(cached.length){
+    const rows=sourceRows(cached,sourceFilter).filter(r=>dateRangeOverlap(r,dailyRows));
+    const grouped=groupRows(
+      rows,
+      ['ua_hash','ua_sample','device_type','brand','model','os_name','os_version','browser_name','browser_version','decoder','decode_status'],
+      ['rows','ts_rows','status_200_ts_rows','watch_hours','status_200_watch_hours'],
+      ['approx_ips'],
+      ['first_date','last_date']
+    );
+    grouped.forEach(r=>{
+      r.UA=r.ua_sample;
+      r.device_display=[r.brand,r.model].filter(Boolean).join(' ')||r.device_type||'Unknown / NA';
+      r.os_display=[r.os_name,r.os_version].filter(Boolean).join(' ')||'Unknown / NA';
+      r.browser_display=[r.browser_name,r.browser_version].filter(Boolean).join(' ')||'Unknown / NA';
+      r.status_label=r.decoder==='whatmyuseragent'?'API decoded':(r.decode_status||'local rule');
+    });
+    return topRows(grouped,'rows',50);
+  }
+  const rows=sourceRows(DEVICE_DECODE.top_user_agents||[],sourceFilter).filter(r=>dateRangeOverlap(r,dailyRows));
+  const grouped=groupRows(rows,['UA','decoded_device_name','decode_status','device_code'],['rows'],['approx_ips'],['signal_source','first_date','last_date']);
+  return topRows(finalizeDeviceRows(grouped),'rows',50);
+}
+function aggregateDeviceDecodeStatus(){return getAgg('deviceStatus',()=>deviceStatusRowsForDaily(viewDaily));}
+function aggregateKnownDevices(){return getAgg('knownDevices',()=>knownDeviceRowsForDaily(viewDaily));}
+function aggregateUnknownDevices(){return getAgg('unknownDevices',()=>unknownDeviceRowsForDaily(viewDaily));}
+function aggregateDeviceBuckets(){return getAgg('deviceBuckets',()=>deviceBucketRowsForDaily(viewDaily));}
+function aggregateDecodedUa(){return getAgg('decodedUa',()=>decodedUaRowsForDaily(viewDaily));}
+function deviceDecodeMetricsForDaily(dailyRows=viewDaily){
+  const rows=deviceDecodeRowsForDaily(dailyRows);
+  const known=rows.filter(r=>String(r.decode_status)==='decoded');
+  const unknown=rows.filter(r=>String(r.decode_status)==='unknown_model_code');
+  const buckets=rows.filter(r=>String(r.decode_status)==='bucketed_not_model_specific');
+  const unknownNa=rows.filter(r=>String(r.decoded_device_name||'').toLowerCase()==='unknown / na'||String(r.signal_source||'')==='ua_other_or_query_only');
+  return {
+    total_rows:sum(rows,'rows'),
+    known_rows:sum(known,'rows'),
+    unknown_code_rows:sum(unknown,'rows'),
+    bucket_rows:sum(buckets,'rows'),
+    unknown_na_rows:sum(unknownNa,'rows'),
+    known_code_count:new Set(known.map(r=>String(r.device_code||'')).filter(Boolean)).size,
+    unknown_code_count:new Set(unknown.map(r=>String(r.device_code||'')).filter(Boolean)).size,
+  };
+}
+function deviceProfileWindow(){
+  const m=DEVICE_DECODE.manifest||{};
+  if(m.start&&m.end)return `${m.start} to ${m.end}`;
+  return DEVICE_DECODE.available?'Latest profile':'Not generated';
+}
 function aggregateMappingQuality(){ return getAgg('mqual',()=>topRows(groupRows(rowsForDates(DAILY_TABLES.mapping_quality_daily),['reqHost','candidate_id','channel_name','quality_bucket'],['rows','raw_ts_chunks','status_200_ts_chunks','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']),'raw_watch_hours',40)); }
 function aggregateUnmapped() { return getAgg('unmapped', ()=>topRows(groupRows(rowsForDates(DAILY_TABLES.unmapped_candidates_daily),['reqHost','candidate_id'],['rows','raw_ts_chunks','status_200_ts_chunks','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']),'raw_ts_chunks',50)); }
 function aggregateQueryParams(){ return getAgg('qparams', ()=>oneDailyRow(DAILY_TABLES.query_params_daily,['rows_with_querystr','channel_rows','channel_name_rows','session_rows','device_id_rows','platform_rows','device_rows','content_title_rows','category_name_rows','m_rows','cmcd_query_rows','hdnts_rows','token_rows'],['sample_queryStr'])); }
@@ -1051,10 +1182,84 @@ function makeGroupedBarChart(id,labels,datasets,expanded=false,unit=''){
   });
 }
 
-function makeDoughnut(id,labels,values){
+const doughnutPercentLabelPlugin={
+  id:'doughnutPercentLabelPlugin',
+  afterDatasetsDraw(chart,args,pluginOptions){
+    const opts=chart.options?.plugins?.doughnutPercentLabels||{};
+    if(!opts.display)return;
+    const meta=chart.getDatasetMeta(0);
+    const ds=chart.data.datasets[0]||{};
+    const raw=(ds.originalData||ds.data||[]).map(v=>Number(v||0));
+    const total=raw.reduce((a,v)=>a+v,0);
+    if(!total)return;
+    const ctx=chart.ctx;
+    ctx.save();
+    ctx.font=`${opts.fontSize||10}px -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif`;
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    meta.data.forEach((arc,i)=>{
+      const value=raw[i]||0;
+      if(value<=0)return;
+      const pct=value/total*100;
+      if(pct<(opts.minLabelPct||0.005))return;
+      const props=arc.getProps(['x','y','startAngle','endAngle','outerRadius'],true);
+      const angle=(props.startAngle+props.endAngle)/2;
+      const x1=props.x+Math.cos(angle)*(props.outerRadius-2);
+      const y1=props.y+Math.sin(angle)*(props.outerRadius-2);
+      const x2=props.x+Math.cos(angle)*(props.outerRadius+14);
+      const y2=props.y+Math.sin(angle)*(props.outerRadius+14);
+      const label=pct<0.01?'<0.01%':fmtPct(pct);
+      ctx.strokeStyle='rgba(100,116,139,.55)';
+      ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.lineTo(x2,y2);
+      ctx.stroke();
+      ctx.fillStyle='#172033';
+      ctx.fillText(label,x2,y2);
+    });
+    ctx.restore();
+  }
+};
+
+function doughnutVisualValues(values,minSlicePct=0){
+  const raw=(values||[]).map(v=>Number(v||0));
+  const total=raw.reduce((a,v)=>a+v,0);
+  if(!total||!minSlicePct)return raw;
+  const floor=total*(minSlicePct/100);
+  return raw.map(v=>v>0?Math.max(v,floor):0);
+}
+
+function makeDoughnut(id,labels,values,opts={}){
   if(typeof Chart==='undefined'||!document.getElementById(id))return;
   resetChart(id);
-  chartInstances[id]=new Chart(document.getElementById(id),{type:'doughnut',data:{labels,datasets:[{data:values,backgroundColor:labels.map((_,i)=>COLORS[i%COLORS.length])}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  const rawValues=(values||[]).map(v=>Number(v||0));
+  const total=rawValues.reduce((a,v)=>a+v,0);
+  const visualValues=doughnutVisualValues(rawValues,Number(opts.minSlicePct||0));
+  chartInstances[id]=new Chart(document.getElementById(id),{
+    type:'doughnut',
+    data:{labels,datasets:[{data:visualValues,originalData:rawValues,backgroundColor:labels.map((_,i)=>COLORS[i%COLORS.length]),borderColor:'#fff',borderWidth:1.5}]},
+    plugins:[doughnutPercentLabelPlugin],
+    options:{responsive:true,maintainAspectRatio:false,cutout:opts.cutout||'58%',
+      plugins:{
+        legend:{position:'bottom',labels:{font:{size:10},boxWidth:12,padding:8,generateLabels:chart=>{
+          const ds=chart.data.datasets[0]||{};
+          return chart.data.labels.map((label,i)=>{
+            const value=Number(ds.originalData?.[i]??ds.data?.[i]??0);
+            const pct=total?value/total*100:0;
+            return{text:`${label} (${pct<0.01&&pct>0?'<0.01%':fmtPct(pct)})`,fillStyle:ds.backgroundColor[i],strokeStyle:ds.backgroundColor[i],lineWidth:0,hidden:false,index:i};
+          });
+        }}},
+        tooltip:{callbacks:{label:ctx=>{
+          const raw=Number(ctx.dataset.originalData?.[ctx.dataIndex]??ctx.parsed??0);
+          const pct=total?raw/total*100:0;
+          const pctText=pct<0.01&&pct>0?'<0.01%':fmtPct(pct);
+          return `${ctx.label}: ${fmt(raw)} (${pctText})`;
+        }}},
+        doughnutPercentLabels:{display:!!opts.percentLabels,minLabelPct:Number(opts.minLabelPctForText||0.005),fontSize:opts.labelFontSize||10}
+      }
+    }
+  });
 }
 
 function syncTallChartHeight(wrapId,count,min=360,max=820){const wrap=document.getElementById(wrapId);if(wrap)wrap.style.height=Math.min(max,Math.max(min,count*24+96))+'px';}
@@ -1068,6 +1273,91 @@ function renderDailyVolume(targetId='dailyChart',expanded=false,dailyRows=null){
     {label:'.m3u8 rows',data:daily.map(r=>r.m3u8_rows),borderColor:'#173b5c',backgroundColor:'rgba(23,59,92,.06)',fill:true,tension:.3,pointRadius:1},
     {label:'non-200 rows',data:daily.map(r=>r.non_200_rows),borderColor:'#b42318',backgroundColor:'transparent',fill:false,tension:.3,pointRadius:1}
   ],expanded);
+}
+
+function statusCodeValue(row){return String(row?.statusCode??'').replace(/\.0$/,'');}
+
+function statusDailyWatchRows(dailyRows=null){
+  const daily=dailyRows||viewDaily||[];
+  const rows=rowsForDates(DAILY_TABLES.status_codes_daily||[],daily);
+  const byDate=new Map(daily.map(r=>[String(r.log_date),{log_date:String(r.log_date),raw_watch_hours:0,status_200_watch_hours:0,non_200_watch_hours:0}]));
+  rows.forEach(r=>{
+    const date=String(r.log_date);
+    const item=byDate.get(date);
+    if(!item)return;
+    const code=statusCodeValue(r);
+    const raw=Number(r.raw_watch_hours||0);
+    item.raw_watch_hours+=raw;
+    item.status_200_watch_hours+=Number(r.status_200_watch_hours||0);
+    if(code!=='200')item.non_200_watch_hours+=raw;
+  });
+  return daily.map(r=>byDate.get(String(r.log_date))||{log_date:String(r.log_date),raw_watch_hours:0,status_200_watch_hours:0,non_200_watch_hours:0});
+}
+
+function renderReliabilityWatchHoursTrend(targetId='reliabilityWatchHoursTrend',expanded=false,dailyRows=null){
+  const rows=statusDailyWatchRows(dailyRows);
+  return makeLineChart(targetId,rows.map(r=>r.log_date),[
+    {label:'Raw watch hours',data:rows.map(r=>r.raw_watch_hours),borderColor:'#173b5c',backgroundColor:'rgba(23,59,92,.08)',fill:true,tension:.28,pointRadius:1,borderWidth:expanded?2.2:1.7},
+    {label:'Status 200 watch hours',data:rows.map(r=>r.status_200_watch_hours),borderColor:'#2f6b2f',backgroundColor:'transparent',fill:false,tension:.28,pointRadius:1,borderWidth:expanded?2.2:1.7}
+  ],expanded,false,false);
+}
+
+function renderReliabilityNon200Trend(targetId='reliabilityNon200Trend',expanded=false,dailyRows=null){
+  const daily=dailyRows||viewDaily||[];
+  const rows=rowsForDates(DAILY_TABLES.status_codes_daily||[],daily).filter(r=>statusCodeValue(r)!=='200');
+  const totals=groupRows(rows,['statusCode'],['raw_watch_hours']);
+  totals.forEach(r=>r.statusCode=statusCodeValue(r));
+  const topCodes=topRows(totals,'raw_watch_hours',7).map(r=>String(r.statusCode));
+  const dateList=daily.map(r=>String(r.log_date));
+  const byCodeDate=new Map();
+  rows.forEach(r=>{
+    const code=statusCodeValue(r);
+    const date=String(r.log_date);
+    const bucket=topCodes.includes(code)?code:'Other non-200';
+    const key=bucket+'||'+date;
+    byCodeDate.set(key,(byCodeDate.get(key)||0)+Number(r.raw_watch_hours||0));
+  });
+  const series=topCodes.concat(rows.length&&rows.some(r=>!topCodes.includes(statusCodeValue(r)))?['Other non-200']:[]);
+  return makeLineChart(targetId,dateList,series.map((code,i)=>({
+    label:code==='Other non-200'?code:`Status ${code}`,
+    data:dateList.map(d=>byCodeDate.get(code+'||'+d)||0),
+    borderColor:code==='Other non-200'?'#64748b':chartColor(i,series.length),
+    backgroundColor:'transparent',
+    fill:false,
+    tension:.25,
+    pointRadius:0,
+    pointHoverRadius:5,
+    borderWidth:expanded?2:1.35
+  })),expanded,true,true);
+}
+
+function statusRowsForDaily(dailyRows=null){
+  const rows=groupRows(
+    rowsForDates(DAILY_TABLES.status_codes_daily||[],dailyRows||viewDaily),
+    ['statusCode'],
+    ['rows','raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],
+    ['approx_unique_ips'],
+    ['sample_reqPath']
+  );
+  const total=sum(rows,'rows');
+  const whTotal=sum(rows,'raw_watch_hours');
+  rows.forEach(r=>{
+    r.statusCode=statusCodeValue(r);
+    r.meaning=statusMeaning(r.statusCode);
+    r.row_pct=percent(r.rows,total);
+    r.watch_share_pct=percent(r.raw_watch_hours,whTotal);
+  });
+  return topRows(rows,'rows',20);
+}
+
+function renderStatusPie(targetId='statusChart',expanded=false,dailyRows=null){
+  const rows=dailyRows?statusRowsForDaily(dailyRows):aggregateStatus();
+  return makeDoughnut(
+    targetId,
+    rows.map(r=>`Status ${r.statusCode}`),
+    rows.map(r=>r.rows),
+    {percentLabels:false,minSlicePct:expanded?1.15:1.35,cutout:expanded?'54%':'58%'}
+  );
 }
 
 function renderChannelBar(targetId='channelBar',expanded=false,channelRows=null){
@@ -1113,6 +1403,28 @@ function renderFastPlatformChart(targetId='fastPlatformChart',expanded=false,row
   return makeBarChart(targetId,data.map(r=>r.platform_channel),data.map(r=>r.raw_watch_hours),expanded,true);
 }
 
+function renderDeviceStatusChart(targetId='deviceStatusChart',expanded=false,dailyRows=null){
+  const rows=deviceStatusRowsForDaily(dailyRows||viewDaily);
+  return makeDoughnut(
+    targetId,
+    rows.map(r=>r.status_label),
+    rows.map(r=>r.rows),
+    {percentLabels:expanded,minSlicePct:expanded?0.75:1.15,cutout:expanded?'54%':'58%'}
+  );
+}
+
+function renderKnownDeviceChart(targetId='knownDeviceChart',expanded=false,dailyRows=null){
+  const rows=knownDeviceRowsForDaily(dailyRows||viewDaily).slice(0,expanded?35:18);
+  if(targetId==='knownDeviceChart')syncTallChartHeight('knownDeviceChartWrap',rows.length,420,760);
+  return makeBarChart(targetId,rows.map(r=>r.device_display),rows.map(r=>r.watch_hours),expanded,true,'TS watch hours');
+}
+
+function renderUnknownDeviceChart(targetId='unknownDeviceChart',expanded=false,dailyRows=null){
+  const rows=unknownDeviceRowsForDaily(dailyRows||viewDaily).slice(0,expanded?35:18);
+  if(targetId==='unknownDeviceChart')syncTallChartHeight('unknownDeviceChartWrap',rows.length,420,760);
+  return makeBarChart(targetId,rows.map(r=>r.device_code||'Unknown code'),rows.map(r=>r.rows),expanded,false,'Rows');
+}
+
 function renderRegionInsightChart(targetId='regionInsightChart',expanded=false,geo=null){
   const rows=(geo||buildGeoBreakdown()).india_regions||[];
   if(targetId==='regionInsightChart')syncTallChartHeight('regionInsightChartWrap',rows.length,430,780);
@@ -1149,15 +1461,22 @@ function renderCharts(){
   renderChannelInsightHours();
   renderChannelAverageCharts();
   renderFastPlatformChart();
+  renderDeviceStatusChart();
+  renderKnownDeviceChart();
+  renderUnknownDeviceChart();
   renderRegionInsightChart();
   renderRegionCountryChart();
-  const st=(aggregateStatus()||[]).slice(0,8);
-  makeDoughnut('statusChart',st.map(r=>String(r.statusCode)),st.map(r=>r.rows));
+  renderReliabilityWatchHoursTrend();
+  renderReliabilityNon200Trend();
+  renderStatusPie();
 }
 
 function renderSingleChart(sourceId,targetId,expanded=false,dailyRows=null){
   const daily=dailyRows||viewDaily||[];
   if(sourceId==='dailyChart')return renderDailyVolume(targetId,expanded,daily);
+  if(sourceId==='statusChart')return renderStatusPie(targetId,expanded,daily);
+  if(sourceId==='reliabilityWatchHoursTrend')return renderReliabilityWatchHoursTrend(targetId,expanded,daily);
+  if(sourceId==='reliabilityNon200Trend')return renderReliabilityNon200Trend(targetId,expanded,daily);
   if(sourceId==='channelTrend'||sourceId==='channelBar'){
     const channels=aggregateChannels(daily);
     if(sourceId==='channelTrend')return renderChannelTrend(targetId,expanded,daily,channels);
@@ -1169,6 +1488,9 @@ function renderSingleChart(sourceId,targetId,expanded=false,dailyRows=null){
     return renderChannelAverageChart(targetId,expanded,audience,sourceId);
   }
   if(sourceId==='fastPlatformChart')return renderFastPlatformChart(targetId,expanded,fastPlatformRowsForDaily(daily));
+  if(sourceId==='deviceStatusChart')return renderDeviceStatusChart(targetId,expanded,daily);
+  if(sourceId==='knownDeviceChart')return renderKnownDeviceChart(targetId,expanded,daily);
+  if(sourceId==='unknownDeviceChart')return renderUnknownDeviceChart(targetId,expanded,daily);
   if(sourceId==='regionInsightChart'||sourceId==='regionCountryChart'){
     const geo=buildGeoBreakdownForDaily(daily);
     if(sourceId==='regionInsightChart')return renderRegionInsightChart(targetId,expanded,geo);
@@ -1182,9 +1504,9 @@ function setActiveModalPreset(id){['modalDashboard','modalAll','modal30','modal7
 function openChartModal(id){
   if(typeof Chart==='undefined')return;
   modalChartSourceId=id;
-  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split'};
+  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',deviceStatusChart:'Device Decode Coverage',knownDeviceChart:'Top Known Devices',unknownDeviceChart:'Top Unknown Device Codes',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split',reliabilityWatchHoursTrend:'Watch Hours By Status',reliabilityNon200Trend:'Non-200 Status Watch Hours',statusChart:'Status Codes'};
   document.getElementById('modalTitle').textContent=titles[id]||'Chart';
-  const isRankModal=id==='channelBar'||!!CHANNEL_AVG_CHARTS[id];
+  const isRankModal=id==='channelBar'||id==='knownDeviceChart'||id==='unknownDeviceChart'||!!CHANNEL_AVG_CHARTS[id];
   document.querySelector('#chartModal .chart-modal')?.classList.toggle('rank-modal',isRankModal);
   document.querySelector('#chartModal .modal-chart-wrap')?.classList.toggle('rank-modal-wrap',isRankModal);
   const isTrend=id==='channelTrend';
@@ -1225,6 +1547,16 @@ function syncModalInputs(){
 
 function renderModalStats(){
   const daily=modalDaily||[];
+  if(['deviceStatusChart','knownDeviceChart','unknownDeviceChart'].includes(modalChartSourceId)){
+    const m=deviceDecodeMetricsForDaily(daily);
+    document.getElementById('modalStats').innerHTML=[
+      mini('Known Rows',fmt(m.known_rows)),
+      mini('Unknown Code Rows',fmt(m.unknown_code_rows)),
+      mini('OS Bucket Rows',fmt(m.bucket_rows)),
+      mini('Unknown Codes',fmt(m.unknown_code_count))
+    ].join('');
+    return;
+  }
   const channels=aggregateChannels(daily);
   const rawHours=sum(daily,'raw_watch_hours')||sum(channels,'raw_watch_hours');
   const s200Hours=sum(daily,'status_200_watch_hours')||sum(channels,'status_200_watch_hours');
@@ -1481,6 +1813,12 @@ function renderTables(){
   const deviceRows=aggregateDevice();
   const asnRows=aggregateAsn();
   const uaRows=aggregateUa();
+  const deviceStatusRows=aggregateDeviceDecodeStatus();
+  const knownDeviceRows=aggregateKnownDevices();
+  const unknownDeviceRows=aggregateUnknownDevices();
+  const deviceBucketRows=aggregateDeviceBuckets();
+  const decodedUaRows=aggregateDecodedUa();
+  const deviceDecodeMetrics=deviceDecodeMetricsForDaily(viewDaily);
   const statusRows=aggregateStatus();
   const cacheRows=aggregateCache();
   const hostRows=aggregateHosts();
@@ -1492,7 +1830,8 @@ function renderTables(){
   const cmcd=aggregateCmcd();
   const channelAudienceRows=aggregateChannelAudience();
   const fastPlatformRows=aggregateFastPlatforms();
-  const wh={fn:v=>fmtH(v),num:true};const n={fn:v=>fmt(v),num:true};const p={fn:v=>fmtPct(v),num:true};const gf={watch_hours:wh,share_pct:p,approx_unique_ips:n};
+  const wh={fn:v=>fmtH(v),num:true};const n={fn:v=>fmt(v),num:true};const p={fn:v=>fmtPct(v),num:true};const sample={fn:v=>clipText(v,150)};const gf={watch_hours:wh,share_pct:p,approx_unique_ips:n};
+  const statusMeaningRows=(statusRows||[]).map(r=>({statusCode:r.statusCode,meaning:r.meaning}));
 
   document.getElementById('channelTable').innerHTML=table(
     viewChannels||[],
@@ -1578,7 +1917,102 @@ function renderTables(){
   document.getElementById('deviceTable').innerHTML=table(deviceRows,[{key:'channel_name',label:'Channel'},{key:'device_type',label:'Device'},{key:'watch_hours',label:'Watch Hours'},{key:'approx_unique_ips',label:'Approx IPs'}],{watch_hours:wh,approx_unique_ips:n});
   document.getElementById('asnTable').innerHTML=table(asnRows,[{key:'asn',label:'ASN'},{key:'as_name',label:'Network'},{key:'asn_type',label:'Type'},{key:'as_country',label:'Country'},{key:'watch_hours',label:'Watch Hours'},{key:'approx_unique_ips',label:'Approx IPs'},{key:'sample_reqHost',label:'Sample Host'}],{watch_hours:wh,approx_unique_ips:n});
   document.getElementById('uaTable').innerHTML=table(uaRows,[{key:'UA',label:'User Agent'},{key:'rows',label:'Rows'},{key:'approx_unique_ips',label:'Approx IPs'}],{rows:n,approx_unique_ips:n});
-  document.getElementById('statusTable').innerHTML=table(statusRows,[{key:'statusCode',label:'Status'},{key:'meaning',label:'Meaning'},{key:'rows',label:'Rows'},{key:'row_pct',label:'Share'},{key:'approx_unique_ips',label:'Approx IPs'},{key:'sample_reqPath',label:'Sample Path'}],{rows:n,row_pct:p,approx_unique_ips:n});
+  document.getElementById('deviceDecodeMetrics').innerHTML=[
+    mini('Decode Profile',DEVICE_DECODE.available?'Available':'Missing'),
+    mini('Profile Window',deviceProfileWindow()),
+    mini('UA Cache Rows',fmt((DEVICE_DECODE.ua_cache||[]).length)),
+    mini('Known Rows',fmt(deviceDecodeMetrics.known_rows)),
+    mini('Unknown Code Rows',fmt(deviceDecodeMetrics.unknown_code_rows)),
+    mini('OS Bucket Rows',fmt(deviceDecodeMetrics.bucket_rows)),
+    mini('Unknown / NA Rows',fmt(deviceDecodeMetrics.unknown_na_rows)),
+    mini('Known Codes',fmt(deviceDecodeMetrics.known_code_count)),
+    mini('Unknown Codes',fmt(deviceDecodeMetrics.unknown_code_count)),
+    mini('Decoded Share',fmtPct(percent(deviceDecodeMetrics.known_rows,deviceDecodeMetrics.total_rows)))
+  ].join('');
+  document.getElementById('decodedDeviceTable').innerHTML=table(
+    knownDeviceRows,
+    [
+      {key:'device_display',label:'Device'},
+      {key:'vendor',label:'Vendor'},
+      {key:'product_family',label:'Family'},
+      {key:'generation',label:'Generation'},
+      {key:'device_code',label:'Code'},
+      {key:'watch_hours',label:'TS Hours'},
+      {key:'rows',label:'Rows'},
+      {key:'ts_rows',label:'.ts Rows'},
+      {key:'approx_ips',label:'Approx IPs'},
+      {key:'signal_label',label:'Signal'},
+      {key:'sample_UA',label:'Sample UA'}
+    ],
+    {watch_hours:wh,rows:n,ts_rows:n,approx_ips:n,sample_UA:sample}
+  );
+  document.getElementById('unknownDeviceTable').innerHTML=table(
+    unknownDeviceRows,
+    [
+      {key:'device_code',label:'Unknown Code'},
+      {key:'rows',label:'Rows'},
+      {key:'watch_hours',label:'TS Hours'},
+      {key:'ts_rows',label:'.ts Rows'},
+      {key:'approx_ips',label:'Approx IPs'},
+      {key:'signal_label',label:'Signal'},
+      {key:'sample_reqHost',label:'Host Evidence'},
+      {key:'sample_UA',label:'Sample UA'}
+    ],
+    {rows:n,watch_hours:wh,ts_rows:n,approx_ips:n,sample_UA:sample}
+  );
+  document.getElementById('deviceBucketTable').innerHTML=table(
+    deviceBucketRows,
+    [
+      {key:'device_display',label:'OS / Device Bucket'},
+      {key:'signal_label',label:'Signal'},
+      {key:'rows',label:'Rows'},
+      {key:'watch_hours',label:'TS Hours'},
+      {key:'ts_rows',label:'.ts Rows'},
+      {key:'approx_ips',label:'Approx IPs'},
+      {key:'sample_UA',label:'Sample UA'}
+    ],
+    {rows:n,watch_hours:wh,ts_rows:n,approx_ips:n,sample_UA:sample}
+  );
+  document.getElementById('decodedUaTable').innerHTML=table(
+    decodedUaRows,
+    [
+      {key:'UA',label:'User Agent'},
+      {key:'device_display',label:'Device'},
+      {key:'device_type',label:'Type'},
+      {key:'os_display',label:'OS'},
+      {key:'browser_display',label:'Browser'},
+      {key:'status_label',label:'Decode Status'},
+      {key:'rows',label:'Rows'},
+      {key:'watch_hours',label:'TS Hours'},
+      {key:'approx_ips',label:'Approx IPs'},
+      {key:'first_date',label:'First Seen'},
+      {key:'last_date',label:'Last Seen'}
+    ],
+    {UA:sample,rows:n,watch_hours:wh,approx_ips:n}
+  );
+  document.getElementById('statusMeaningTable').innerHTML=table(statusMeaningRows,[{key:'statusCode',label:'Status'},{key:'meaning',label:'Meaning'}]);
+  document.getElementById('statusTable').innerHTML=table(
+    statusRows,
+    [
+      {key:'statusCode',label:'Status'},
+      {key:'meaning',label:'Meaning'},
+      {key:'rows',label:'Rows'},
+      {key:'row_pct',label:'Row Share'},
+      {key:'raw_watch_hours',label:'Raw Watch Hours'},
+      {key:'watch_share_pct',label:'Watch Share'},
+      {key:'status_200_watch_hours',label:'Status 200 Hours'},
+      {key:'approx_unique_ips',label:'Approx IPs'},
+      {key:'sample_reqPath',label:'Sample Path'}
+    ],
+    {
+      rows:n,
+      row_pct:p,
+      raw_watch_hours:wh,
+      watch_share_pct:p,
+      status_200_watch_hours:wh,
+      approx_unique_ips:n
+    }
+  );
   document.getElementById('cacheTable').innerHTML=table(cacheRows,[{key:'reqHost',label:'Host'},{key:'rows',label:'Rows'},{key:'cache_hit_rows',label:'Hit Rows'},{key:'cache_hit_pct',label:'Hit %'}],{rows:n,cache_hit_rows:n,cache_hit_pct:p});
   document.getElementById('hostTable').innerHTML=table(hostRows,[{key:'reqHost',label:'Host'},{key:'rows',label:'Rows'},{key:'non_200_pct',label:'Non-200 %'},{key:'ts_rows',label:'.ts Rows'},{key:'approx_unique_ips',label:'Approx IPs'}],{rows:n,non_200_pct:p,ts_rows:n,approx_unique_ips:n});
   document.getElementById('errorTable').innerHTML=table(errorRows,[{key:'reqHost',label:'Host'},{key:'statusCode',label:'Status'},{key:'errorCode',label:'Error'},{key:'rows',label:'Rows'},{key:'sample_reqPath',label:'Sample Path'}],{rows:n});
@@ -1591,13 +2025,16 @@ function renderTables(){
   setCount('channelCount',viewChannels);setCount('channelCardsCount',channelAudienceRows,'channels');setCount('channelInsightCount',channelAudienceRows,'channels');setCount('fastPlatformCount',fastPlatformRows,'rows');setCount('regionCardsCount',geo.india_regions,'regions');setCount('regionInsightCount',geo.india_regions,'regions');setCount('regionCountryCount',geo.country_split,'groups');setCount('querySummaryCount',D.query_summary);setCount('queryNonOkCount',D.query_non_ok);setCount('queryParamKeysCount',qkeyRows);setCount('queryMChannelCount',qmRows);setCount('unmappedCount',unmappedRows);setCount('mappingQualityCount',mqRows);
   setCount('geoCountryCount',geo.country_split);setCount('deviceCount',deviceRows);setCount('geoIndiaRegionCount',geo.india_regions);setCount('geoIndiaCityCount',geo.india_cities);
   setCount('geoOtherRegionCount',geo.other_regions);setCount('geoOtherCityCount',geo.other_cities);setCount('asnCount',asnRows);setCount('uaCount',uaRows);
+  setCount('deviceStatusCount',deviceStatusRows,'groups');setCount('knownDeviceCount',knownDeviceRows,'devices');setCount('unknownDeviceCount',unknownDeviceRows,'codes');
+  setCount('decodedDeviceTableCount',knownDeviceRows,'devices');setCount('unknownDeviceTableCount',unknownDeviceRows,'codes');setCount('deviceBucketCount',deviceBucketRows,'buckets');setCount('decodedUaCount',decodedUaRows,'UAs');
   setCount('statusCount',statusRows);setCount('cacheCount',cacheRows);setCount('hostCount',hostRows);setCount('errorCount',errorRows);setCount('performanceCount',D.performance);
+  setCount('statusMeaningCount',statusMeaningRows,'codes');
   setCount('fillCount',D.column_fill);setCount('extensionCount',extRows);setCount('queryParamCount',13,'metrics');setCount('cmcdCount',5,'metrics');
 }
 
 // ── Tab init & header ─────────────────────────────────────────────────────────
 function initTabs(){
-  const tabs=[['overview','Overview'],['channels','Channel'],['regions','State / Region'],['mapping','Mapping QA'],['audience','Audience'],['reliability','Reliability'],['quality','Data Quality']];
+  const tabs=[['overview','Overview'],['channels','Channel'],['regions','State / Region'],['mapping','Mapping QA'],['audience','Audience'],['devices','Devices & OS'],['reliability','Reliability'],['quality','Data Quality']];
   document.getElementById('tabs').innerHTML=tabs.map(([id,label],i)=>`<button class="tab-btn ${i===0?'active':''}" onclick="showTab('${id}',this)">${label}</button>`).join('');
 }
 function showTab(id,btn){document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');setTimeout(renderCharts,0);}

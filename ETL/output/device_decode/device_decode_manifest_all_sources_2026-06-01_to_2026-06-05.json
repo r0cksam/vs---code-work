@@ -1,0 +1,13 @@
+{
+  "generated_at_utc": "2026-06-05T12:18:40.842994+00:00",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "map": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\config\\device_decode\\amazon_fire_tv_models.csv",
+  "source": "all",
+  "start": "2026-06-01",
+  "end": "2026-06-05",
+  "outputs": {
+    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\device_decode_summary_all_sources_2026-06-01_to_2026-06-05.parquet",
+    "unknown_codes": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\unknown_device_codes_all_sources_2026-06-01_to_2026-06-05.csv",
+    "top_user_agents": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\top_user_agents_all_sources_2026-06-01_to_2026-06-05.parquet"
+  }
+}

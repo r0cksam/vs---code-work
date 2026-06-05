@@ -367,6 +367,24 @@ def main() -> None:
     )
     parser.add_argument("--dry-run", action="store_true", help="Run dashboards in validation mode where supported.")
 
+    # UA decode cache controls
+    parser.add_argument(
+        "--run-ua-profile",
+        action="store_true",
+        help="Build distinct User-Agent profile and local decode cache before dashboards.",
+    )
+    parser.add_argument(
+        "--ua-profile-window-days",
+        type=int,
+        default=None,
+        help="Rolling lake window for UA profile. Defaults to 7 days when --run-ua-profile has no explicit range.",
+    )
+    parser.add_argument("--ua-profile-start", default=None, help="UA profile IST start date YYYY-MM-DD.")
+    parser.add_argument("--ua-profile-end", default=None, help="UA profile IST end date YYYY-MM-DD.")
+    parser.add_argument("--ua-profile-source", choices=["stream", "fast"], default=None)
+    parser.add_argument("--ua-api-limit", type=int, default=0, help="Optional whatmyuseragent.com API decode count.")
+    parser.add_argument("--ua-min-rows-for-api", type=int, default=1)
+
     args = parser.parse_args()
 
     base_root = Path(args.base).resolve()
@@ -393,6 +411,7 @@ def main() -> None:
         and args.skip_overview
         and args.skip_deep_profile
         and args.skip_device_snapshot
+        and not args.run_ua_profile
     ):
         raise SystemExit("Nothing to run. Remove one skip flag.")
 
@@ -401,7 +420,12 @@ def main() -> None:
     overview_data_dir.mkdir(parents=True, exist_ok=True)
     overview_html.parent.mkdir(parents=True, exist_ok=True)
 
-    needs_lake = (not args.skip_deep_profile) or (not args.skip_device_snapshot) or (not args.skip_overview)
+    needs_lake = (
+        (not args.skip_deep_profile)
+        or (not args.skip_device_snapshot)
+        or (not args.skip_overview)
+        or args.run_ua_profile
+    )
     if args.skip_etl and needs_lake and not lake_root.exists():
         raise SystemExit(f"Lake folder not found: {lake_root}. Run 03.py first or re-check --base.")
 
@@ -464,6 +488,10 @@ def main() -> None:
     snapshot_generator_script = _local_script(
         etl_root,
         str(Path("src") / "overview" / "deviceSnapshotGenerator.py"),
+    )
+    ua_profile_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "profile_user_agents.py"),
     )
 
     if not args.skip_etl:
@@ -660,6 +688,49 @@ def main() -> None:
         )
     else:
         print("\n[skip] device snapshot step skipped.")
+
+    if args.run_ua_profile:
+        ua_start = args.ua_profile_start
+        ua_end = args.ua_profile_end
+        if not (ua_start and ua_end):
+            if args.etl1_daily_date:
+                daily_dates = _daily_profile_dates(lake_root, date.fromisoformat(args.etl1_daily_date))
+                if daily_dates:
+                    ua_start = min(daily_dates).isoformat()
+                    ua_end = max(daily_dates).isoformat()
+                else:
+                    ua_start = args.etl1_daily_date
+                    ua_end = args.etl1_daily_date
+            else:
+                ua_start, ua_end = _build_profile_range(lake_root, args.ua_profile_window_days or 7)
+
+        ua_cmd = [
+            python,
+            str(ua_profile_script),
+            "--lake",
+            str(lake_root),
+            "--out-dir",
+            str(output_root / "device_decode"),
+            "--cache",
+            str(base_root / "cache" / "device_decode" / "ua_decode_cache.parquet"),
+            "--threads",
+            str(max(1, min(args.deep_profile_threads, 4))),
+            "--memory-limit",
+            "12GB",
+            "--api-limit",
+            str(args.ua_api_limit),
+            "--min-rows-for-api",
+            str(args.ua_min_rows_for_api),
+        ]
+        if ua_start and ua_end:
+            ua_cmd.extend(["--start", ua_start, "--end", ua_end])
+        if args.ua_profile_source:
+            ua_cmd.extend(["--source", args.ua_profile_source])
+        if args.dry_run:
+            ua_cmd.append("--dry-run")
+        run(ua_cmd, cwd=etl_root, env=env, step_name="ua_distinct_profile_decode_cache", log_dir=log_dir)
+    else:
+        print("\n[skip] UA profile/cache step skipped.")
 
     if not args.skip_overview:
         run(

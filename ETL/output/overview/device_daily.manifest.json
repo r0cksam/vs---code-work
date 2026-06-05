@@ -439,6 +439,6 @@
       "mtime_ns_sum": 3561270949764664000
     }
   },
-  "signature_basis": "parquet files grouped by lake year/month/day, using count, bytes, and mtimes",
-  "version": 1
+  "signature_basis": "parquet files grouped by lake year/month/day, using count, bytes, mtimes, and source-aware device_daily schema",
+  "version": 2
 }

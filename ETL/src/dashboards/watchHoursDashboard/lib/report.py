@@ -4,6 +4,7 @@ lib/report.py — Orchestrates data loading and assembles the full report dict.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,131 @@ DEFAULT_ASN_DECODED_CSV = Path(
         str(Path(__file__).resolve().parents[4] / "data" / "asn" / "asnDecoded.csv"),
     )
 )
+
+DEFAULT_DEVICE_DECODE_DIR = Path(
+    os.getenv(
+        "VG_DEVICE_DECODE_DIR",
+        str(Path(__file__).resolve().parents[4] / "output" / "device_decode"),
+    )
+)
+
+
+def _latest_file(folder: Path, pattern: str) -> Path | None:
+    if not folder.exists():
+        return None
+    files = [p for p in folder.glob(pattern) if p.is_file()]
+    if not files:
+        return None
+    return max(files, key=lambda p: p.stat().st_mtime)
+
+
+def _read_parquet_safe(path: Path | None) -> pd.DataFrame:
+    if not path or not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_parquet(path)
+    except (OSError, ValueError, ImportError):
+        return pd.DataFrame()
+
+
+def _read_csv_safe(path: Path | None) -> pd.DataFrame:
+    if not path or not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except (OSError, ValueError):
+        return pd.DataFrame()
+
+
+def _read_json_safe(path: Path | None) -> dict:
+    if not path or not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _clean_decode_samples(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in ["log_date", "first_date", "last_date"]:
+        if col in out.columns:
+            out[col] = pd.to_datetime(out[col], errors="coerce").dt.strftime("%Y-%m-%d")
+    for col in ["sample_UA", "sample_reqPath", "sample_reqHost", "UA"]:
+        if col in out.columns:
+            out[col] = out[col].map(_clean_encoded_value)
+    return out
+
+
+def load_device_decode_outputs(folder: Path = DEFAULT_DEVICE_DECODE_DIR) -> dict:
+    summary_path = _latest_file(folder, "device_decode_summary_*.parquet")
+    unknown_path = _latest_file(folder, "unknown_device_codes_*.csv")
+    ua_path = _latest_file(folder, "top_user_agents_*.parquet")
+    ua_cache_path = _latest_file(folder, "ua_decode_enriched_*.parquet")
+    manifest_path = _latest_file(folder, "device_decode_manifest_*.json")
+
+    summary = with_numbers(
+        _clean_decode_samples(_read_parquet_safe(summary_path)),
+        ["rows", "ts_rows", "status_200_rows", "approx_ips", "distinct_device_ids"],
+    )
+    unknown = with_numbers(
+        _clean_decode_samples(_read_csv_safe(unknown_path)),
+        ["rows", "ts_rows", "approx_ips"],
+    )
+    top_ua = with_numbers(
+        _clean_decode_samples(_read_parquet_safe(ua_path)),
+        ["rows", "approx_ips"],
+    )
+    if not top_ua.empty:
+        top_ua = top_ua.sort_values("rows", ascending=False).head(500)
+    ua_cache = with_numbers(
+        _clean_decode_samples(_read_parquet_safe(ua_cache_path)),
+        ["rows", "ts_rows", "status_200_ts_rows", "watch_hours", "status_200_watch_hours", "approx_ips"],
+    )
+    if not ua_cache.empty:
+        ua_cache = ua_cache.sort_values("rows", ascending=False).head(500)
+
+    return {
+        "available": bool(summary_path and not summary.empty),
+        "source_dir": str(folder),
+        "files": {
+            "summary": str(summary_path) if summary_path else "",
+            "unknown_codes": str(unknown_path) if unknown_path else "",
+            "top_user_agents": str(ua_path) if ua_path else "",
+            "ua_cache": str(ua_cache_path) if ua_cache_path else "",
+            "manifest": str(manifest_path) if manifest_path else "",
+        },
+        "manifest": _read_json_safe(manifest_path),
+        "summary": records(
+            summary,
+            [
+                "log_date", "source", "decode_status", "signal_source", "vendor",
+                "device_code", "decoded_device_name", "product_family", "generation",
+                "model_number", "release_year", "platform", "query_device", "rows",
+                "ts_rows", "status_200_rows", "approx_ips", "distinct_device_ids",
+                "sample_UA", "sample_reqHost", "sample_reqPath",
+            ],
+        ),
+        "unknown_codes": records(
+            unknown,
+            ["device_code", "rows", "ts_rows", "approx_ips", "first_date", "last_date", "sample_UA", "sample_reqHost"],
+            250,
+        ),
+        "top_user_agents": records(
+            top_ua,
+            ["source", "decode_status", "signal_source", "device_code", "decoded_device_name", "UA", "rows", "approx_ips", "first_date", "last_date"],
+        ),
+        "ua_cache": records(
+            ua_cache,
+            [
+                "source", "ua_hash", "ua_norm_key", "ua_sample", "rows", "ts_rows",
+                "status_200_ts_rows", "watch_hours", "status_200_watch_hours",
+                "approx_ips", "first_date", "last_date", "decoder", "decode_status",
+                "device_type", "brand", "model", "os_name", "os_version", "os_family",
+                "browser_name", "browser_version", "browser_engine", "bot_name",
+            ],
+        ),
+    }
 
 
 def _clean_encoded_value(value: object) -> object:
@@ -219,6 +345,7 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     )
     true_range  = true_data_range(file_dates, files)
     daily_tables = read_all_daily_tables(profile_dir)
+    device_decode = load_device_decode_outputs()
     encoded_display_fields = {"state", "city", "sample_reqPath", "sample_value", "userAgent", "UA"}
     for rows in daily_tables.values():
         for row in rows:
@@ -285,6 +412,7 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
         "performance":        records(perf_slowest,                                             ["reqHost", "extension", "rows", "ttfb_p50_ms", "ttfb_p95_ms", "transfer_p95_ms", "throughput_p50", "throughput_p05"], 30),
         "geo":                build_geo_breakdown(geo),
         "device":             records(device.sort_values("watch_hours", ascending=False),       ["channel_name", "device_type", "watch_hours", "approx_unique_ips"], 30),
+        "device_decode":      device_decode,
         "asn":                records(asn.sort_values("watch_hours", ascending=False),          ["asn", "as_name", "as_country", "asn_type", "watch_hours", "approx_unique_ips", "distinct_hosts", "sample_reqHost"], 25),
         "ua":                 records(ua.sort_values("rows", ascending=False),                  ["UA", "rows", "approx_unique_ips", "distinct_hosts"], 20),
         "query_summary":      records(query_summary,                                            ["review_status", "rows", "requests", "sessions", "devices"]),

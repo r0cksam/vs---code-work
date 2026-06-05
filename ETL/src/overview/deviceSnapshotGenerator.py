@@ -31,6 +31,7 @@ DEFAULT_CSV_OUT = Path(os.getenv("VG_DEVICE_SNAPSHOT_OUT", str(ETL_ROOT / "outpu
 DEFAULT_DAILY_CSV_OUT = Path(os.getenv("VG_DEVICE_DAILY_OUT", str(ETL_ROOT / "output" / "overview" / "device_daily.csv")))
 IST_OFFSET_SECONDS = 19_800
 DAILY_COLUMNS = [
+    "source",
     "device_id",
     "utc_date",
     "rows_on_date",
@@ -133,8 +134,8 @@ def save_daily_manifest(path: Path, signatures: dict[str, dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"_{path.name}.tmp")
     payload = {
-        "version": 1,
-        "signature_basis": "parquet files grouped by lake year/month/day, using count, bytes, and mtimes",
+        "version": 2,
+        "signature_basis": "parquet files grouped by lake year/month/day, using count, bytes, mtimes, and source-aware device_daily schema",
         "days": dict(sorted(signatures.items())),
     }
     with tmp.open("w", encoding="utf-8") as f:
@@ -193,6 +194,17 @@ def existing_daily_dates(con: duckdb.DuckDBPyConnection, daily_csv: Path) -> set
         FROM read_csv_auto('{sql_path(daily_csv)}', HEADER=true)
     """).fetchall()
     return {str(row[0]) for row in rows if row and row[0]}
+
+
+def csv_has_column(path: Path, column: str) -> bool:
+    if not path.exists():
+        return False
+    try:
+        with path.open("r", encoding="utf-8", newline="") as f:
+            header = f.readline().strip()
+        return column in {part.strip() for part in header.split(",")}
+    except OSError:
+        return False
 
 
 def date_list_sql(dates: set[str]) -> str:
@@ -272,10 +284,12 @@ def run_snapshot(
 
     has_ip = "cliIP" in cols
     has_ua = "UA" in cols
+    has_source = "source" in cols
 
     reader = lake_reader(lake_root)
     device_expr = qs_extract("queryStr", "device_id")
     session_expr = qs_extract("queryStr", "session_id")
+    source_select = "LOWER(COALESCE(NULLIF(CAST(source AS VARCHAR), ''), 'stream')) AS source" if has_source else "'stream' AS source"
     ip_select = "cliIP" if has_ip else "NULL AS cliIP"
     ua_select = "UA" if has_ua else "NULL AS UA"
     ip_expr = "COUNT(DISTINCT cliIP)" if has_ip else "0"
@@ -286,6 +300,7 @@ def run_snapshot(
         COPY (
             WITH base AS (
                 SELECT
+                    {source_select},
                     {device_expr} AS device_id,
                     {ist_date_expr} AS utc_date,
                     {ip_select},
@@ -298,6 +313,7 @@ def run_snapshot(
                   {date_filter}
             )
             SELECT
+                source,
                 device_id,
                 utc_date,
                 COUNT(*) AS rows_on_date,
@@ -305,8 +321,8 @@ def run_snapshot(
                 {ipua_expr} AS distinct_ip_ua,
                 COUNT(DISTINCT session_id) AS distinct_sessions
             FROM base
-            GROUP BY device_id, utc_date
-            ORDER BY utc_date DESC, rows_on_date DESC
+            GROUP BY source, device_id, utc_date
+            ORDER BY utc_date DESC, source, rows_on_date DESC
         ) TO '{daily_out}' (HEADER, DELIMITER ',');
     """
 
@@ -342,6 +358,7 @@ def run_snapshot(
     try:
         previous_manifest = load_daily_manifest(manifest_path)
         csv_dates = existing_daily_dates(con, daily_csv)
+        daily_has_source = csv_has_column(daily_csv, "source")
 
         full_replace = False
         if not day_signatures:
@@ -351,14 +368,17 @@ def run_snapshot(
             date_filter = ""
             daily_needs_refresh = True
             full_replace = True
-        elif not daily_csv.exists() or not previous_manifest:
-            refresh_dates = current_dates | (csv_dates - current_dates)
+        elif not daily_csv.exists() or not previous_manifest or not daily_has_source:
+            refresh_dates = current_dates
             refresh_query_dates = current_dates
             daily_needs_refresh = True
+            full_replace = bool(daily_csv.exists() and not daily_has_source)
             date_filter = (
                 f"AND {ist_date_expr} IN "
                 f"({date_list_sql(refresh_query_dates)})"
             )
+            if full_replace:
+                log.info("Existing device_daily.csv is not source-aware; rebuilding it once.")
         else:
             changed_dates = {
                 day
@@ -390,6 +410,7 @@ def run_snapshot(
         if daily_needs_refresh:
             if refresh_query_dates or not day_signatures:
                 daily_sql = daily_sql_template.format(
+                    source_select=source_select,
                     device_expr=device_expr,
                     session_expr=session_expr,
                     ip_select=ip_select,

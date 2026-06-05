@@ -16,6 +16,8 @@ def read_device_data(snapshot_path: Path, daily_path: Path) -> tuple[list, list,
     device_idx: dict[str, int] = {}
     first_seen_counts: dict[str, int] = {}
     daily_map: dict[str, dict] = {}
+    first_seen_by_device: dict[int, str] = {}
+    first_seen_by_source_device: dict[tuple[str, int], str] = {}
 
     # ── Snapshot CSV ─────────────────────────────────────────────────────────
     if snapshot_path.exists():
@@ -45,24 +47,53 @@ def read_device_data(snapshot_path: Path, daily_path: Path) -> tuple[list, list,
                 device_id = r.get("device_id", "")
                 if not d or not device_id:
                     continue
+                source = (r.get("source") or "stream").strip().lower() or "stream"
                 idx = device_idx.get(device_id)
                 if idx is None:
                     idx = len(device_idx)
                     device_idx[device_id] = idx
+                old_first = first_seen_by_device.get(idx)
+                if old_first is None or d < old_first:
+                    first_seen_by_device[idx] = d
+                source_key = (source, idx)
+                old_source_first = first_seen_by_source_device.get(source_key)
+                if old_source_first is None or d < old_source_first:
+                    first_seen_by_source_device[source_key] = d
                 item = daily_map.setdefault(
-                    d, {"date": d, "devices": set(), "rows": 0, "sessions": 0}
+                    d, {"date": d, "devices": set(), "rows": 0, "sessions": 0, "sources": {}}
                 )
                 item["devices"].add(idx)
                 item["rows"] += int(coerce_float(r.get("rows_on_date")))
                 item["sessions"] += int(coerce_float(r.get("distinct_sessions")))
+                source_item = item["sources"].setdefault(
+                    source, {"devices": set(), "rows": 0, "sessions": 0}
+                )
+                source_item["devices"].add(idx)
+                source_item["rows"] += int(coerce_float(r.get("rows_on_date")))
+                source_item["sessions"] += int(coerce_float(r.get("distinct_sessions")))
 
     daily_rows = [
         {
             "date":           k,
             "devices":        sorted(v["devices"]),
             "active_devices": len(v["devices"]),
+            "new_devices":    sum(1 for idx in v["devices"] if first_seen_by_device.get(idx) == k),
             "rows":           v["rows"],
             "sessions":       v["sessions"],
+            "sources": {
+                source: {
+                    "devices": sorted(src_v["devices"]),
+                    "active_devices": len(src_v["devices"]),
+                    "new_devices": sum(
+                        1
+                        for idx in src_v["devices"]
+                        if first_seen_by_source_device.get((source, idx)) == k
+                    ),
+                    "rows": src_v["rows"],
+                    "sessions": src_v["sessions"],
+                }
+                for source, src_v in sorted(v["sources"].items())
+            },
         }
         for k, v in sorted(daily_map.items())
     ]

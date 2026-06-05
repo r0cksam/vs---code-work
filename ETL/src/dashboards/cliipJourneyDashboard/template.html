@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CLIIP Journey Dashboard</title>
+$CHARTJS_TAG
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--ink:#172033;--muted:#64748b;--line:#d8e1ee;--surface:#eef3f8;--panel:#fff;--brand:#173b5c;--teal:#0f766e;--gold:#b58517;--red:#b42318;--green:#2f6b2f;--violet:#5b55a3}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--surface);color:var(--ink);min-height:100vh;-webkit-text-size-adjust:100%}
+.topbar{background:var(--brand);color:#fff;border-bottom:4px solid var(--gold);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.topbar h1{font-size:21px;font-weight:850;line-height:1.15}
+.topbar .sub{font-size:12px;color:#dbe7f2;display:flex;flex-direction:column;gap:3px;text-align:right;line-height:1.35;max-width:min(980px,72vw)}
+.wrap{max-width:1760px;margin:0 auto;padding:22px 28px 34px}
+.filter-bar{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:16px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;box-shadow:0 1px 2px rgba(15,23,42,.05);min-width:0}
+.filter-title{font-size:11px;font-weight:850;text-transform:uppercase;color:#475569;letter-spacing:.04em;margin-right:2px}
+.filter-bar input,.filter-bar select{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:5px;padding:6px 8px;font-size:12px;font-weight:700;font-family:inherit;outline:none;min-height:31px}
+.filter-bar select{min-width:190px}
+.filter-bar input:focus,.filter-bar select:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(23,59,92,.12)}
+.filter-sep{width:1px;height:24px;background:#d8e1ee;flex:0 0 auto}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 18px}
+.tab-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:780;cursor:pointer}
+.tab-btn.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+.tab{display:none}.tab.active{display:block}
+.cards{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:18px}
+.card{flex:0 1 calc((100% - 60px)/7);min-width:160px;background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:8px;padding:12px 14px;text-align:center;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.card.teal{border-top-color:var(--teal)}.card.gold{border-top-color:var(--gold)}.card.red{border-top-color:var(--red)}.card.green{border-top-color:var(--green)}.card.violet{border-top-color:var(--violet)}
+.label{font-size:10px;color:var(--muted);font-weight:850;text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px;line-height:1.15;min-height:23px;text-align:center}
+.value{font-size:24px;font-weight:850;line-height:1.05;color:#172033;overflow-wrap:anywhere}
+.small{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.3}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,500px),1fr));gap:16px;margin-bottom:16px}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:16px;margin-bottom:16px}
+.grid-span-all{grid-column:1/-1}
+.panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05);min-width:0}
+.panel h2{font-size:14px;margin-bottom:11px;color:#24324a;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.panel h2 span{font-size:11px;color:#94a3b8;font-weight:650}
+.chart-box{height:clamp(270px,34vh,420px)}
+.chart-box.tall{height:clamp(360px,48vh,620px)}
+.chart-box.timeline{height:clamp(380px,52vh,660px)}
+canvas{width:100%!important;height:100%!important}
+.table-wrap{overflow:auto;max-height:560px;border:1px solid #e2e8f0;border-radius:7px;background:#fff}
+.chart-box+.table-wrap{margin-top:12px;max-height:280px}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;min-width:760px}
+th{position:sticky;top:0;z-index:2;background:#f8fafc;color:#475569;font-size:10px;text-align:left;padding:8px;border-bottom:1px solid #dbe3ef;white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid #eef2f7;vertical-align:top;color:#1f2937;line-height:1.25}
+tr:hover td{background:#f6f9ff}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.path-cell{max-width:520px;overflow-wrap:anywhere}
+.pill{display:inline-block;padding:2px 7px;border-radius:999px;border:1px solid #d8e1ee;background:#f8fafc;color:#475569;font-size:10px;font-weight:850;white-space:nowrap;line-height:1.2}
+.heatmap{overflow:auto;border:1px solid #e2e8f0;border-radius:7px;background:#fff}
+.heatmap table{min-width:980px}
+.heatmap td,.heatmap th{text-align:right;font-variant-numeric:tabular-nums}
+.heatmap .row-head{text-align:left;font-weight:850;color:#334155;background:#fbfcfe}
+.note{background:#fff;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:8px;padding:11px 14px;color:#475569;font-size:12px;line-height:1.5;margin-bottom:16px}
+.footer{font-size:11px;color:#94a3b8;text-align:center;padding:20px 0 4px}
+@media(max-width:1180px){.card{flex-basis:calc((100% - 24px)/4)}.topbar .sub{max-width:100%;text-align:left}.wrap{padding:18px 20px 30px}}
+@media(max-width:900px){.card{flex-basis:calc((100% - 16px)/3)}.grid-2,.grid-3{grid-template-columns:1fr}.filter-bar select{min-width:150px}.chart-box{height:260px}.chart-box.tall,.chart-box.timeline{height:430px}}
+@media(max-width:680px){.card{flex-basis:calc((100% - 8px)/2);min-width:0}.topbar{padding:16px 18px}.wrap{padding:14px}}
+@media print{.tabs,.filter-bar{display:none}.tab{display:block}body{background:#fff}.panel,.card,.note{box-shadow:none}.table-wrap{max-height:none;overflow:visible}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1 id="reportTitle">CLIIP Journey Dashboard</h1>
+  <div class="sub"><span id="rangeText"></span><span id="genText"></span></div>
+</div>
+<div class="wrap">
+  <div class="filter-bar">
+    <span class="filter-title">Date</span>
+    <input type="date" id="dateStart"/>
+    <span style="font-size:12px;color:#64748b;font-weight:750">to</span>
+    <input type="date" id="dateEnd"/>
+    <span class="filter-sep"></span>
+    <span class="filter-title">Channel</span>
+    <select id="channelSelect"></select>
+    <span class="filter-sep"></span>
+    <span class="filter-title">Metric</span>
+    <select id="metricSelect">
+      <option value="raw_watch_minutes">Raw watch minutes</option>
+      <option value="status_200_watch_minutes">Status 200 minutes</option>
+      <option value="row_count">Rows</option>
+      <option value="playlist_rows">Playlist rows</option>
+      <option value="ts_rows">TS rows</option>
+      <option value="non_200_rows">Non-200 rows</option>
+    </select>
+    <span class="filter-sep"></span>
+    <span class="filter-title">Timeline Day</span>
+    <select id="timelineDate"></select>
+  </div>
+
+  <div class="cards" id="summaryCards"></div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="time">Time Of Day</button>
+    <button class="tab-btn" data-tab="channels">Channels</button>
+    <button class="tab-btn" data-tab="segments">Journey Segments</button>
+    <button class="tab-btn" data-tab="files">Parquet Files</button>
+  </div>
+
+  <section class="tab active" id="overview">
+    <div class="grid-2">
+      <div class="panel"><h2>Daily Volume<span>metric plus row count</span></h2><div class="chart-box"><canvas id="dailyChart"></canvas></div></div>
+      <div class="panel"><h2>Channel Volume<span>selected range</span></h2><div class="chart-box"><canvas id="channelBar"></canvas></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><h2>Daily Channel Switches<span>journey segment transitions</span></h2><div class="chart-box"><canvas id="switchDailyChart"></canvas></div></div>
+      <div class="panel"><h2>Top Channel Switches<span id="switchCount"></span></h2><div class="table-wrap" id="switchTable"></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="time">
+    <div class="grid-2">
+      <div class="panel"><h2>Hour Of Day<span>selected range</span></h2><div class="chart-box"><canvas id="hourChart"></canvas></div></div>
+      <div class="panel"><h2>Daily Hour Heatmap<span>stronger color means higher metric</span></h2><div class="heatmap" id="hourHeatmap"></div></div>
+    </div>
+    <div class="panel grid-span-all"><h2>15-Minute Timeline<span>selected timeline day</span></h2><div class="chart-box timeline"><canvas id="bucketChart"></canvas></div></div>
+  </section>
+
+  <section class="tab" id="channels">
+    <div class="grid-2">
+      <div class="panel grid-span-all"><h2>Channel Summary<span id="channelCount"></span></h2><div class="table-wrap" id="channelTable"></div></div>
+      <div class="panel grid-span-all"><h2>Date And Channel Detail<span id="dateChannelCount"></span></h2><div class="table-wrap" id="dateChannelTable"></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="segments">
+    <div class="note" id="segmentNote"></div>
+    <div class="panel"><h2>Top Journey Segments<span id="segmentCount"></span></h2><div class="table-wrap" id="segmentTable"></div></div>
+  </section>
+
+  <section class="tab" id="files">
+    <div class="grid-2">
+      <div class="panel"><h2>Input Details<span>generated source</span></h2><div class="table-wrap" id="inputTable"></div></div>
+      <div class="panel"><h2>Generated Files<span>parquet and manifest</span></h2><div class="table-wrap" id="fileTable"></div></div>
+    </div>
+  </section>
+
+  <div class="footer">Generated by ETL CLIIP journey dashboard</div>
+</div>
+
+<script>
+const D = $DATA_BLOB;
+const charts = {};
+const metricLabels = {
+  raw_watch_minutes: "Raw watch minutes",
+  status_200_watch_minutes: "Status 200 minutes",
+  row_count: "Rows",
+  playlist_rows: "Playlist rows",
+  ts_rows: "TS rows",
+  non_200_rows: "Non-200 rows"
+};
+const palette = ["#173b5c","#0f766e","#b58517","#5b55a3","#b42318","#2f6b2f","#2563eb","#a855f7","#0e7490","#be123c","#ca8a04","#475569"];
+const state = {
+  start: D.meta.min_date || "",
+  end: D.meta.max_date || "",
+  channel: "all",
+  metric: "raw_watch_minutes",
+  timelineDate: D.meta.max_date || ""
+};
+
+function el(id){return document.getElementById(id);}
+function escapeHtml(value){
+  return String(value == null ? "" : value)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+function n(value){return Number(value || 0);}
+function fmtInt(value){return Math.round(n(value)).toLocaleString("en-IN");}
+function fmtNum(value,digits){
+  const v = n(value);
+  return v.toLocaleString("en-IN",{maximumFractionDigits:digits == null ? 1 : digits});
+}
+function fmtMin(value){return fmtNum(value,1) + " min";}
+function fmtHoursFromMin(value){return fmtNum(n(value) / 60,1) + " hr";}
+function dateOf(value){return String(value || "").slice(0,10);}
+function timeOf(value){return String(value || "").replace("T"," ").slice(0,19);}
+function inDateRange(row, key){
+  const d = dateOf(row[key || "log_date"]);
+  return (!state.start || d >= state.start) && (!state.end || d <= state.end);
+}
+function channelOk(row){
+  return state.channel === "all" || row.channel_name === state.channel;
+}
+function filteredDateChannel(){
+  return D.date_channel.filter(function(row){return inDateRange(row,"log_date") && channelOk(row);});
+}
+function filteredHourly(){
+  return D.hourly.filter(function(row){return inDateRange(row,"log_date") && channelOk(row);});
+}
+function filteredBuckets(){
+  return D.buckets.filter(function(row){
+    return dateOf(row.bucket_start_ist) === state.timelineDate && channelOk(row);
+  });
+}
+function sum(rows,key){return rows.reduce(function(total,row){return total + n(row[key]);},0);}
+function uniqueCount(rows,key){
+  const s = new Set();
+  rows.forEach(function(row){if(row[key] != null && row[key] !== "") s.add(row[key]);});
+  return s.size;
+}
+function groupBy(rows,key){
+  const out = new Map();
+  rows.forEach(function(row){
+    const k = row[key] == null ? "Unknown / NA" : String(row[key]);
+    if(!out.has(k)) out.set(k,{key:k,rows:[]});
+    out.get(k).rows.push(row);
+  });
+  return Array.from(out.values());
+}
+function metricTotal(rows){return sum(rows,state.metric);}
+function sortMetric(rows){return rows.slice().sort(function(a,b){return n(b[state.metric]) - n(a[state.metric]) || n(b.row_count) - n(a.row_count);});}
+
+function makeChart(id, config){
+  if(!window.Chart) return;
+  if(charts[id]) charts[id].destroy();
+  charts[id] = new Chart(el(id), config);
+}
+function lineOptions(yLabel, dual){
+  const scales = {
+    y:{beginAtZero:true,title:{display:true,text:yLabel},ticks:{callback:function(v){return fmtNum(v,0);}}},
+    x:{ticks:{maxRotation:0,autoSkip:true}}
+  };
+  if(dual){
+    scales.y1 = {beginAtZero:true,position:"right",grid:{drawOnChartArea:false},title:{display:true,text:"Rows"},ticks:{callback:function(v){return fmtNum(v,0);}}};
+  }
+  return {
+    responsive:true,
+    maintainAspectRatio:false,
+    interaction:{mode:"index",intersect:false},
+    plugins:{legend:{position:"bottom"},tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label + ": " + fmtNum(ctx.parsed.y,2);}}}},
+    scales:scales
+  };
+}
+function barOptions(yLabel,horizontal){
+  return {
+    indexAxis: horizontal ? "y" : "x",
+    responsive:true,
+    maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return yLabel + ": " + fmtNum(ctx.parsed.x || ctx.parsed.y,2);}}}},
+    scales:{x:{beginAtZero:true,ticks:{callback:function(v){return fmtNum(v,0);}}},y:{ticks:{autoSkip:false}}}
+  };
+}
+
+function initControls(){
+  el("reportTitle").textContent = D.meta.title || "CLIIP Journey Dashboard";
+  el("rangeText").textContent = "True data range: " + (D.meta.min_date || "-") + " to " + (D.meta.max_date || "-") + " IST";
+  el("genText").textContent = "Last updated " + (D.meta.generated || "-");
+  el("dateStart").min = D.meta.min_date || "";
+  el("dateStart").max = D.meta.max_date || "";
+  el("dateStart").value = state.start;
+  el("dateEnd").min = D.meta.min_date || "";
+  el("dateEnd").max = D.meta.max_date || "";
+  el("dateEnd").value = state.end;
+
+  const channels = D.channel_summary.map(function(row){return row.channel_name;}).sort(function(a,b){return a.localeCompare(b);});
+  el("channelSelect").innerHTML = "<option value=\"all\">All channels</option>" + channels.map(function(name){
+    return "<option value=\"" + escapeHtml(name) + "\">" + escapeHtml(name) + "</option>";
+  }).join("");
+
+  const dates = Array.from(new Set(D.daily.map(function(row){return row.log_date;}))).sort();
+  el("timelineDate").innerHTML = dates.map(function(date){
+    return "<option value=\"" + escapeHtml(date) + "\">" + escapeHtml(date) + "</option>";
+  }).join("");
+  el("timelineDate").value = state.timelineDate;
+
+  el("dateStart").addEventListener("change",function(){state.start=this.value; renderAll();});
+  el("dateEnd").addEventListener("change",function(){state.end=this.value; renderAll();});
+  el("channelSelect").addEventListener("change",function(){state.channel=this.value; renderAll();});
+  el("metricSelect").addEventListener("change",function(){state.metric=this.value; renderAll();});
+  el("timelineDate").addEventListener("change",function(){state.timelineDate=this.value; renderAll();});
+
+  document.querySelectorAll(".tab-btn").forEach(function(btn){
+    btn.addEventListener("click",function(){
+      document.querySelectorAll(".tab-btn").forEach(function(b){b.classList.remove("active");});
+      document.querySelectorAll(".tab").forEach(function(tab){tab.classList.remove("active");});
+      btn.classList.add("active");
+      el(btn.getAttribute("data-tab")).classList.add("active");
+      Object.values(charts).forEach(function(ch){if(ch && ch.resize) ch.resize();});
+    });
+  });
+}
+
+function renderCards(rows){
+  const rawMin = sum(rows,"raw_watch_minutes");
+  const s200Min = sum(rows,"status_200_watch_minutes");
+  const totalRows = sum(rows,"row_count");
+  const cards = [
+    ["Raw Watch Time", fmtHoursFromMin(rawMin), fmtMin(rawMin), "teal"],
+    ["Status 200 Time", fmtHoursFromMin(s200Min), fmtMin(s200Min), "green"],
+    ["Rows", fmtInt(totalRows), "playlist " + fmtInt(sum(rows,"playlist_rows")) + " | ts " + fmtInt(sum(rows,"ts_rows")), "gold"],
+    ["Non-200 Rows", fmtInt(sum(rows,"non_200_rows")), "status 200 rows " + fmtInt(sum(rows,"status_200_rows")), "red"],
+    ["Channels", fmtInt(uniqueCount(rows,"channel_name")), state.channel === "all" ? "all selected" : state.channel, "violet"],
+    ["Days", fmtInt(uniqueCount(rows,"log_date")), state.start + " to " + state.end, ""],
+    ["Journey Segments", fmtInt(D.segment_stats.segment_count), "top list embedded " + fmtInt(D.meta.top_segments_limit), "teal"]
+  ];
+  el("summaryCards").innerHTML = cards.map(function(card){
+    return "<div class=\"card " + card[3] + "\"><div class=\"label\">" + escapeHtml(card[0]) + "</div><div class=\"value\">" + escapeHtml(card[1]) + "</div><div class=\"small\">" + escapeHtml(card[2]) + "</div></div>";
+  }).join("");
+}
+
+function renderDailyChart(rows){
+  const labels = Array.from(new Set(rows.map(function(row){return row.log_date;}))).sort();
+  const byDate = groupBy(rows,"log_date").reduce(function(acc,item){acc[item.key] = item.rows; return acc;},{});
+  makeChart("dailyChart",{
+    type:"line",
+    data:{
+      labels:labels,
+      datasets:[
+        {label:metricLabels[state.metric],data:labels.map(function(d){return sum(byDate[d] || [],state.metric);}),borderColor:palette[0],backgroundColor:"rgba(23,59,92,.12)",tension:.25,pointRadius:2,fill:true,yAxisID:"y"},
+        {label:"Rows",data:labels.map(function(d){return sum(byDate[d] || [],"row_count");}),borderColor:palette[2],backgroundColor:"rgba(181,133,23,.12)",tension:.25,pointRadius:2,yAxisID:"y1"}
+      ]
+    },
+    options:lineOptions(metricLabels[state.metric],true)
+  });
+}
+
+function renderChannelBar(rows){
+  const items = groupBy(rows,"channel_name").map(function(item){
+    return {channel_name:item.key,value:sum(item.rows,state.metric),row_count:sum(item.rows,"row_count")};
+  }).sort(function(a,b){return b.value - a.value || b.row_count - a.row_count;}).slice(0,40);
+  makeChart("channelBar",{
+    type:"bar",
+    data:{labels:items.map(function(x){return x.channel_name;}),datasets:[{label:metricLabels[state.metric],data:items.map(function(x){return x.value;}),backgroundColor:items.map(function(_,i){return palette[i % palette.length];})}]},
+    options:barOptions(metricLabels[state.metric],true)
+  });
+}
+
+function renderDailySwitchChart(){
+  const rows = D.daily_switches.filter(function(row){return inDateRange(row,"log_date");});
+  makeChart("switchDailyChart",{
+    type:"line",
+    data:{labels:rows.map(function(row){return row.log_date;}),datasets:[
+      {label:"Channel switches",data:rows.map(function(row){return n(row.channel_switches);}),borderColor:palette[3],backgroundColor:"rgba(91,85,163,.12)",tension:.25,pointRadius:2,fill:true},
+      {label:"Segments",data:rows.map(function(row){return n(row.segment_count);}),borderColor:palette[4],backgroundColor:"rgba(180,35,24,.08)",tension:.25,pointRadius:2}
+    ]},
+    options:lineOptions("Count",false)
+  });
+}
+
+function renderHourChart(rows){
+  const labels = Array.from({length:24},function(_,i){return String(i).padStart(2,"0") + ":00";});
+  const byHour = {};
+  rows.forEach(function(row){const h = Number(row.hour_ist || 0); byHour[h] = (byHour[h] || 0) + n(row[state.metric]);});
+  makeChart("hourChart",{
+    type:"bar",
+    data:{labels:labels,datasets:[{label:metricLabels[state.metric],data:labels.map(function(_,i){return byHour[i] || 0;}),backgroundColor:palette[1]}]},
+    options:barOptions(metricLabels[state.metric],false)
+  });
+}
+
+function renderBucketChart(){
+  const rows = filteredBuckets();
+  const labels = Array.from(new Set(rows.map(function(row){return timeOf(row.bucket_start_ist).slice(11,16);}))).sort();
+  let datasets = [];
+  if(state.channel !== "all"){
+    const byTime = {};
+    rows.forEach(function(row){const k = timeOf(row.bucket_start_ist).slice(11,16); byTime[k] = (byTime[k] || 0) + n(row[state.metric]);});
+    datasets = [{label:state.channel,data:labels.map(function(k){return byTime[k] || 0;}),borderColor:palette[0],backgroundColor:"rgba(23,59,92,.10)",tension:.2,pointRadius:0,fill:true}];
+  } else {
+    const topChannels = groupBy(rows,"channel_name").map(function(item){return {name:item.key,value:sum(item.rows,state.metric)};}).sort(function(a,b){return b.value-a.value;}).slice(0,10).map(function(x){return x.name;});
+    datasets = topChannels.map(function(channel,i){
+      const byTime = {};
+      rows.filter(function(row){return row.channel_name === channel;}).forEach(function(row){
+        const k = timeOf(row.bucket_start_ist).slice(11,16);
+        byTime[k] = (byTime[k] || 0) + n(row[state.metric]);
+      });
+      return {label:channel,data:labels.map(function(k){return byTime[k] || 0;}),borderColor:palette[i % palette.length],backgroundColor:"transparent",tension:.2,pointRadius:0};
+    });
+  }
+  makeChart("bucketChart",{type:"line",data:{labels:labels,datasets:datasets},options:lineOptions(metricLabels[state.metric],false)});
+}
+
+function renderHeatmap(rows){
+  const dates = Array.from(new Set(rows.map(function(row){return row.log_date;}))).sort();
+  const matrix = {};
+  let maxVal = 0;
+  rows.forEach(function(row){
+    const d = row.log_date;
+    const h = Number(row.hour_ist || 0);
+    if(!matrix[d]) matrix[d] = {};
+    matrix[d][h] = (matrix[d][h] || 0) + n(row[state.metric]);
+    if(matrix[d][h] > maxVal) maxVal = matrix[d][h];
+  });
+  let html = "<table><thead><tr><th class=\"row-head\">Date</th>";
+  for(let h=0; h<24; h++) html += "<th>" + String(h).padStart(2,"0") + "</th>";
+  html += "</tr></thead><tbody>";
+  dates.forEach(function(date){
+    html += "<tr><td class=\"row-head\">" + escapeHtml(date) + "</td>";
+    for(let h=0; h<24; h++){
+      const value = matrix[date] && matrix[date][h] ? matrix[date][h] : 0;
+      const intensity = maxVal ? Math.min(.92, value / maxVal) : 0;
+      const bg = "rgba(15,118,110," + (0.06 + intensity * 0.62).toFixed(3) + ")";
+      const color = intensity > .55 ? "#fff" : "#172033";
+      html += "<td style=\"background:" + bg + ";color:" + color + "\">" + fmtNum(value,0) + "</td>";
+    }
+    html += "</tr>";
+  });
+  html += "</tbody></table>";
+  el("hourHeatmap").innerHTML = html;
+}
+
+function table(id, rows, columns, maxRows){
+  const limit = maxRows || 500;
+  const shown = rows.slice(0,limit);
+  let html = "<table><thead><tr>";
+  columns.forEach(function(col){html += "<th" + (col.num ? " class=\"num\"" : "") + ">" + escapeHtml(col.label) + "</th>";});
+  html += "</tr></thead><tbody>";
+  shown.forEach(function(row){
+    html += "<tr>";
+    columns.forEach(function(col){
+      const raw = col.value ? col.value(row) : row[col.key];
+      html += "<td" + (col.num ? " class=\"num\"" : "") + (col.path ? " class=\"path-cell\"" : "") + ">" + raw + "</td>";
+    });
+    html += "</tr>";
+  });
+  if(rows.length > limit){
+    html += "<tr><td colspan=\"" + columns.length + "\"><span class=\"pill\">Showing " + fmtInt(limit) + " of " + fmtInt(rows.length) + " rows</span></td></tr>";
+  }
+  html += "</tbody></table>";
+  el(id).innerHTML = html;
+}
+
+function renderTables(rows){
+  const channelRows = groupBy(rows,"channel_name").map(function(item){
+    return {
+      channel_name:item.key,
+      row_count:sum(item.rows,"row_count"),
+      playlist_rows:sum(item.rows,"playlist_rows"),
+      ts_rows:sum(item.rows,"ts_rows"),
+      non_200_rows:sum(item.rows,"non_200_rows"),
+      raw_watch_minutes:sum(item.rows,"raw_watch_minutes"),
+      status_200_watch_minutes:sum(item.rows,"status_200_watch_minutes"),
+      days:uniqueCount(item.rows,"log_date"),
+      sample_reqHost:item.rows[0] ? item.rows[0].sample_reqHost : "",
+      sample_reqPath:item.rows[0] ? item.rows[0].sample_reqPath : ""
+    };
+  }).sort(function(a,b){return n(b[state.metric])-n(a[state.metric]) || n(b.row_count)-n(a.row_count);});
+  el("channelCount").textContent = fmtInt(channelRows.length) + " channels";
+  table("channelTable",channelRows,[
+    {label:"Channel",value:function(r){return escapeHtml(r.channel_name);}},
+    {label:metricLabels[state.metric],num:true,value:function(r){return fmtNum(r[state.metric],2);}},
+    {label:"Raw Min",num:true,value:function(r){return fmtNum(r.raw_watch_minutes,1);}},
+    {label:"Status 200 Min",num:true,value:function(r){return fmtNum(r.status_200_watch_minutes,1);}},
+    {label:"Rows",num:true,value:function(r){return fmtInt(r.row_count);}},
+    {label:"Playlist",num:true,value:function(r){return fmtInt(r.playlist_rows);}},
+    {label:"TS",num:true,value:function(r){return fmtInt(r.ts_rows);}},
+    {label:"Non-200",num:true,value:function(r){return fmtInt(r.non_200_rows);}},
+    {label:"Days",num:true,value:function(r){return fmtInt(r.days);}},
+    {label:"Sample Host",path:true,value:function(r){return escapeHtml(r.sample_reqHost);}},
+    {label:"Sample Path",path:true,value:function(r){return escapeHtml(r.sample_reqPath);}}
+  ],500);
+
+  const detailRows = sortMetric(rows);
+  el("dateChannelCount").textContent = fmtInt(detailRows.length) + " rows";
+  table("dateChannelTable",detailRows,[
+    {label:"Date",value:function(r){return escapeHtml(r.log_date);}},
+    {label:"Channel",value:function(r){return escapeHtml(r.channel_name);}},
+    {label:metricLabels[state.metric],num:true,value:function(r){return fmtNum(r[state.metric],2);}},
+    {label:"Raw Min",num:true,value:function(r){return fmtNum(r.raw_watch_minutes,1);}},
+    {label:"Status 200 Min",num:true,value:function(r){return fmtNum(r.status_200_watch_minutes,1);}},
+    {label:"Rows",num:true,value:function(r){return fmtInt(r.row_count);}},
+    {label:"First Seen",value:function(r){return escapeHtml(timeOf(r.first_seen_ist));}},
+    {label:"Last Seen",value:function(r){return escapeHtml(timeOf(r.last_seen_ist));}},
+    {label:"Host",path:true,value:function(r){return escapeHtml(r.sample_reqHost);}},
+    {label:"Path",path:true,value:function(r){return escapeHtml(r.sample_reqPath);}}
+  ],1000);
+}
+
+function renderSwitchTable(){
+  let rows = D.switch_summary;
+  if(state.channel !== "all"){
+    rows = rows.filter(function(row){return row.from_channel === state.channel || row.to_channel === state.channel;});
+  }
+  el("switchCount").textContent = fmtInt(rows.length) + " transitions";
+  table("switchTable",rows,[
+    {label:"From Channel",value:function(r){return escapeHtml(r.from_channel);}},
+    {label:"To Channel",value:function(r){return escapeHtml(r.to_channel);}},
+    {label:"Switches",num:true,value:function(r){return fmtInt(r.switches);}}
+  ],500);
+}
+
+function renderSegments(){
+  let rows = D.top_segments.filter(function(row){return inDateRange(row,"start_date");});
+  if(state.channel !== "all") rows = rows.filter(function(row){return row.channel_name === state.channel;});
+  rows = rows.sort(function(a,b){return n(b.raw_watch_minutes)-n(a.raw_watch_minutes) || n(b.row_count)-n(a.row_count);});
+  const stats = D.segment_stats || {};
+  el("segmentNote").innerHTML =
+    "All journey segments remain in parquet. Embedded table uses top " + fmtInt(D.meta.top_segments_limit) +
+    " notable segments. Total segments: " + fmtInt(stats.segment_count) +
+    " | multi-row: " + fmtInt(stats.multi_row_segments) +
+    " | watch segments: " + fmtInt(stats.watch_segments) +
+    " | max raw segment: " + fmtMin(stats.max_segment_raw_minutes) + ".";
+  el("segmentCount").textContent = fmtInt(rows.length) + " embedded rows";
+  table("segmentTable",rows,[
+    {label:"Start",value:function(r){return escapeHtml(timeOf(r.start_time_ist));}},
+    {label:"End",value:function(r){return escapeHtml(timeOf(r.end_time_ist));}},
+    {label:"Channel",value:function(r){return escapeHtml(r.channel_name);}},
+    {label:"Raw Min",num:true,value:function(r){return fmtNum(r.raw_watch_minutes,2);}},
+    {label:"Status 200 Min",num:true,value:function(r){return fmtNum(r.status_200_watch_minutes,2);}},
+    {label:"Rows",num:true,value:function(r){return fmtInt(r.row_count);}},
+    {label:"Playlist",num:true,value:function(r){return fmtInt(r.playlist_rows);}},
+    {label:"TS",num:true,value:function(r){return fmtInt(r.ts_rows);}},
+    {label:"Non-200",num:true,value:function(r){return fmtInt(r.non_200_rows);}},
+    {label:"Wall Min",num:true,value:function(r){return fmtNum(r.wall_clock_minutes,3);}},
+    {label:"Gap Next Sec",num:true,value:function(r){return fmtInt(r.gap_to_next_seconds);}},
+    {label:"Host",path:true,value:function(r){return escapeHtml(r.sample_reqHost);}},
+    {label:"Path",path:true,value:function(r){return escapeHtml(r.sample_reqPath);}}
+  ],1000);
+}
+
+function renderFiles(){
+  const inputRows = [
+    {key:"Input folder",value:D.meta.input_dir || ""},
+    {key:"Raw parquet",value:D.meta.input_raw_parquet || ""},
+    {key:"Date range",value:(D.meta.min_date || "") + " to " + (D.meta.max_date || "")},
+    {key:"Gap seconds",value:D.meta.gap_seconds == null ? "" : String(D.meta.gap_seconds)},
+    {key:"Bucket minutes",value:D.meta.bucket_minutes == null ? "" : String(D.meta.bucket_minutes)}
+  ];
+  table("inputTable",inputRows,[
+    {label:"Field",value:function(r){return escapeHtml(r.key);}},
+    {label:"Value",path:true,value:function(r){return escapeHtml(r.value);}}
+  ],50);
+  table("fileTable",D.files,[
+    {label:"File",value:function(r){return "<a href=\"" + encodeURI(r.relative_path) + "\">" + escapeHtml(r.name) + "</a>";}},
+    {label:"Size MB",num:true,value:function(r){return fmtNum(r.size_mb,3);}},
+    {label:"Updated",value:function(r){return escapeHtml(r.updated);}},
+    {label:"Full Path",path:true,value:function(r){return escapeHtml(r.path);}}
+  ],100);
+}
+
+function renderAll(){
+  const rows = filteredDateChannel();
+  const hourly = filteredHourly();
+  renderCards(rows);
+  renderDailyChart(rows);
+  renderChannelBar(rows);
+  renderDailySwitchChart();
+  renderSwitchTable();
+  renderHourChart(hourly);
+  renderHeatmap(hourly);
+  renderBucketChart();
+  renderTables(rows);
+  renderSegments();
+  renderFiles();
+}
+
+initControls();
+renderAll();
+</script>
+</body>
+</html>
