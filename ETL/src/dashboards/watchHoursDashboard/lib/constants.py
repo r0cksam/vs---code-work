@@ -109,6 +109,7 @@ REPORT_DEFINITIONS: list[str] = [
     "queryStr channel values are used as mapping QA evidence, not as the primary watch-hour source.",
     "FAST queryStr uses media marker parameters such as m/cmcd instead of STREAM-style channel/device/session fields.",
     "FAST platform breakdown is derived from reqHost labels such as indiatv-tcl, indiatv-samsung, indiatv-cloudtv, and indiatv-vi.",
+    "Concurrency active viewers = exact distinct cliIP count per minute from FAST .ts traffic; segment estimates are shown separately for QA.",
     "State/region drilldown uses pre-aggregated channel + geography rows; it is not inferred by joining separate channel and geography totals in the browser.",
     "Sensitive queryStr values such as token and hdnts are redacted in dashboard evidence tables.",
     "Approx unique IP metrics use pre-aggregated profile counts and can overlap across channels or days.",

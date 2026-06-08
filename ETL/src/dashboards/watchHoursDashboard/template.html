@@ -30,6 +30,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .compare-channel-controls.active{display:inline-flex}
 .channel-select:hover{background:#edf2f7;border-color:#94a3b8}
 .channel-select:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(23,59,92,.12)}
+.filter-bar.concurrency-filter{background:#101214;border-color:#30343a;color:#dbe2ea;box-shadow:none}
+.concurrency-filter .filter-title,.concurrency-filter .filter-range{color:#a7b0bd}
+.concurrency-filter .filter-sep{background:#30343a}
+.concurrency-filter input[type="date"],.concurrency-filter .channel-select{background:#171a1f;border-color:#39404a;color:#eef4fb}
+.concurrency-filter input[type="date"]:focus,.concurrency-filter .channel-select:focus{border-color:#a65f2b;box-shadow:0 0 0 2px rgba(198,119,50,.18)}
+.concurrency-filter .filter-btn{background:#171a1f;border-color:#39404a;color:#eef4fb}
+.concurrency-filter .filter-btn.active{background:#a65f2b;border-color:#c77a32;color:#fff}
 .filter-sep{width:1px;height:24px;background:#d8e1ee;flex:0 0 auto}
 .filter-range{margin-left:auto;font-size:12px;color:#64748b;font-weight:700}
 .cards{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:18px}
@@ -81,7 +88,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .chart-sub{font-size:11px;color:#94a3b8;font-weight:600}
 .expand-btn{border:1px solid #cbd5e1;background:#fff;color:var(--brand);border-radius:5px;padding:3px 8px;font-size:10px;font-weight:800;cursor:pointer}
 .expand-btn:hover{background:#edf2f7;border-color:#94a3b8}
-.chart-box{height:clamp(240px,30vh,360px)}.chart-box.channel-trend{height:clamp(280px,36vh,440px)}.chart-box.status-pie{height:clamp(320px,38vh,460px)}.chart-box.tall{height:clamp(320px,42vh,500px)}.chart-box.channel-rank{height:clamp(440px,58vh,720px)}.chart-box.channel-rank-wide{height:clamp(620px,72vh,880px)}
+.panel.concurrency-panel{background:#1b1b1c;border-color:#30343a;color:#e5edf5;box-shadow:none}
+.panel.concurrency-panel h2{color:#f4f7fb}
+.panel.concurrency-panel .chart-sub{color:#98a2b3}
+.chart-box{height:clamp(240px,30vh,360px)}.chart-box.channel-trend{height:clamp(280px,36vh,440px)}.chart-box.concurrency{height:clamp(460px,56vh,700px);background:#1b1b1c;border:1px solid #30343a;border-radius:7px;padding:10px}.chart-box.status-pie{height:clamp(320px,38vh,460px)}.chart-box.tall{height:clamp(320px,42vh,500px)}.chart-box.channel-rank{height:clamp(440px,58vh,720px)}.chart-box.channel-rank-wide{height:clamp(620px,72vh,880px)}
 canvas{width:100%!important;height:100%!important}
 .table-wrap{overflow:auto;max-height:520px;border:1px solid #e2e8f0;border-radius:7px;background:#fff}
 .chart-box + .table-wrap{margin-top:12px;max-height:260px}
@@ -109,11 +119,11 @@ tr:hover td{background:#f6f9ff}
 .modal-chart-wrap{min-height:0;flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#fff}
 .modal-chart-wrap.rank-modal-wrap{min-height:620px}
 .modal-chart-wrap canvas{width:100%!important;height:100%!important}
-@media(max-width:1450px){.wrap{padding:18px 20px 30px}.topbar{padding:16px 22px}.cards{gap:8px}.card{flex-basis:calc((100% - 24px)/4);padding:10px 9px}.label{font-size:9.5px}.value{font-size:21px}.grid-2,.grid-3{gap:12px}.panel{padding:13px 14px}.chart-box{height:clamp(235px,30vh,330px)}.chart-box.channel-trend{height:clamp(270px,35vh,400px)}.chart-box.tall{height:clamp(300px,40vh,460px)}.chart-box.channel-rank{height:clamp(420px,56vh,640px)}.chart-box.channel-rank-wide{height:clamp(560px,70vh,780px)}}
+@media(max-width:1450px){.wrap{padding:18px 20px 30px}.topbar{padding:16px 22px}.cards{gap:8px}.card{flex-basis:calc((100% - 24px)/4);padding:10px 9px}.label{font-size:9.5px}.value{font-size:21px}.grid-2,.grid-3{gap:12px}.panel{padding:13px 14px}.chart-box{height:clamp(235px,30vh,330px)}.chart-box.channel-trend{height:clamp(270px,35vh,400px)}.chart-box.concurrency{height:clamp(380px,50vh,620px)}.chart-box.tall{height:clamp(300px,40vh,460px)}.chart-box.channel-rank{height:clamp(420px,56vh,640px)}.chart-box.channel-rank-wide{height:clamp(560px,70vh,780px)}}
 @media(max-width:1180px){.card{flex-basis:calc((100% - 24px)/4)}.topbar .sub{max-width:100%;text-align:left}}
 @media(min-width:1900px){.wrap{max-width:1880px}.chart-box{height:clamp(300px,31vh,390px)}.chart-box.channel-trend{height:clamp(340px,38vh,480px)}.chart-box.tall{height:clamp(380px,44vh,540px)}.chart-box.channel-rank{height:clamp(560px,62vh,780px)}.chart-box.channel-rank-wide{height:clamp(720px,72vh,940px)}.table-wrap{max-height:620px}}
 @media(min-width:2200px){.wrap{max-width:2200px}.chart-box{height:clamp(330px,32vh,440px)}.chart-box.channel-trend{height:clamp(390px,40vh,540px)}.chart-box.tall{height:clamp(430px,46vh,610px)}.chart-box.channel-rank{height:clamp(640px,64vh,860px)}.chart-modal{width:min(1500px,94vw);height:min(900px,92vh)}}
-@media(max-width:900px){.wrap{padding:16px}.card{flex-basis:calc((100% - 16px)/3)}.grid-2,.grid-3{grid-template-columns:1fr}.metric-strip,.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar .sub{text-align:left;max-width:100%}.filter-range{margin-left:0;width:100%}.date-filter{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.chart-box{height:240px}.chart-box.channel-rank{height:520px}.chart-box.channel-rank-wide{height:640px}.chart-actions{gap:6px}.modal-chart-wrap.rank-modal-wrap{min-height:560px}}
+@media(max-width:900px){.wrap{padding:16px}.card{flex-basis:calc((100% - 16px)/3)}.grid-2,.grid-3{grid-template-columns:1fr}.metric-strip,.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar .sub{text-align:left;max-width:100%}.filter-range{margin-left:0;width:100%}.date-filter{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.chart-box{height:240px}.chart-box.concurrency{height:440px}.chart-box.channel-rank{height:520px}.chart-box.channel-rank-wide{height:640px}.chart-actions{gap:6px}.modal-chart-wrap.rank-modal-wrap{min-height:560px}}
 @media(max-width:680px){.card{flex-basis:calc((100% - 8px)/2)}}
 @media print{.tabs,.tab-btn{display:none}.tab{display:block}body{background:#fff}.panel,.card,.note{box-shadow:none}.table-wrap{max-height:none;overflow:visible}}
 </style>
@@ -181,6 +191,35 @@ tr:hover td{background:#f6f9ff}
     </div>
     <div class="insight-grid" id="channelCardsGrid"></div>
     <div class="panel"><h2>Channel Detail<span class="count-chip" id="channelInsightCount"></span></h2><div class="table-wrap" id="channelInsightTable"></div></div>
+  </section>
+  <section class="tab" id="concurrency">
+    <div class="filter-bar concurrency-filter">
+      <span class="filter-title">Date Range</span>
+      <input type="date" id="concurrencyStart" onchange="setConcurrencyDateRange()"/>
+      <span style="font-size:12px;color:#a7b0bd;font-weight:700">to</span>
+      <input type="date" id="concurrencyEnd" onchange="setConcurrencyDateRange()"/>
+      <button class="filter-btn" id="concurrencyLatestBtn" onclick="setConcurrencyPreset('latest')">Latest Day</button>
+      <button class="filter-btn" id="concurrency7Btn" onclick="setConcurrencyPreset(7)">7D</button>
+      <span class="filter-sep"></span>
+      <span class="filter-title">Platform</span>
+      <select class="channel-select" id="concurrencyPlatform" onchange="setConcurrencyPlatform(this.value)"></select>
+      <span class="filter-sep"></span>
+      <span class="filter-title">Channel</span>
+      <select class="channel-select" id="concurrencyPair" onchange="setConcurrencyPair(this.value)"></select>
+      <span class="filter-sep"></span>
+      <span class="filter-title">Metric</span>
+      <select class="channel-select" id="concurrencyMetric" onchange="setConcurrencyMetric(this.value)"></select>
+      <button class="filter-btn" id="concurrencyCompareBtn" onclick="toggleConcurrencyCompare()">Compare</button>
+      <span class="filter-range" id="concurrencyRangeText"></span>
+    </div>
+    <div class="metric-strip" id="concurrencyMetrics"></div>
+    <div class="grid-2">
+      <div class="panel grid-span-all concurrency-panel"><h2>Minute-Level Concurrency<span class="chart-actions"><span class="chart-sub">FAST active viewers</span><button class="expand-btn" onclick="openChartModal('concurrencyChart')">Expand</button></span></h2><div class="chart-box concurrency"><canvas id="concurrencyChart"></canvas></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><h2>Concurrency Summary<span class="count-chip" id="concurrencySummaryCount"></span></h2><div class="table-wrap" id="concurrencySummaryTable"></div></div>
+      <div class="panel"><h2>Peak Minutes<span class="count-chip" id="concurrencyPeakCount"></span></h2><div class="table-wrap" id="concurrencyPeakTable"></div></div>
+    </div>
   </section>
   <section class="tab" id="regions">
     <div class="section-title"><h2>India State / Region</h2><span class="count-chip" id="regionCardsCount"></span></div>
@@ -333,6 +372,13 @@ const D = $DATA_BLOB;
 const COLORS = ['#173b5c','#0f766e','#b58517','#5b55a3','#2f6b2f','#b42318','#1f6f8b','#7c5800','#6b4ab6','#64748b'];
 const CHUNK_HOURS = 6 / 3600;
 const DEVICE_DECODE = D.device_decode || {summary:[],unknown_codes:[],top_user_agents:[],ua_cache:[]};
+const CONCURRENCY = D.concurrency || {available:false,minute:[],summary:[],pairs:[]};
+const CONCURRENCY_METRICS = {
+  unique_viewers:{label:'Active viewers',short:'Active Viewers'},
+  segment_viewers_estimate:{label:'Segment estimate',short:'Segment Estimate'},
+  status_200_segment_viewers_estimate:{label:'Status 200 segment estimate',short:'Status 200 Estimate'}
+};
+const CONCURRENCY_COLORS = ['#c77a32','#5794f2','#73bf69','#f2495c','#b877d9','#ffb357','#2ec7b8','#e0b400','#8ab8ff','#e24d42','#a352cc','#56a64b'];
 
 // ── Bootstrap: strip first/last partial days (same logic as Python side) ──────
 const DAILY_TABLES_RAW = D.daily_tables || {};
@@ -421,6 +467,12 @@ let modalChartSourceId = null;
 let modalDaily = [];
 let selectedRegion = null;
 let selectedRegionChannel = null;
+let concurrencyStart = '';
+let concurrencyEnd = '';
+let concurrencyPlatform = 'all';
+let concurrencyPair = 'all';
+let concurrencyMetric = 'unique_viewers';
+let concurrencyCompare = false;
 const chartInstances = {};
 
 // ── Aggregation cache (invalidated on date filter change) ─────────────────────
@@ -664,6 +716,246 @@ function fastPlatformRowsForDaily(dailyRows) {
 function aggregateFastPlatforms() {
   return getAgg('fastPlatforms',()=>fastPlatformRowsForDaily(viewDaily));
 }
+
+function concurrencyBaseRows(dailyRows=viewDaily){
+  const selectedDates=new Set((dailyRows||[]).map(r=>String(r.log_date)));
+  return sourceRows(CONCURRENCY.minute||[],sourceFilter)
+    .filter(r=>sourceOf(r)==='fast'&&selectedDates.has(String(r.log_date)))
+    .sort((a,b)=>String(a.minute_ist||'').localeCompare(String(b.minute_ist||'')));
+}
+
+function concurrencySummaryRows(dailyRows=viewDaily){
+  const selectedDates=new Set((dailyRows||[]).map(r=>String(r.log_date)));
+  return sourceRows(CONCURRENCY.summary||[],sourceFilter)
+    .filter(r=>sourceOf(r)==='fast'&&selectedDates.has(String(r.log_date)));
+}
+
+function concurrencyOptionLabel(row,includePlatform=false){
+  const channel=String(row?.channel_name||'Other');
+  const candidate=String(row?.candidate_id||'');
+  const label=candidate ? `${channel} (${candidate})` : channel;
+  return includePlatform ? `${row?.platform_name||'Unknown FAST Platform'} - ${label}` : label;
+}
+
+function pairKey(row){return String(row?.pair_key||`${sourceOf(row)}|${row?.platform_key||''}|${row?.candidate_id||''}|${row?.channel_name||''}`);}
+function concurrencyPlatformKey(row){return String(row?.platform_key||row?.platform_name||'');}
+
+function setSelectOptions(id,items,value){
+  const el=document.getElementById(id);
+  if(!el)return '';
+  el.innerHTML=(items||[]).map(item=>`<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('');
+  if(value&&items.some(item=>String(item.value)===String(value)))el.value=value;
+  else if(items.length)el.value=items[0].value;
+  return el.value||'';
+}
+
+function setConcurrencyPresetActive(mode){
+  const latest=document.getElementById('concurrencyLatestBtn');
+  const seven=document.getElementById('concurrency7Btn');
+  if(latest)latest.classList.toggle('active',mode==='latest');
+  if(seven)seven.classList.toggle('active',mode===7);
+}
+
+function rowInConcurrencyDateRange(row){
+  const d=String(row?.log_date||'');
+  return (!concurrencyStart||d>=concurrencyStart)&&(!concurrencyEnd||d<=concurrencyEnd);
+}
+
+function concurrencyDateRowsFromBase(base){
+  return (base||[]).filter(rowInConcurrencyDateRange);
+}
+
+function concurrencyRowsAfterControls(dailyRows=viewDaily,sourceRowsOverride=null){
+  const rows=sourceRowsOverride||concurrencyDateRowsFromBase(concurrencyBaseRows(dailyRows));
+  return rows.filter(r=>
+    (concurrencyPlatform==='all'||concurrencyPlatformKey(r)===String(concurrencyPlatform))
+    && (concurrencyPair==='all'||pairKey(r)===String(concurrencyPair))
+  );
+}
+
+function syncConcurrencyControls(dailyRows=viewDaily){
+  const metricItems=Object.entries(CONCURRENCY_METRICS).map(([value,cfg])=>({value,label:cfg.short}));
+  concurrencyMetric=setSelectOptions('concurrencyMetric',metricItems,concurrencyMetric)||'unique_viewers';
+
+  const base=concurrencyBaseRows(dailyRows);
+  const days=[...new Set(base.map(r=>String(r.log_date)))].sort();
+  const firstDay=days[0]||'';
+  const latestDay=days[days.length-1]||'';
+  if(!days.length){
+    concurrencyStart='';
+    concurrencyEnd='';
+  }else{
+    if(!concurrencyStart||concurrencyStart<firstDay||concurrencyStart>latestDay)concurrencyStart=latestDay;
+    if(!concurrencyEnd||concurrencyEnd<firstDay||concurrencyEnd>latestDay)concurrencyEnd=latestDay;
+    if(concurrencyStart>concurrencyEnd)[concurrencyStart,concurrencyEnd]=[concurrencyEnd,concurrencyStart];
+  }
+  ['concurrencyStart','concurrencyEnd'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.min=firstDay;
+    el.max=latestDay;
+    el.value=id==='concurrencyStart'?concurrencyStart:concurrencyEnd;
+  });
+  const lastSeven=days.slice(-7);
+  const sevenActive=lastSeven.length&&concurrencyStart===lastSeven[0]&&concurrencyEnd===lastSeven[lastSeven.length-1];
+  setConcurrencyPresetActive(concurrencyStart===latestDay&&concurrencyEnd===latestDay?'latest':sevenActive?7:null);
+
+  const dateRows=concurrencyDateRowsFromBase(base);
+  const platformItems=[{value:'all',label:'All Platforms'}].concat(
+    [...new Map(dateRows.map(r=>[concurrencyPlatformKey(r),{value:concurrencyPlatformKey(r),label:String(r.platform_name||r.platform_key||'Unknown FAST Platform')}])).values()]
+      .sort((a,b)=>a.label.localeCompare(b.label))
+  );
+  concurrencyPlatform=setSelectOptions('concurrencyPlatform',platformItems,concurrencyPlatform||'all')||'all';
+
+  const platformRows=dateRows.filter(r=>concurrencyPlatform==='all'||concurrencyPlatformKey(r)===String(concurrencyPlatform));
+  const includePlatform=concurrencyPlatform==='all';
+  const pairItems=[{value:'all',label:'All Channels'}].concat(
+    [...new Map(platformRows.map(r=>[pairKey(r),{value:pairKey(r),label:concurrencyOptionLabel(r,includePlatform)}])).values()]
+      .sort((a,b)=>a.label.localeCompare(b.label))
+  );
+  concurrencyPair=setSelectOptions('concurrencyPair',pairItems,concurrencyPair||'all')||'all';
+
+  const compareBtn=document.getElementById('concurrencyCompareBtn');
+  if(compareBtn)compareBtn.classList.toggle('active',!!concurrencyCompare);
+
+  const rangeText=document.getElementById('concurrencyRangeText');
+  if(rangeText)rangeText.textContent=dateRows.length?`${concurrencyStart} to ${concurrencyEnd} | ${fmt(dateRows.length)} minute rows | ${fmt(CONCURRENCY.total_minute_rows||base.length)} total aggregate rows`:'No FAST concurrency rows in selected range';
+}
+
+function concurrencyFilteredRows(dailyRows=viewDaily){
+  syncConcurrencyControls(dailyRows);
+  return concurrencyRowsAfterControls(dailyRows);
+}
+
+function concurrencyFilteredSummaryRows(dailyRows=viewDaily){
+  syncConcurrencyControls(dailyRows);
+  return concurrencySummaryRows(dailyRows).filter(r=>
+    rowInConcurrencyDateRange(r)
+    && (concurrencyPlatform==='all'||concurrencyPlatformKey(r)===String(concurrencyPlatform))
+    && (concurrencyPair==='all'||pairKey(r)===String(concurrencyPair))
+  );
+}
+
+function concurrencyMetricValue(row,key=concurrencyMetric){
+  return Number(row?.[key]||0);
+}
+
+function concurrencySelectionLabel(){
+  const platformEl=document.getElementById('concurrencyPlatform');
+  const pairEl=document.getElementById('concurrencyPair');
+  const platformText=platformEl?.selectedOptions?.[0]?.textContent||'All Platforms';
+  const pairText=pairEl?.selectedOptions?.[0]?.textContent||'All Channels';
+  return `${platformText} / ${pairText}`;
+}
+
+function concurrencyLineLabel(row){
+  return `${row.platform_name||'Unknown FAST Platform'} - ${concurrencyOptionLabel(row)}`;
+}
+
+function concurrencyLineGroups(rows){
+  if(!concurrencyCompare){
+    return [{key:'selected',label:concurrencySelectionLabel(),rows:rows||[]}];
+  }
+  const buckets=new Map();
+  (rows||[]).forEach(row=>{
+    const key=pairKey(row);
+    if(!buckets.has(key))buckets.set(key,{key,label:concurrencyLineLabel(row),rows:[]});
+    buckets.get(key).rows.push(row);
+  });
+  return [...buckets.values()].sort((a,b)=>maxVal(b.rows,concurrencyMetric)-maxVal(a.rows,concurrencyMetric));
+}
+
+function concurrencySeries(rows,key=concurrencyMetric){
+  const groups=concurrencyLineGroups(rows);
+  const minuteSet=new Set();
+  groups.forEach(group=>group.rows.forEach(r=>minuteSet.add(String(r.minute_ist||''))));
+  const minutes=[...minuteSet].filter(Boolean).sort();
+  const multiDay=concurrencyStart!==concurrencyEnd;
+  const labels=minutes.map(m=>multiDay?`${m.slice(5,10)} ${m.slice(11,16)}`:m.slice(11,16));
+  const datasets=groups.map(group=>{
+    const byMinute=new Map();
+    group.rows.forEach(r=>{
+      const minute=String(r.minute_ist||'');
+      byMinute.set(minute,(byMinute.get(minute)||0)+concurrencyMetricValue(r,key));
+    });
+    return {label:group.label,data:minutes.map(m=>byMinute.get(m)||0)};
+  });
+  return {minutes,labels,datasets,groups};
+}
+
+function concurrencyStats(rows,key=concurrencyMetric){
+  const series=concurrencySeries(rows,key);
+  const values=series.datasets.flatMap(ds=>ds.data).filter(v=>Number.isFinite(v));
+  const peak=values.length?Math.max(...values):0;
+  const avg=values.length?values.reduce((a,v)=>a+v,0)/values.length:0;
+  let peakMinute='';
+  series.datasets.forEach(ds=>ds.data.forEach((v,i)=>{if(v===peak&&!peakMinute)peakMinute=series.minutes[i];}));
+  return {
+    minutes: series.minutes.length,
+    lines: series.datasets.length,
+    peak,
+    avg,
+    peak_minute: peakMinute,
+    raw_ts_rows: sum(rows,'raw_ts_rows'),
+    status_200_ts_rows: sum(rows,'status_200_ts_rows'),
+    platform_name: concurrencyPlatform==='all'?'All Platforms':(rows||[])[0]?.platform_name||'-',
+    channel_name: concurrencyPair==='all'?(concurrencyCompare?'Compare Lines':'All Channels'):(rows||[])[0]?.channel_name||'-'
+  };
+}
+
+function concurrencyPeakRowsForTable(rows,key=concurrencyMetric){
+  const groups=concurrencyLineGroups(rows);
+  const output=[];
+  groups.forEach(group=>{
+    const buckets=new Map();
+    group.rows.forEach(row=>{
+      const minute=String(row.minute_ist||'');
+      const bucketKey=(concurrencyCompare?group.key+'|':'')+minute;
+      if(!buckets.has(bucketKey)){
+        buckets.set(bucketKey,{
+          line_label:group.label,
+          minute_ist:minute,
+          minute_utc:row.minute_utc||'',
+          metric_value:0,
+          unique_viewers:0,
+          segment_viewers_estimate:0,
+          status_200_segment_viewers_estimate:0,
+          raw_ts_rows:0,
+          status_200_ts_rows:0
+        });
+      }
+      const item=buckets.get(bucketKey);
+      item.metric_value+=concurrencyMetricValue(row,key);
+      item.unique_viewers+=Number(row.unique_viewers||0);
+      item.segment_viewers_estimate+=Number(row.segment_viewers_estimate||0);
+      item.status_200_segment_viewers_estimate+=Number(row.status_200_segment_viewers_estimate||0);
+      item.raw_ts_rows+=Number(row.raw_ts_rows||0);
+      item.status_200_ts_rows+=Number(row.status_200_ts_rows||0);
+    });
+    output.push(...buckets.values());
+  });
+  return topRows(output,'metric_value',30);
+}
+
+function aggregateConcurrencySummary(dailyRows=viewDaily){
+  const rows=concurrencyFilteredSummaryRows(dailyRows);
+  const grouped=groupRows(
+    rows,
+    ['platform_name','channel_name','candidate_id','reqHost','platform_key','pair_key'],
+    ['minute_count','raw_ts_rows','status_200_ts_rows'],
+    ['peak_unique_viewers','peak_segment_viewers_estimate','peak_status_200_segment_viewers_estimate','distinct_hosts'],
+    ['peak_unique_viewers_minute_ist','peak_segment_minute_ist']
+  );
+  grouped.forEach(r=>{
+    const sourceRows=rows.filter(x=>pairKey(x)===pairKey(r));
+    r.avg_unique_viewers=avgOrNull(sum(sourceRows,'avg_unique_viewers'),sourceRows.length);
+    r.avg_segment_viewers_estimate=avgOrNull(sum(sourceRows,'avg_segment_viewers_estimate'),sourceRows.length);
+    r.avg_status_200_segment_viewers_estimate=avgOrNull(sum(sourceRows,'avg_status_200_segment_viewers_estimate'),sourceRows.length);
+    r.display_channel=concurrencyOptionLabel(r,concurrencyPlatform==='all');
+  });
+  return topRows(grouped,'peak_unique_viewers',200);
+}
+
 function aggregateStatus()   { return getAgg('status',   ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.status_codes_daily),['statusCode'],['rows','raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']); const tot=sum(rows,'rows'); const whTot=sum(rows,'raw_watch_hours'); rows.forEach(r=>{r.statusCode=String(r.statusCode??'').replace(/\.0$/,'');r.meaning=statusMeaning(r.statusCode);r.row_pct=percent(r.rows,tot);r.watch_share_pct=percent(r.raw_watch_hours,whTot);}); return topRows(rows,'rows',20); }); }
 function aggregateExtensions(){ return getAgg('extensions',()=>topRows(groupRows(rowsForDates(DAILY_TABLES.extensions_daily),['extension'],['rows','status_200_rows'],['approx_unique_ips'],['sample_reqPath']),'rows',20)); }
 function aggregateHosts()    { return getAgg('hosts',    ()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.hosts_daily),['reqHost'],['rows','status_200_rows','non_200_rows','raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips']); rows.forEach(r=>{r.non_200_pct=percent(r.non_200_rows,r.rows);r.ts_rows=r.raw_ts_rows;}); return topRows(rows,'rows',25); }); }
@@ -1036,6 +1328,33 @@ function setChannelLimit(limit){chartChannelLimit=limit;setActiveChannelLimit(li
 function setTrendFocus(value){trendFocus=value||'all';if(trendFocus==='compare')ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
 function setCompareCount(value){compareCount=normalizeCompareCount(value,viewChannels);trendFocus='compare';ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
 function setCompareChannel(index,value){compareChannels[index]=value;trendFocus='compare';ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
+function setConcurrencyDateRange(){
+  concurrencyStart=document.getElementById('concurrencyStart')?.value||concurrencyStart;
+  concurrencyEnd=document.getElementById('concurrencyEnd')?.value||concurrencyEnd;
+  if(concurrencyStart>concurrencyEnd)[concurrencyStart,concurrencyEnd]=[concurrencyEnd,concurrencyStart];
+  concurrencyPlatform='all';
+  concurrencyPair='all';
+  renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();
+}
+function setConcurrencyPreset(mode){
+  const days=[...new Set(concurrencyBaseRows(viewDaily).map(r=>String(r.log_date)))].sort();
+  if(!days.length)return;
+  if(mode==='latest'){
+    concurrencyStart=days[days.length-1];
+    concurrencyEnd=days[days.length-1];
+  }else{
+    const selected=days.slice(-Number(mode));
+    concurrencyStart=selected[0]||days[0];
+    concurrencyEnd=selected[selected.length-1]||days[days.length-1];
+  }
+  concurrencyPlatform='all';
+  concurrencyPair='all';
+  renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();
+}
+function setConcurrencyPlatform(value){concurrencyPlatform=value||'all';concurrencyPair='all';renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
+function setConcurrencyPair(value){concurrencyPair=value||'all';renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
+function setConcurrencyMetric(value){concurrencyMetric=value||'unique_viewers';renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
+function toggleConcurrencyCompare(){concurrencyCompare=!concurrencyCompare;renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
 
 // ── Date filter ───────────────────────────────────────────────────────────────
 function syncDateInputs(){
@@ -1403,6 +1722,47 @@ function renderFastPlatformChart(targetId='fastPlatformChart',expanded=false,row
   return makeBarChart(targetId,data.map(r=>r.platform_channel),data.map(r=>r.raw_watch_hours),expanded,true);
 }
 
+function makeConcurrencyLineChart(id,labels,datasets,expanded=false){
+  if(typeof Chart==='undefined'||!document.getElementById(id))return;
+  resetChart(id);
+  const chartSets=(datasets||[]).map((ds,i)=>({
+    label:ds.label,
+    data:ds.data,
+    borderColor:CONCURRENCY_COLORS[i%CONCURRENCY_COLORS.length],
+    backgroundColor:i===0&&datasets.length===1?'rgba(199,122,50,.12)':'transparent',
+    fill:i===0&&datasets.length===1,
+    tension:.18,
+    pointRadius:0,
+    pointHoverRadius:4,
+    borderWidth:expanded?1.8:1.25,
+    spanGaps:true
+  }));
+  chartInstances[id]=new Chart(document.getElementById(id),{
+    type:'line',
+    data:{labels,datasets:chartSets},
+    options:{responsive:true,maintainAspectRatio:false,normalized:true,
+      interaction:{mode:'nearest',axis:'xy',intersect:false},
+      plugins:{
+        legend:{display:expanded||chartSets.length>1,position:'bottom',labels:{color:'#cbd5e1',usePointStyle:true,pointStyle:'line',boxWidth:14,padding:expanded?12:8,font:{size:expanded?11:9.5}}},
+        tooltip:{backgroundColor:'#2a2e33',borderColor:'#3a4048',borderWidth:1,titleColor:'#eef4fb',bodyColor:'#eef4fb',displayColors:true,padding:9,callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmt(ctx.parsed.y,1)}`}}
+      },
+      elements:{line:{borderJoinStyle:'round',borderCapStyle:'round'},point:{hitRadius:8}},
+      scales:{
+        x:{title:{display:true,text:'Time',color:'#d0d7e2',font:{size:expanded?12:10,weight:'700'}},ticks:{color:'#7f8794',font:{size:expanded?11:9},maxTicksLimit:expanded?24:16,autoSkip:true},grid:{color:'#2a2d31'}},
+        y:{title:{display:true,text:'Number of viewers',color:'#d0d7e2',font:{size:expanded?12:10,weight:'700'}},ticks:{color:'#7f8794',font:{size:expanded?11:9},callback:v=>compactAxis(v)},grid:{color:'#2a2d31'},beginAtZero:true}
+      }
+    }
+  });
+  return chartInstances[id];
+}
+
+function renderConcurrencyChart(targetId='concurrencyChart',expanded=false,dailyRows=null){
+  const rows=concurrencyFilteredRows(dailyRows||viewDaily);
+  const cfg=CONCURRENCY_METRICS[concurrencyMetric]||CONCURRENCY_METRICS.unique_viewers;
+  const series=concurrencySeries(rows,cfg===CONCURRENCY_METRICS.unique_viewers?'unique_viewers':concurrencyMetric);
+  return makeConcurrencyLineChart(targetId,series.labels,series.datasets,expanded);
+}
+
 function renderDeviceStatusChart(targetId='deviceStatusChart',expanded=false,dailyRows=null){
   const rows=deviceStatusRowsForDaily(dailyRows||viewDaily);
   return makeDoughnut(
@@ -1461,6 +1821,7 @@ function renderCharts(){
   renderChannelInsightHours();
   renderChannelAverageCharts();
   renderFastPlatformChart();
+  renderConcurrencyChart();
   renderDeviceStatusChart();
   renderKnownDeviceChart();
   renderUnknownDeviceChart();
@@ -1488,6 +1849,7 @@ function renderSingleChart(sourceId,targetId,expanded=false,dailyRows=null){
     return renderChannelAverageChart(targetId,expanded,audience,sourceId);
   }
   if(sourceId==='fastPlatformChart')return renderFastPlatformChart(targetId,expanded,fastPlatformRowsForDaily(daily));
+  if(sourceId==='concurrencyChart')return renderConcurrencyChart(targetId,expanded,daily);
   if(sourceId==='deviceStatusChart')return renderDeviceStatusChart(targetId,expanded,daily);
   if(sourceId==='knownDeviceChart')return renderKnownDeviceChart(targetId,expanded,daily);
   if(sourceId==='unknownDeviceChart')return renderUnknownDeviceChart(targetId,expanded,daily);
@@ -1504,7 +1866,7 @@ function setActiveModalPreset(id){['modalDashboard','modalAll','modal30','modal7
 function openChartModal(id){
   if(typeof Chart==='undefined')return;
   modalChartSourceId=id;
-  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',deviceStatusChart:'Device Decode Coverage',knownDeviceChart:'Top Known Devices',unknownDeviceChart:'Top Unknown Device Codes',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split',reliabilityWatchHoursTrend:'Watch Hours By Status',reliabilityNon200Trend:'Non-200 Status Watch Hours',statusChart:'Status Codes'};
+  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',concurrencyChart:'Minute-Level Concurrency',deviceStatusChart:'Device Decode Coverage',knownDeviceChart:'Top Known Devices',unknownDeviceChart:'Top Unknown Device Codes',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split',reliabilityWatchHoursTrend:'Watch Hours By Status',reliabilityNon200Trend:'Non-200 Status Watch Hours',statusChart:'Status Codes'};
   document.getElementById('modalTitle').textContent=titles[id]||'Chart';
   const isRankModal=id==='channelBar'||id==='knownDeviceChart'||id==='unknownDeviceChart'||!!CHANNEL_AVG_CHARTS[id];
   document.querySelector('#chartModal .chart-modal')?.classList.toggle('rank-modal',isRankModal);
@@ -1547,6 +1909,17 @@ function syncModalInputs(){
 
 function renderModalStats(){
   const daily=modalDaily||[];
+  if(modalChartSourceId==='concurrencyChart'){
+    const rows=concurrencyFilteredRows(daily);
+    const m=concurrencyStats(rows);
+    document.getElementById('modalStats').innerHTML=[
+      mini('Peak Viewers',fmt(m.peak,1)),
+      mini('Average Viewers',fmt(m.avg,1)),
+      mini('Minutes',fmt(m.minutes)),
+      mini('Peak Minute',escapeHtml(m.peak_minute||'-'))
+    ].join('');
+    return;
+  }
   if(['deviceStatusChart','knownDeviceChart','unknownDeviceChart'].includes(modalChartSourceId)){
     const m=deviceDecodeMetricsForDaily(daily);
     document.getElementById('modalStats').innerHTML=[
@@ -1830,7 +2203,12 @@ function renderTables(){
   const cmcd=aggregateCmcd();
   const channelAudienceRows=aggregateChannelAudience();
   const fastPlatformRows=aggregateFastPlatforms();
+  const concurrencySummaryTableRows=aggregateConcurrencySummary();
+  const concurrencyMinuteRows=concurrencyFilteredRows();
+  const concurrencyPeakRows=concurrencyPeakRowsForTable(concurrencyMinuteRows);
+  const concurrencyStat=concurrencyStats(concurrencyMinuteRows);
   const wh={fn:v=>fmtH(v),num:true};const n={fn:v=>fmt(v),num:true};const p={fn:v=>fmtPct(v),num:true};const sample={fn:v=>clipText(v,150)};const gf={watch_hours:wh,share_pct:p,approx_unique_ips:n};
+  const cnum={fn:v=>fmt(v,1),num:true};
   const statusMeaningRows=(statusRows||[]).map(r=>({statusCode:r.statusCode,meaning:r.meaning}));
 
   document.getElementById('channelTable').innerHTML=table(
@@ -1897,6 +2275,50 @@ function renderTables(){
       avg_hours_per_session:{fn:v=>fmtMinFromHours(v),num:true},
       avg_hours_per_device:{fn:v=>fmtMinFromHours(v),num:true}
     }
+  );
+  document.getElementById('concurrencyMetrics').innerHTML=[
+    mini('Profile',CONCURRENCY.available?'Available':'Missing'),
+    mini('Date Range',escapeHtml(concurrencyStart&&concurrencyEnd?`${concurrencyStart} to ${concurrencyEnd}`:'-')),
+    mini('Platform',escapeHtml(concurrencyStat.platform_name||'-')),
+    mini('Channel',escapeHtml(concurrencyStat.channel_name||'-')),
+    mini('Peak Viewers',fmt(concurrencyStat.peak,1)),
+    mini('Average Viewers',fmt(concurrencyStat.avg,1)),
+    mini('Minutes',fmt(concurrencyStat.minutes)),
+    mini('Lines',fmt(concurrencyStat.lines||0)),
+    mini('Raw TS Rows',fmt(concurrencyStat.raw_ts_rows)),
+    mini('Status 200 TS Rows',fmt(concurrencyStat.status_200_ts_rows)),
+    mini('Peak Minute IST',escapeHtml(concurrencyStat.peak_minute||'-'))
+  ].join('');
+  document.getElementById('concurrencySummaryTable').innerHTML=table(
+    concurrencySummaryTableRows,
+    [
+      {key:'platform_name',label:'Platform'},
+      {key:'display_channel',label:'Channel'},
+      {key:'peak_unique_viewers',label:'Peak Active Viewers'},
+      {key:'avg_unique_viewers',label:'Avg Active Viewers'},
+      {key:'peak_segment_viewers_estimate',label:'Peak Segment Estimate'},
+      {key:'minute_count',label:'Minutes'},
+      {key:'distinct_hosts',label:'Hosts'},
+      {key:'raw_ts_rows',label:'Raw TS Rows'},
+      {key:'status_200_ts_rows',label:'Status 200 TS Rows'},
+      {key:'reqHost',label:'Host Evidence'}
+    ],
+    {peak_unique_viewers:cnum,avg_unique_viewers:cnum,peak_segment_viewers_estimate:cnum,minute_count:n,distinct_hosts:n,raw_ts_rows:n,status_200_ts_rows:n}
+  );
+  document.getElementById('concurrencyPeakTable').innerHTML=table(
+    concurrencyPeakRows,
+    [
+      {key:'line_label',label:'Line'},
+      {key:'minute_ist',label:'Minute IST'},
+      {key:'minute_utc',label:'Minute UTC'},
+      {key:'metric_value',label:CONCURRENCY_METRICS[concurrencyMetric]?.short||'Value'},
+      {key:'unique_viewers',label:'Active Viewers'},
+      {key:'segment_viewers_estimate',label:'Segment Estimate'},
+      {key:'status_200_segment_viewers_estimate',label:'Status 200 Estimate'},
+      {key:'raw_ts_rows',label:'Raw TS Rows'},
+      {key:'status_200_ts_rows',label:'Status 200 TS Rows'}
+    ],
+    {metric_value:cnum,unique_viewers:cnum,segment_viewers_estimate:cnum,status_200_segment_viewers_estimate:cnum,raw_ts_rows:n,status_200_ts_rows:n}
   );
   document.getElementById('regionCardsGrid').innerHTML=renderRegionInsightCards(geo.india_regions||[],geo.india_cities||[],geo.country_split||[]);
   renderRegionDrilldown(geo);
@@ -2023,6 +2445,7 @@ function renderTables(){
   document.getElementById('cmcdTable').innerHTML=oneRowTable(cmcd,{rows_with_cmcd:'Rows with CMCD',br_rows:'Bitrate rows',duration_rows:'Duration rows',measured_throughput_rows:'Measured throughput rows',session_id_rows:'Session ID rows'});
 
   setCount('channelCount',viewChannels);setCount('channelCardsCount',channelAudienceRows,'channels');setCount('channelInsightCount',channelAudienceRows,'channels');setCount('fastPlatformCount',fastPlatformRows,'rows');setCount('regionCardsCount',geo.india_regions,'regions');setCount('regionInsightCount',geo.india_regions,'regions');setCount('regionCountryCount',geo.country_split,'groups');setCount('querySummaryCount',D.query_summary);setCount('queryNonOkCount',D.query_non_ok);setCount('queryParamKeysCount',qkeyRows);setCount('queryMChannelCount',qmRows);setCount('unmappedCount',unmappedRows);setCount('mappingQualityCount',mqRows);
+  setCount('concurrencySummaryCount',concurrencySummaryTableRows,'pairs');setCount('concurrencyPeakCount',concurrencyPeakRows,'minutes');
   setCount('geoCountryCount',geo.country_split);setCount('deviceCount',deviceRows);setCount('geoIndiaRegionCount',geo.india_regions);setCount('geoIndiaCityCount',geo.india_cities);
   setCount('geoOtherRegionCount',geo.other_regions);setCount('geoOtherCityCount',geo.other_cities);setCount('asnCount',asnRows);setCount('uaCount',uaRows);
   setCount('deviceStatusCount',deviceStatusRows,'groups');setCount('knownDeviceCount',knownDeviceRows,'devices');setCount('unknownDeviceCount',unknownDeviceRows,'codes');
@@ -2034,7 +2457,7 @@ function renderTables(){
 
 // ── Tab init & header ─────────────────────────────────────────────────────────
 function initTabs(){
-  const tabs=[['overview','Overview'],['channels','Channel'],['regions','State / Region'],['mapping','Mapping QA'],['audience','Audience'],['devices','Devices & OS'],['reliability','Reliability'],['quality','Data Quality']];
+  const tabs=[['overview','Overview'],['channels','Channel'],['concurrency','Concurrency'],['regions','State / Region'],['mapping','Mapping QA'],['audience','Audience'],['devices','Devices & OS'],['reliability','Reliability'],['quality','Data Quality']];
   document.getElementById('tabs').innerHTML=tabs.map(([id,label],i)=>`<button class="tab-btn ${i===0?'active':''}" onclick="showTab('${id}',this)">${label}</button>`).join('');
 }
 function showTab(id,btn){document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');setTimeout(renderCharts,0);}

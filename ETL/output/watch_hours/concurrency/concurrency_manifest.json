@@ -1,0 +1,35 @@
+{
+  "generated_at_utc": "2026-06-08T10:44:55.884722+00:00",
+  "source": "fast",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "date_range_replaced": {
+    "start": "",
+    "end": ""
+  },
+  "metric_notes": {
+    "unique_viewers": "Exact distinct cliIP count per minute.",
+    "segment_viewers_estimate": "raw .ts rows divided by 10 six-second segments per minute.",
+    "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute."
+  },
+  "files": {
+    "minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_minute.parquet",
+    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_summary.parquet"
+  },
+  "new_counts": {
+    "minute_rows": 424714,
+    "summary_rows": 433
+  },
+  "output_stats": {
+    "minute_rows": 424714,
+    "first_date": "2026-05-13",
+    "last_date": "2026-06-08",
+    "dates": 27,
+    "platforms": 6,
+    "channels": 4,
+    "platform_channel_candidates": 19,
+    "peak_unique_viewers": 3635,
+    "avg_unique_viewers": 52.05,
+    "peak_segment_viewers_estimate": 3209.9,
+    "summary_rows": 433
+  }
+}

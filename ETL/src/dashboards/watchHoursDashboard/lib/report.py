@@ -53,6 +53,13 @@ DEFAULT_DEVICE_DECODE_DIR = Path(
     )
 )
 
+DEFAULT_CONCURRENCY_DIR = Path(
+    os.getenv(
+        "VG_CONCURRENCY_DIR",
+        str(Path(__file__).resolve().parents[4] / "output" / "watch_hours" / "concurrency"),
+    )
+)
+
 
 def _latest_file(folder: Path, pattern: str) -> Path | None:
     if not folder.exists():
@@ -99,6 +106,139 @@ def _clean_decode_samples(df: pd.DataFrame) -> pd.DataFrame:
         if col in out.columns:
             out[col] = out[col].map(_clean_encoded_value)
     return out
+
+
+def _clean_concurrency_frame(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in ["log_date", "minute_utc", "minute_ist", "peak_unique_viewers_minute_ist", "peak_segment_minute_ist"]:
+        if col in out.columns:
+            out[col] = out[col].fillna("").astype(str)
+    for col in ["source", "reqHost", "platform_key", "platform_name", "candidate_id", "channel_name"]:
+        if col in out.columns:
+            out[col] = out[col].fillna("").astype(str)
+    if not out.empty:
+        def text_col(name: str) -> pd.Series:
+            if name in out.columns:
+                return out[name].astype(str)
+            return pd.Series([""] * len(out), index=out.index)
+
+        out["pair_key"] = (
+            text_col("source")
+            + "|"
+            + text_col("platform_key")
+            + "|"
+            + text_col("candidate_id")
+            + "|"
+            + text_col("channel_name")
+        )
+    return out
+
+
+def load_concurrency_outputs(folder: Path = DEFAULT_CONCURRENCY_DIR) -> dict:
+    minute_path = folder / "concurrency_minute.parquet"
+    summary_path = folder / "concurrency_summary.parquet"
+    manifest_path = folder / "concurrency_manifest.json"
+    if not minute_path.exists():
+        minute_path = _latest_file(folder, "concurrency_minute*.parquet") or minute_path
+    if not summary_path.exists():
+        summary_path = _latest_file(folder, "concurrency_summary*.parquet") or summary_path
+
+    minute_numeric = [
+        "raw_ts_rows",
+        "status_200_ts_rows",
+        "distinct_hosts",
+        "unique_viewers",
+        "segment_viewers_estimate",
+        "status_200_segment_viewers_estimate",
+    ]
+    summary_numeric = [
+        "minute_count",
+        "raw_ts_rows",
+        "status_200_ts_rows",
+        "distinct_hosts",
+        "avg_unique_viewers",
+        "peak_unique_viewers",
+        "p95_unique_viewers",
+        "avg_segment_viewers_estimate",
+        "peak_segment_viewers_estimate",
+        "avg_status_200_segment_viewers_estimate",
+        "peak_status_200_segment_viewers_estimate",
+    ]
+    minute = _clean_concurrency_frame(with_numbers(_read_parquet_safe(minute_path), minute_numeric))
+    summary = _clean_concurrency_frame(with_numbers(_read_parquet_safe(summary_path), summary_numeric))
+
+    top_pairs_limit = max(1, int(os.getenv("VG_CONCURRENCY_TOP_PAIRS", "80")))
+    selected_pairs: set[str] = set()
+    pair_rank = pd.DataFrame()
+    if not summary.empty and "pair_key" in summary.columns:
+        pair_rank = (
+            summary.groupby(
+                ["pair_key", "source", "platform_key", "platform_name", "candidate_id", "channel_name", "reqHost"],
+                dropna=False,
+                as_index=False,
+            )
+            .agg(
+                raw_ts_rows=("raw_ts_rows", "sum"),
+                peak_unique_viewers=("peak_unique_viewers", "max"),
+                peak_segment_viewers_estimate=("peak_segment_viewers_estimate", "max"),
+                days=("log_date", "nunique"),
+            )
+            .sort_values(["peak_unique_viewers", "raw_ts_rows"], ascending=False)
+        )
+        selected_pairs = set(pair_rank.head(top_pairs_limit)["pair_key"].astype(str))
+
+    total_minute_rows = int(len(minute))
+    if selected_pairs and "pair_key" in minute.columns:
+        minute = minute[minute["pair_key"].astype(str).isin(selected_pairs)]
+    if selected_pairs and "pair_key" in summary.columns:
+        summary = summary[summary["pair_key"].astype(str).isin(selected_pairs)]
+
+    if not minute.empty:
+        minute = minute.sort_values(["log_date", "platform_name", "channel_name", "candidate_id", "minute_ist"])
+    if not summary.empty:
+        summary = summary.sort_values(["peak_unique_viewers", "raw_ts_rows"], ascending=False)
+
+    return {
+        "available": bool(minute_path.exists() and summary_path.exists() and not minute.empty),
+        "source_dir": str(folder),
+        "top_pairs_limit": top_pairs_limit,
+        "embedded_minute_rows": int(len(minute)),
+        "total_minute_rows": total_minute_rows,
+        "files": {
+            "minute": str(minute_path) if minute_path.exists() else "",
+            "summary": str(summary_path) if summary_path.exists() else "",
+            "manifest": str(manifest_path) if manifest_path.exists() else "",
+        },
+        "manifest": _read_json_safe(manifest_path),
+        "pairs": records(
+            pair_rank,
+            [
+                "source", "platform_key", "platform_name", "candidate_id", "channel_name", "reqHost",
+                "raw_ts_rows", "peak_unique_viewers", "peak_segment_viewers_estimate", "days",
+            ],
+            top_pairs_limit,
+        ),
+        "summary": records(
+            summary,
+            [
+                "log_date", "source", "reqHost", "platform_key", "platform_name", "candidate_id", "channel_name",
+                "distinct_hosts", "minute_count", "raw_ts_rows", "status_200_ts_rows", "avg_unique_viewers",
+                "peak_unique_viewers", "peak_unique_viewers_minute_ist", "p95_unique_viewers",
+                "avg_segment_viewers_estimate", "peak_segment_viewers_estimate",
+                "peak_segment_minute_ist", "avg_status_200_segment_viewers_estimate",
+                "peak_status_200_segment_viewers_estimate", "pair_key",
+            ],
+        ),
+        "minute": records(
+            minute,
+            [
+                "log_date", "source", "minute_utc", "minute_ist", "reqHost", "platform_key",
+                "platform_name", "candidate_id", "channel_name", "raw_ts_rows",
+                "status_200_ts_rows", "distinct_hosts", "unique_viewers", "segment_viewers_estimate",
+                "status_200_segment_viewers_estimate", "pair_key",
+            ],
+        ),
+    }
 
 
 def load_device_decode_outputs(folder: Path = DEFAULT_DEVICE_DECODE_DIR) -> dict:
@@ -346,6 +486,7 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     true_range  = true_data_range(file_dates, files)
     daily_tables = read_all_daily_tables(profile_dir)
     device_decode = load_device_decode_outputs()
+    concurrency = load_concurrency_outputs()
     encoded_display_fields = {"state", "city", "sample_reqPath", "sample_value", "userAgent", "UA"}
     for rows in daily_tables.values():
         for row in rows:
@@ -413,6 +554,7 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
         "geo":                build_geo_breakdown(geo),
         "device":             records(device.sort_values("watch_hours", ascending=False),       ["channel_name", "device_type", "watch_hours", "approx_unique_ips"], 30),
         "device_decode":      device_decode,
+        "concurrency":        concurrency,
         "asn":                records(asn.sort_values("watch_hours", ascending=False),          ["asn", "as_name", "as_country", "asn_type", "watch_hours", "approx_unique_ips", "distinct_hosts", "sample_reqHost"], 25),
         "ua":                 records(ua.sort_values("rows", ascending=False),                  ["UA", "rows", "approx_unique_ips", "distinct_hosts"], 20),
         "query_summary":      records(query_summary,                                            ["review_status", "rows", "requests", "sessions", "devices"]),

@@ -226,6 +226,11 @@ def main() -> None:
         action="store_true",
         help="Skip device_snapshot/device_daily generation.",
     )
+    parser.add_argument(
+        "--skip-concurrency",
+        action="store_true",
+        help="Skip FAST minute-level concurrency aggregate generation.",
+    )
 
     # 001.py controls
     parser.add_argument(
@@ -385,6 +390,18 @@ def main() -> None:
     parser.add_argument("--ua-api-limit", type=int, default=0, help="Optional whatmyuseragent.com API decode count.")
     parser.add_argument("--ua-min-rows-for-api", type=int, default=1)
 
+    # FAST concurrency controls
+    parser.add_argument(
+        "--concurrency-window-days",
+        type=int,
+        default=14,
+        help="Recent lake window for concurrency when no daily ETL date is supplied.",
+    )
+    parser.add_argument("--concurrency-start", default=None, help="Concurrency IST start date YYYY-MM-DD.")
+    parser.add_argument("--concurrency-end", default=None, help="Concurrency IST end date YYYY-MM-DD.")
+    parser.add_argument("--concurrency-threads", type=int, default=6)
+    parser.add_argument("--concurrency-memory", default="16GB")
+
     args = parser.parse_args()
 
     base_root = Path(args.base).resolve()
@@ -411,6 +428,7 @@ def main() -> None:
         and args.skip_overview
         and args.skip_deep_profile
         and args.skip_device_snapshot
+        and (args.skip_watch or args.skip_concurrency)
         and not args.run_ua_profile
     ):
         raise SystemExit("Nothing to run. Remove one skip flag.")
@@ -424,6 +442,7 @@ def main() -> None:
         (not args.skip_deep_profile)
         or (not args.skip_device_snapshot)
         or (not args.skip_overview)
+        or ((not args.skip_watch) and (not args.skip_concurrency))
         or args.run_ua_profile
     )
     if args.skip_etl and needs_lake and not lake_root.exists():
@@ -436,6 +455,7 @@ def main() -> None:
             "VG_DASH_PROFILE_DIR": str(profile_dir),
             "VG_DASH_WATCH_OUT": str(watch_out),
             "VG_DASH_OVERVIEW_BASE": str(overview_data_dir),
+            "VG_CONCURRENCY_DIR": str(output_root / "watch_hours" / "concurrency"),
             "VG_ETL_LAKE_ROOT": str(lake_root),
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
@@ -492,6 +512,10 @@ def main() -> None:
     ua_profile_script = _local_script(
         etl_root,
         str(Path("src") / "tools" / "profile_user_agents.py"),
+    )
+    concurrency_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_concurrency.py"),
     )
 
     if not args.skip_etl:
@@ -766,6 +790,49 @@ def main() -> None:
         run(overview_cmd, cwd=overview_dashboard_dir, env=env, step_name="overview_dashboard_html", log_dir=log_dir)
     else:
         print("\n[skip] overview step skipped.")
+
+    if not args.skip_watch and not args.skip_concurrency:
+        fast_lake = lake_root / "source=fast"
+        if args.dry_run:
+            print("\n[skip] FAST concurrency skipped in dry-run mode.")
+        elif not fast_lake.exists():
+            print(f"\n[skip] FAST concurrency skipped because FAST lake folder is missing: {fast_lake}")
+        else:
+            concurrency_start = args.concurrency_start
+            concurrency_end = args.concurrency_end
+            if not (concurrency_start and concurrency_end):
+                if args.etl1_daily_date:
+                    daily_dates = _daily_profile_dates(lake_root, date.fromisoformat(args.etl1_daily_date))
+                    if daily_dates:
+                        concurrency_start = min(daily_dates).isoformat()
+                        concurrency_end = max(daily_dates).isoformat()
+                    else:
+                        concurrency_start = args.etl1_daily_date
+                        concurrency_end = args.etl1_daily_date
+                else:
+                    latest_fast = _latest_lake_day(fast_lake) or _latest_lake_day(lake_root)
+                    if latest_fast and args.concurrency_window_days and args.concurrency_window_days > 0:
+                        start_fast = latest_fast - timedelta(days=args.concurrency_window_days - 1)
+                        concurrency_start = start_fast.isoformat()
+                        concurrency_end = latest_fast.isoformat()
+
+            concurrency_cmd = [
+                python,
+                str(concurrency_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                concurrency_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            run(concurrency_cmd, cwd=etl_root, env=env, step_name="watch_hours_fast_concurrency", log_dir=log_dir)
+    else:
+        print("\n[skip] FAST concurrency step skipped.")
 
     if not args.skip_watch:
         watch_cmd = [
