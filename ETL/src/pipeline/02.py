@@ -44,6 +44,22 @@ PROCESS_SOURCES = {
 }
 
 
+def normalize_compression(value: str) -> str:
+    compression = str(value or "").strip().upper()
+    if compression == "NONE":
+        return "UNCOMPRESSED"
+    return compression or "ZSTD"
+
+
+COMPRESSION = normalize_compression(COMPRESSION)
+_fallback_raw = os.getenv("VG_ETL_STAGE_COMPRESSION_FALLBACKS", "SNAPPY,UNCOMPRESSED")
+COMPRESSION_CHAIN = []
+for _compression in [COMPRESSION, *[item.strip() for item in _fallback_raw.split(",")]]:
+    _compression = normalize_compression(_compression)
+    if _compression and _compression not in COMPRESSION_CHAIN:
+        COMPRESSION_CHAIN.append(_compression)
+
+
 def folder_signature(folder: Path) -> str:
     h = hashlib.blake2b(digest_size=16)
     files = sorted(folder.glob("*.parquet"), key=lambda p: p.name)
@@ -142,20 +158,67 @@ def is_memory_error(exc: Exception) -> bool:
     return "out of memory" in text or "allocation failure" in text
 
 
+def is_parquet_writer_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        "parquet writer" in text
+        or "compressed page size out of range" in text
+        or ("internal error" in text and "parquet" in text)
+    )
+
+
+def parquet_copy_options(compression: str) -> str:
+    options = [
+        "FORMAT PARQUET",
+        f"COMPRESSION {compression}",
+    ]
+    if compression == "ZSTD" and COMP_LEVEL > 0:
+        options.append(f"COMPRESSION_LEVEL {COMP_LEVEL}")
+    return ",\n            ".join(options)
+
+
+def copy_query_to_parquet_with_fallback(
+    con: duckdb.DuckDBPyConnection,
+    query: str,
+    output_file: Path,
+    label: str,
+) -> str:
+    for idx, compression in enumerate(COMPRESSION_CHAIN):
+        try:
+            output_file.unlink(missing_ok=True)
+            con.execute(f"""
+                COPY (
+                    {query}
+                )
+                TO '{sql_path(output_file)}'
+                (
+                    {parquet_copy_options(compression)}
+                );
+            """)
+            if idx:
+                print(f"[fallback] {label} wrote with {compression}.")
+            return compression
+        except Exception as exc:
+            output_file.unlink(missing_ok=True)
+            has_next = idx + 1 < len(COMPRESSION_CHAIN)
+            if has_next and is_parquet_writer_error(exc):
+                next_compression = COMPRESSION_CHAIN[idx + 1]
+                print(f"[warn] {label} parquet write failed with {compression}: {exc}")
+                print(f"[fallback] Retrying {label} with {next_compression}.")
+                continue
+            raise
+
+    raise RuntimeError(f"No parquet compression fallback succeeded for {label}.")
+
+
 def dedupe_single(con: duckdb.DuckDBPyConnection, input_glob: str, tmp_output_file: Path) -> str:
-    con.execute(f"""
-        COPY (
-            SELECT DISTINCT *
-            FROM read_parquet('{input_glob}')
-        )
-        TO '{sql_path(tmp_output_file)}'
-        (
-            FORMAT PARQUET,
-            COMPRESSION {COMPRESSION},
-            COMPRESSION_LEVEL {COMP_LEVEL}
-        );
-    """)
-    return "single"
+    compression = copy_query_to_parquet_with_fallback(
+        con,
+        f"SELECT DISTINCT * FROM read_parquet('{input_glob}')",
+        tmp_output_file,
+        "single-pass dedupe",
+    )
+    return f"single_{compression.lower()}"
 
 
 def dedupe_bucketed(
@@ -169,45 +232,54 @@ def dedupe_bucketed(
     if not columns:
         raise RuntimeError("Input parquet has no columns.")
 
-    bucket_dir = tmp_output_file.with_name(f"{tmp_output_file.stem}.dedupe_parts")
-    shutil.rmtree(bucket_dir, ignore_errors=True)
-    bucket_dir.mkdir(parents=True, exist_ok=True)
-
     hash_expr = "hash(" + ", ".join(sql_ident(c) for c in columns) + ")"
-    try:
-        for bucket in range(buckets):
-            part_file = bucket_dir / f"part_{bucket:04d}.parquet"
-            print(f"  [bucket {bucket + 1:02d}/{buckets:02d}] distinct")
+
+    bucket_dir = tmp_output_file.with_name(f"{tmp_output_file.stem}.dedupe_parts")
+    for idx, compression in enumerate(COMPRESSION_CHAIN):
+        shutil.rmtree(bucket_dir, ignore_errors=True)
+        bucket_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            for bucket in range(buckets):
+                part_file = bucket_dir / f"part_{bucket:04d}.parquet"
+                print(f"  [bucket {bucket + 1:02d}/{buckets:02d}] distinct")
+                con.execute(f"""
+                    COPY (
+                        SELECT DISTINCT *
+                        FROM read_parquet('{input_glob}')
+                        WHERE ({hash_expr} % {buckets}) = {bucket}
+                    )
+                    TO '{sql_path(part_file)}'
+                    (
+                        {parquet_copy_options(compression)}
+                    );
+                """)
+
             con.execute(f"""
                 COPY (
-                    SELECT DISTINCT *
-                    FROM read_parquet('{input_glob}')
-                    WHERE ({hash_expr} % {buckets}) = {bucket}
+                    SELECT *
+                    FROM read_parquet('{sql_path(bucket_dir)}/*.parquet')
                 )
-                TO '{sql_path(part_file)}'
+                TO '{sql_path(tmp_output_file)}'
                 (
-                    FORMAT PARQUET,
-                    COMPRESSION {COMPRESSION},
-                    COMPRESSION_LEVEL {COMP_LEVEL}
+                    {parquet_copy_options(compression)}
                 );
             """)
+            if idx:
+                print(f"[fallback] bucketed dedupe wrote with {compression}.")
+            return f"bucketed_{buckets}_{compression.lower()}"
+        except Exception as exc:
+            tmp_output_file.unlink(missing_ok=True)
+            has_next = idx + 1 < len(COMPRESSION_CHAIN)
+            if has_next and is_parquet_writer_error(exc):
+                next_compression = COMPRESSION_CHAIN[idx + 1]
+                print(f"[warn] bucketed dedupe parquet write failed with {compression}: {exc}")
+                print(f"[fallback] Retrying bucketed dedupe with {next_compression}.")
+                continue
+            raise
+        finally:
+            shutil.rmtree(bucket_dir, ignore_errors=True)
 
-        con.execute(f"""
-            COPY (
-                SELECT *
-                FROM read_parquet('{sql_path(bucket_dir)}/*.parquet')
-            )
-            TO '{sql_path(tmp_output_file)}'
-            (
-                FORMAT PARQUET,
-                COMPRESSION {COMPRESSION},
-                COMPRESSION_LEVEL {COMP_LEVEL}
-            );
-        """)
-    finally:
-        shutil.rmtree(bucket_dir, ignore_errors=True)
-
-    return f"bucketed_{buckets}"
+    raise RuntimeError("No bucketed parquet compression fallback succeeded.")
 
 
 def dedupe_to_parquet(

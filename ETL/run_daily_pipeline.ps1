@@ -21,7 +21,10 @@ param(
     [switch]$SkipPostVerifyDelay,
     [switch]$SkipWatch,
     [switch]$SkipOverview,
-    [switch]$SingleSourceMode
+    [switch]$SingleSourceMode,
+    [int]$Etl1Workers = 2,
+    [ValidateSet("zstd", "snappy", "lz4", "gzip", "brotli", "none")]
+    [string]$Etl1Compression = "zstd"
 )
 
 $ErrorActionPreference = "Stop"
@@ -303,6 +306,12 @@ try {
     }
     if ($PrefsFile) {
         $pipelineArgs += @("--etl1-prefs-file", $PrefsFile)
+    }
+    if ($Etl1Workers -gt 0) {
+        $pipelineArgs += @("--etl1-workers", $Etl1Workers.ToString())
+    }
+    if ($Etl1Compression) {
+        $pipelineArgs += @("--etl1-compression", $Etl1Compression)
     }
     $pipelineArgs += $watchArgs
 

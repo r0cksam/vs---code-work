@@ -1,0 +1,21 @@
+{
+  "generated_at_utc": "2026-06-08T08:20:18.651608+00:00",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "source": "all",
+  "start": "2026-06-01",
+  "end": "2026-06-08",
+  "api_limit": 100,
+  "outputs": {
+    "profile": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_distinct_profile_all_sources_2026-06-01_to_2026-06-08.parquet",
+    "cache": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\cache\\device_decode\\ua_decode_cache.parquet",
+    "enriched": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_enriched_all_sources_2026-06-01_to_2026-06-08.parquet",
+    "unknown_review": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_unknown_review_all_sources_2026-06-01_to_2026-06-08.csv"
+  },
+  "stats": {
+    "profile_rows": 5497,
+    "profile_raw_rows": 231957625,
+    "cache_rows": 5336,
+    "api_decoded_rows": 101,
+    "unknown_review_rows": 284
+  }
+}

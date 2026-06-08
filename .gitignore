@@ -25,6 +25,10 @@ superset/
 *.csv
 *.xlsx
 *.xls
+
+# Generated dashboard HTML can exceed GitHub's file-size limit.
+ETL/output/watch_hours/veto_watch_hours.html
+
 # DuckDB cache/database files
 *.duckdb
 *.duckdb.wal

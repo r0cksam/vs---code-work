@@ -252,7 +252,31 @@ def ensure_cache_shape(cache: pd.DataFrame) -> pd.DataFrame:
     for col in UA_COLUMNS:
         if col not in out.columns:
             out[col] = ""
-    return out[UA_COLUMNS].drop_duplicates("ua_hash", keep="last")
+    return out[UA_COLUMNS]
+
+
+def dedupe_cache(cache: pd.DataFrame) -> pd.DataFrame:
+    cache = ensure_cache_shape(cache)
+    if cache.empty:
+        return cache
+
+    priority = {
+        "whatmyuseragent": 0,
+        "local_rule": 1,
+    }
+    out = cache.copy()
+    out["_decoder_priority"] = out["decoder"].map(priority).fillna(9)
+    out["_decoded_sort"] = pd.to_datetime(out["decoded_at_utc"], errors="coerce", utc=True)
+    out = (
+        out.sort_values(
+            ["ua_hash", "_decoder_priority", "_decoded_sort"],
+            ascending=[True, True, False],
+            na_position="last",
+        )
+        .drop_duplicates("ua_hash", keep="first")
+        .drop(columns=["_decoder_priority", "_decoded_sort"])
+    )
+    return ensure_cache_shape(out)
 
 
 def browser_from_ua(ua: str) -> tuple[str, str, str]:
@@ -393,12 +417,12 @@ def decode_api(ua: str, args: argparse.Namespace) -> dict:
 
 
 def update_cache(profile: pd.DataFrame, cache: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
-    cache = ensure_cache_shape(cache)
+    cache = dedupe_cache(cache)
     known_hashes = set(cache["ua_hash"].astype(str))
     local_rows = [local_decode(row) for _, row in profile.iterrows() if str(row["ua_hash"]) not in known_hashes]
     if local_rows:
         cache = pd.concat([cache, pd.DataFrame(local_rows)], ignore_index=True)
-        cache = ensure_cache_shape(cache)
+        cache = dedupe_cache(cache)
 
     if args.api_limit <= 0:
         return cache
@@ -435,12 +459,11 @@ def update_cache(profile: pd.DataFrame, cache: pd.DataFrame, args: argparse.Name
 
     if api_rows:
         cache = pd.concat([cache, pd.DataFrame(api_rows)], ignore_index=True)
-        cache = ensure_cache_shape(cache)
-    return cache
+    return dedupe_cache(cache)
 
 
 def enrich_profile(profile: pd.DataFrame, cache: pd.DataFrame) -> pd.DataFrame:
-    cache = ensure_cache_shape(cache)
+    cache = dedupe_cache(cache)
     enriched = profile.merge(cache, on="ua_hash", how="left", suffixes=("", "_cache"))
     for col in ["ua_norm_key", "ua_sample"]:
         cache_col = f"{col}_cache"
