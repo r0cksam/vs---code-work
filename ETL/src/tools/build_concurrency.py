@@ -90,6 +90,7 @@ def platform_name_sql(host_col: str = "reqHost") -> str:
     return f"""
 CASE
     WHEN {h} LIKE '%indiatv-samsung%' THEN 'Samsung TV Plus - IN'
+    WHEN {h} LIKE '%veto-samsung%' THEN 'Samsung TV Plus - IN'
     WHEN {h} LIKE '%indiatv-tcl%' THEN 'TCL'
     WHEN {h} LIKE '%indiatv-cloudtv%' THEN 'CloudTV'
     WHEN {h} LIKE '%indiatv-vi%' THEN 'Vi Movies & TV'
@@ -104,6 +105,7 @@ def platform_key_sql(host_col: str = "reqHost") -> str:
     return f"""
 CASE
     WHEN {h} LIKE '%indiatv-samsung%' THEN 'samsung'
+    WHEN {h} LIKE '%veto-samsung%' THEN 'samsung'
     WHEN {h} LIKE '%indiatv-tcl%' THEN 'tcl'
     WHEN {h} LIKE '%indiatv-cloudtv%' THEN 'cloudtv'
     WHEN {h} LIKE '%indiatv-vi%' THEN 'vi'

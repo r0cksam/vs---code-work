@@ -153,6 +153,19 @@ const compact=function(v){v=Number(v||0);return v>=1e6?(v/1e6).toFixed(1)+'M':v>
 const escapeHtml=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
 const sum=function(rows,key){return (rows||[]).reduce(function(a,r){return a+Number(r[key]||0);},0);};
 const maxVal=function(rows,key){return (rows||[]).reduce(function(a,r){return Math.max(a,Number(r[key]||0));},0);};
+const pad2=function(v){return String(v).padStart(2,'0');};
+function formatDate(value){
+  const m=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m?m[3]+'-'+m[2]+'-'+m[1].slice(2):String(value||'-');
+}
+function formatDateTime(value){
+  const m=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if(!m)return String(value||'-');
+  const hour=Number(m[4]);
+  const suffix=hour>=12?'PM':'AM';
+  const hour12=hour%12||12;
+  return m[3]+'-'+m[2]+'-'+m[1].slice(2)+' '+pad2(hour12)+':'+m[5]+':'+m[6]+' '+suffix;
+}
 
 function pairKey(row){return String(row.pair_key||String(row.source||'fast')+'|'+String(row.platform_key||'')+'|'+String(row.candidate_id||'')+'|'+String(row.channel_name||''));}
 function platformKey(row){return String(row.platform_key||row.platform_name||'');}
@@ -402,10 +415,10 @@ function render(){
   renderTables(rows);
 }
 document.getElementById('title').textContent=D.title||'Veto Concurrency';
-document.getElementById('rangeMeta').textContent='True data range: '+(D.stats?.first_date||'-')+' to '+(D.stats?.last_date||'-')+' | '+fmt(D.stats?.minute_rows||0)+' minute rows';
-document.getElementById('fullDateMeta').textContent='Full-day filter range: '+(D.stats?.first_date||'-')+' to '+(D.stats?.latest_full_date||D.stats?.last_date||'-')+' IST';
-document.getElementById('generatedMeta').textContent='Last updated '+(D.generated_at||'-');
-document.getElementById('dataStatus').innerHTML='<span><b>Default range</b>: full completed dates only</span><span><b>Current IST date</b>: '+escapeHtml(D.stats?.current_ist_date||'-')+(D.stats?.current_date_hidden?' hidden from filters because it is still in progress':'')+'</span><span><b>Viewer ID</b>: switch between cliIP and UA without changing channel/date filters</span><span><b>Chart Value</b>: Active viewers uses selected ID; .ts estimates use rows / 10 per minute</span>';
+document.getElementById('rangeMeta').textContent='True data range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.last_date)+' | '+fmt(D.stats?.minute_rows||0)+' minute rows';
+document.getElementById('fullDateMeta').textContent='Full-day filter range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.latest_full_date||D.stats?.last_date)+' IST';
+document.getElementById('generatedMeta').textContent='Last updated '+formatDateTime(D.generated_at);
+document.getElementById('dataStatus').innerHTML='<span><b>Default range</b>: full completed dates only</span><span><b>Current IST date</b>: '+escapeHtml(formatDate(D.stats?.current_ist_date))+(D.stats?.current_date_hidden?' hidden from filters because it is still in progress':'')+'</span><span><b>Viewer ID</b>: switch between cliIP and UA without changing channel/date filters</span><span><b>Chart Value</b>: Active viewers uses selected ID; .ts estimates use rows / 10 per minute</span>';
 document.getElementById('fileMeta').textContent='Source parquet: '+(D.files?.minute||'');
 document.getElementById('chartModal').addEventListener('click',function(ev){if(ev.target===this)closeChartModal();});
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape')closeChartModal();});
