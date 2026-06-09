@@ -192,35 +192,6 @@ tr:hover td{background:#f6f9ff}
     <div class="insight-grid" id="channelCardsGrid"></div>
     <div class="panel"><h2>Channel Detail<span class="count-chip" id="channelInsightCount"></span></h2><div class="table-wrap" id="channelInsightTable"></div></div>
   </section>
-  <section class="tab" id="concurrency">
-    <div class="filter-bar concurrency-filter">
-      <span class="filter-title">Date Range</span>
-      <input type="date" id="concurrencyStart" onchange="setConcurrencyDateRange()"/>
-      <span style="font-size:12px;color:#a7b0bd;font-weight:700">to</span>
-      <input type="date" id="concurrencyEnd" onchange="setConcurrencyDateRange()"/>
-      <button class="filter-btn" id="concurrencyLatestBtn" onclick="setConcurrencyPreset('latest')">Latest Day</button>
-      <button class="filter-btn" id="concurrency7Btn" onclick="setConcurrencyPreset(7)">7D</button>
-      <span class="filter-sep"></span>
-      <span class="filter-title">Platform</span>
-      <select class="channel-select" id="concurrencyPlatform" onchange="setConcurrencyPlatform(this.value)"></select>
-      <span class="filter-sep"></span>
-      <span class="filter-title">Channel</span>
-      <select class="channel-select" id="concurrencyPair" onchange="setConcurrencyPair(this.value)"></select>
-      <span class="filter-sep"></span>
-      <span class="filter-title">Metric</span>
-      <select class="channel-select" id="concurrencyMetric" onchange="setConcurrencyMetric(this.value)"></select>
-      <button class="filter-btn" id="concurrencyCompareBtn" onclick="toggleConcurrencyCompare()">Compare</button>
-      <span class="filter-range" id="concurrencyRangeText"></span>
-    </div>
-    <div class="metric-strip" id="concurrencyMetrics"></div>
-    <div class="grid-2">
-      <div class="panel grid-span-all concurrency-panel"><h2>Minute-Level Concurrency<span class="chart-actions"><span class="chart-sub">FAST active viewers</span><button class="expand-btn" onclick="openChartModal('concurrencyChart')">Expand</button></span></h2><div class="chart-box concurrency"><canvas id="concurrencyChart"></canvas></div></div>
-    </div>
-    <div class="grid-2">
-      <div class="panel"><h2>Concurrency Summary<span class="count-chip" id="concurrencySummaryCount"></span></h2><div class="table-wrap" id="concurrencySummaryTable"></div></div>
-      <div class="panel"><h2>Peak Minutes<span class="count-chip" id="concurrencyPeakCount"></span></h2><div class="table-wrap" id="concurrencyPeakTable"></div></div>
-    </div>
-  </section>
   <section class="tab" id="regions">
     <div class="section-title"><h2>India State / Region</h2><span class="count-chip" id="regionCardsCount"></span></div>
     <div class="grid-2">
@@ -1821,7 +1792,6 @@ function renderCharts(){
   renderChannelInsightHours();
   renderChannelAverageCharts();
   renderFastPlatformChart();
-  renderConcurrencyChart();
   renderDeviceStatusChart();
   renderKnownDeviceChart();
   renderUnknownDeviceChart();
@@ -2203,10 +2173,11 @@ function renderTables(){
   const cmcd=aggregateCmcd();
   const channelAudienceRows=aggregateChannelAudience();
   const fastPlatformRows=aggregateFastPlatforms();
-  const concurrencySummaryTableRows=aggregateConcurrencySummary();
-  const concurrencyMinuteRows=concurrencyFilteredRows();
-  const concurrencyPeakRows=concurrencyPeakRowsForTable(concurrencyMinuteRows);
-  const concurrencyStat=concurrencyStats(concurrencyMinuteRows);
+  const hasConcurrencyPanel=!!document.getElementById('concurrencyMetrics');
+  const concurrencySummaryTableRows=hasConcurrencyPanel?aggregateConcurrencySummary():[];
+  const concurrencyMinuteRows=hasConcurrencyPanel?concurrencyFilteredRows():[];
+  const concurrencyPeakRows=hasConcurrencyPanel?concurrencyPeakRowsForTable(concurrencyMinuteRows):[];
+  const concurrencyStat=hasConcurrencyPanel?concurrencyStats(concurrencyMinuteRows):{};
   const wh={fn:v=>fmtH(v),num:true};const n={fn:v=>fmt(v),num:true};const p={fn:v=>fmtPct(v),num:true};const sample={fn:v=>clipText(v,150)};const gf={watch_hours:wh,share_pct:p,approx_unique_ips:n};
   const cnum={fn:v=>fmt(v,1),num:true};
   const statusMeaningRows=(statusRows||[]).map(r=>({statusCode:r.statusCode,meaning:r.meaning}));
@@ -2276,50 +2247,52 @@ function renderTables(){
       avg_hours_per_device:{fn:v=>fmtMinFromHours(v),num:true}
     }
   );
-  document.getElementById('concurrencyMetrics').innerHTML=[
-    mini('Profile',CONCURRENCY.available?'Available':'Missing'),
-    mini('Date Range',escapeHtml(concurrencyStart&&concurrencyEnd?`${concurrencyStart} to ${concurrencyEnd}`:'-')),
-    mini('Platform',escapeHtml(concurrencyStat.platform_name||'-')),
-    mini('Channel',escapeHtml(concurrencyStat.channel_name||'-')),
-    mini('Peak Viewers',fmt(concurrencyStat.peak,1)),
-    mini('Average Viewers',fmt(concurrencyStat.avg,1)),
-    mini('Minutes',fmt(concurrencyStat.minutes)),
-    mini('Lines',fmt(concurrencyStat.lines||0)),
-    mini('Raw TS Rows',fmt(concurrencyStat.raw_ts_rows)),
-    mini('Status 200 TS Rows',fmt(concurrencyStat.status_200_ts_rows)),
-    mini('Peak Minute IST',escapeHtml(concurrencyStat.peak_minute||'-'))
-  ].join('');
-  document.getElementById('concurrencySummaryTable').innerHTML=table(
-    concurrencySummaryTableRows,
-    [
-      {key:'platform_name',label:'Platform'},
-      {key:'display_channel',label:'Channel'},
-      {key:'peak_unique_viewers',label:'Peak Active Viewers'},
-      {key:'avg_unique_viewers',label:'Avg Active Viewers'},
-      {key:'peak_segment_viewers_estimate',label:'Peak Segment Estimate'},
-      {key:'minute_count',label:'Minutes'},
-      {key:'distinct_hosts',label:'Hosts'},
-      {key:'raw_ts_rows',label:'Raw TS Rows'},
-      {key:'status_200_ts_rows',label:'Status 200 TS Rows'},
-      {key:'reqHost',label:'Host Evidence'}
-    ],
-    {peak_unique_viewers:cnum,avg_unique_viewers:cnum,peak_segment_viewers_estimate:cnum,minute_count:n,distinct_hosts:n,raw_ts_rows:n,status_200_ts_rows:n}
-  );
-  document.getElementById('concurrencyPeakTable').innerHTML=table(
-    concurrencyPeakRows,
-    [
-      {key:'line_label',label:'Line'},
-      {key:'minute_ist',label:'Minute IST'},
-      {key:'minute_utc',label:'Minute UTC'},
-      {key:'metric_value',label:CONCURRENCY_METRICS[concurrencyMetric]?.short||'Value'},
-      {key:'unique_viewers',label:'Active Viewers'},
-      {key:'segment_viewers_estimate',label:'Segment Estimate'},
-      {key:'status_200_segment_viewers_estimate',label:'Status 200 Estimate'},
-      {key:'raw_ts_rows',label:'Raw TS Rows'},
-      {key:'status_200_ts_rows',label:'Status 200 TS Rows'}
-    ],
-    {metric_value:cnum,unique_viewers:cnum,segment_viewers_estimate:cnum,status_200_segment_viewers_estimate:cnum,raw_ts_rows:n,status_200_ts_rows:n}
-  );
+  if(hasConcurrencyPanel){
+    document.getElementById('concurrencyMetrics').innerHTML=[
+      mini('Profile',CONCURRENCY.available?'Available':'Missing'),
+      mini('Date Range',escapeHtml(concurrencyStart&&concurrencyEnd?`${concurrencyStart} to ${concurrencyEnd}`:'-')),
+      mini('Platform',escapeHtml(concurrencyStat.platform_name||'-')),
+      mini('Channel',escapeHtml(concurrencyStat.channel_name||'-')),
+      mini('Peak Viewers',fmt(concurrencyStat.peak,1)),
+      mini('Average Viewers',fmt(concurrencyStat.avg,1)),
+      mini('Minutes',fmt(concurrencyStat.minutes)),
+      mini('Lines',fmt(concurrencyStat.lines||0)),
+      mini('Raw TS Rows',fmt(concurrencyStat.raw_ts_rows)),
+      mini('Status 200 TS Rows',fmt(concurrencyStat.status_200_ts_rows)),
+      mini('Peak Minute IST',escapeHtml(concurrencyStat.peak_minute||'-'))
+    ].join('');
+    document.getElementById('concurrencySummaryTable').innerHTML=table(
+      concurrencySummaryTableRows,
+      [
+        {key:'platform_name',label:'Platform'},
+        {key:'display_channel',label:'Channel'},
+        {key:'peak_unique_viewers',label:'Peak Active Viewers'},
+        {key:'avg_unique_viewers',label:'Avg Active Viewers'},
+        {key:'peak_segment_viewers_estimate',label:'Peak Segment Estimate'},
+        {key:'minute_count',label:'Minutes'},
+        {key:'distinct_hosts',label:'Hosts'},
+        {key:'raw_ts_rows',label:'Raw TS Rows'},
+        {key:'status_200_ts_rows',label:'Status 200 TS Rows'},
+        {key:'reqHost',label:'Host Evidence'}
+      ],
+      {peak_unique_viewers:cnum,avg_unique_viewers:cnum,peak_segment_viewers_estimate:cnum,minute_count:n,distinct_hosts:n,raw_ts_rows:n,status_200_ts_rows:n}
+    );
+    document.getElementById('concurrencyPeakTable').innerHTML=table(
+      concurrencyPeakRows,
+      [
+        {key:'line_label',label:'Line'},
+        {key:'minute_ist',label:'Minute IST'},
+        {key:'minute_utc',label:'Minute UTC'},
+        {key:'metric_value',label:CONCURRENCY_METRICS[concurrencyMetric]?.short||'Value'},
+        {key:'unique_viewers',label:'Active Viewers'},
+        {key:'segment_viewers_estimate',label:'Segment Estimate'},
+        {key:'status_200_segment_viewers_estimate',label:'Status 200 Estimate'},
+        {key:'raw_ts_rows',label:'Raw TS Rows'},
+        {key:'status_200_ts_rows',label:'Status 200 TS Rows'}
+      ],
+      {metric_value:cnum,unique_viewers:cnum,segment_viewers_estimate:cnum,status_200_segment_viewers_estimate:cnum,raw_ts_rows:n,status_200_ts_rows:n}
+    );
+  }
   document.getElementById('regionCardsGrid').innerHTML=renderRegionInsightCards(geo.india_regions||[],geo.india_cities||[],geo.country_split||[]);
   renderRegionDrilldown(geo);
   document.getElementById('regionInsightTable').innerHTML=table(geo.india_regions||[],[{key:'state_region',label:'State / Region'},{key:'watch_hours',label:'Watch Hours'},{key:'share_pct',label:'India Share'},{key:'approx_unique_ips',label:'Approx IPs'}],{...gf,state_region:{fn:v=>regionStateLink(v)}});
@@ -2457,7 +2430,7 @@ function renderTables(){
 
 // ── Tab init & header ─────────────────────────────────────────────────────────
 function initTabs(){
-  const tabs=[['overview','Overview'],['channels','Channel'],['concurrency','Concurrency'],['regions','State / Region'],['mapping','Mapping QA'],['audience','Audience'],['devices','Devices & OS'],['reliability','Reliability'],['quality','Data Quality']];
+  const tabs=[['overview','Overview'],['channels','Channel'],['regions','State / Region'],['mapping','Mapping QA'],['audience','Audience'],['devices','Devices & OS'],['reliability','Reliability'],['quality','Data Quality']];
   document.getElementById('tabs').innerHTML=tabs.map(([id,label],i)=>`<button class="tab-btn ${i===0?'active':''}" onclick="showTab('${id}',this)">${label}</button>`).join('');
 }
 function showTab(id,btn){document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');setTimeout(renderCharts,0);}

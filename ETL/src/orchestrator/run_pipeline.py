@@ -401,6 +401,11 @@ def main() -> None:
     parser.add_argument("--concurrency-end", default=None, help="Concurrency IST end date YYYY-MM-DD.")
     parser.add_argument("--concurrency-threads", type=int, default=6)
     parser.add_argument("--concurrency-memory", default="16GB")
+    parser.add_argument(
+        "--concurrency-html",
+        default=None,
+        help="Standalone FAST concurrency dashboard html output path.",
+    )
 
     args = parser.parse_args()
 
@@ -413,9 +418,15 @@ def main() -> None:
     src_root = workspace / "src"
     pipeline_dir = src_root / "pipeline"
     watch_dir = src_root / "dashboards" / "watchHoursDashboard"
+    concurrency_dashboard_dir = src_root / "dashboards" / "concurrencyDashboard"
     overview_dashboard_dir = src_root / "dashboards" / "overViewDashboard"
     profile_dir = Path(args.watch_profile).resolve() if args.watch_profile else output_root / "watch_hours" / "profile"
     watch_out = Path(args.watch_out).resolve() if args.watch_out else output_root / "watch_hours" / "veto_watch_hours.html"
+    concurrency_out = (
+        Path(args.concurrency_html).resolve()
+        if args.concurrency_html
+        else output_root / "watch_hours" / "concurrency" / "veto_concurrency.html"
+    )
     overview_data_dir = Path(args.overview_data_dir).resolve() if args.overview_data_dir else output_root / "overview"
     overview_html = Path(args.overview_html).resolve() if args.overview_html else overview_data_dir / "overview_dashboard.html"
 
@@ -435,6 +446,7 @@ def main() -> None:
 
     profile_dir.mkdir(parents=True, exist_ok=True)
     watch_out.parent.mkdir(parents=True, exist_ok=True)
+    concurrency_out.parent.mkdir(parents=True, exist_ok=True)
     overview_data_dir.mkdir(parents=True, exist_ok=True)
     overview_html.parent.mkdir(parents=True, exist_ok=True)
 
@@ -456,6 +468,7 @@ def main() -> None:
             "VG_DASH_WATCH_OUT": str(watch_out),
             "VG_DASH_OVERVIEW_BASE": str(overview_data_dir),
             "VG_CONCURRENCY_DIR": str(output_root / "watch_hours" / "concurrency"),
+            "VG_CONCURRENCY_HTML": str(concurrency_out),
             "VG_ETL_LAKE_ROOT": str(lake_root),
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
@@ -516,6 +529,10 @@ def main() -> None:
     concurrency_script = _local_script(
         etl_root,
         str(Path("src") / "tools" / "build_concurrency.py"),
+    )
+    concurrency_dashboard_script = _local_script(
+        etl_root,
+        str(Path("src") / "dashboards" / "concurrencyDashboard" / "generate_concurrency.py"),
     )
 
     if not args.skip_etl:
@@ -831,6 +848,24 @@ def main() -> None:
             if concurrency_start and concurrency_end:
                 concurrency_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
             run(concurrency_cmd, cwd=etl_root, env=env, step_name="watch_hours_fast_concurrency", log_dir=log_dir)
+
+            concurrency_html_cmd = [
+                python,
+                str(concurrency_dashboard_script),
+                "--data-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--out",
+                str(concurrency_out),
+                "--title",
+                "Veto Concurrency",
+            ]
+            run(
+                concurrency_html_cmd,
+                cwd=concurrency_dashboard_dir,
+                env=env,
+                step_name="concurrency_dashboard_html",
+                log_dir=log_dir,
+            )
     else:
         print("\n[skip] FAST concurrency step skipped.")
 

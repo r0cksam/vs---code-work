@@ -150,6 +150,7 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
                 strftime({minute_ist_sql("reqTimeSec")}, '%Y-%m-%d %H:%M:%S') AS minute_ist,
                 lower(COALESCE(reqHost, '')) AS reqHost,
                 COALESCE(NULLIF(cliIP, ''), NULL) AS cliIP,
+                NULLIF(trim(regexp_replace(COALESCE(CAST(UA AS VARCHAR), ''), '\\s+', ' ', 'g')), '') AS UA,
                 regexp_replace(CAST(statusCode AS VARCHAR), '\\.0$', '') AS statusCode,
                 {candidate_expr} AS candidate_id
             FROM read_parquet('{lake_glob}', hive_partitioning=1, union_by_name=1)
@@ -182,6 +183,7 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
             COUNT(*)::BIGINT AS raw_ts_rows,
             COUNT(*) FILTER (WHERE statusCode = '200')::BIGINT AS status_200_ts_rows,
             COUNT(DISTINCT cliIP)::BIGINT AS unique_viewers,
+            COUNT(DISTINCT UA)::BIGINT AS unique_ua_viewers,
             ROUND(COUNT(*) / {SEGMENTS_PER_MINUTE}, 3) AS segment_viewers_estimate,
             ROUND(COUNT(*) FILTER (WHERE statusCode = '200') / {SEGMENTS_PER_MINUTE}, 3)
                 AS status_200_segment_viewers_estimate
@@ -209,6 +211,10 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
             MAX(unique_viewers)::BIGINT AS peak_unique_viewers,
             any_value(minute_ist ORDER BY unique_viewers DESC, minute_ist) AS peak_unique_viewers_minute_ist,
             ROUND(quantile_cont(unique_viewers, 0.95), 3) AS p95_unique_viewers,
+            ROUND(AVG(unique_ua_viewers), 3) AS avg_unique_ua_viewers,
+            MAX(unique_ua_viewers)::BIGINT AS peak_unique_ua_viewers,
+            any_value(minute_ist ORDER BY unique_ua_viewers DESC, minute_ist) AS peak_unique_ua_minute_ist,
+            ROUND(quantile_cont(unique_ua_viewers, 0.95), 3) AS p95_unique_ua_viewers,
             ROUND(AVG(segment_viewers_estimate), 3) AS avg_segment_viewers_estimate,
             ROUND(MAX(segment_viewers_estimate), 3) AS peak_segment_viewers_estimate,
             any_value(minute_ist ORDER BY segment_viewers_estimate DESC, minute_ist) AS peak_segment_minute_ist,
@@ -280,6 +286,8 @@ def summarize_output(con: duckdb.DuckDBPyConnection, minute_path: Path, summary_
             COUNT(DISTINCT platform_key || '|' || candidate_id || '|' || channel_name) AS platform_channel_candidates,
             MAX(unique_viewers) AS peak_unique_viewers,
             ROUND(AVG(unique_viewers), 3) AS avg_unique_viewers,
+            MAX(unique_ua_viewers) AS peak_unique_ua_viewers,
+            ROUND(AVG(unique_ua_viewers), 3) AS avg_unique_ua_viewers,
             MAX(segment_viewers_estimate) AS peak_segment_viewers_estimate
         FROM read_parquet('{q(minute_path)}')
         """
@@ -313,6 +321,7 @@ def write_manifest(
         },
         "metric_notes": {
             "unique_viewers": "Exact distinct cliIP count per minute.",
+            "unique_ua_viewers": "Exact distinct normalized User-Agent string count per minute.",
             "segment_viewers_estimate": "raw .ts rows divided by 10 six-second segments per minute.",
             "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute.",
         },

@@ -486,7 +486,6 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     true_range  = true_data_range(file_dates, files)
     daily_tables = read_all_daily_tables(profile_dir)
     device_decode = load_device_decode_outputs()
-    concurrency = load_concurrency_outputs()
     encoded_display_fields = {"state", "city", "sample_reqPath", "sample_value", "userAgent", "UA"}
     for rows in daily_tables.values():
         for row in rows:
@@ -554,7 +553,6 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
         "geo":                build_geo_breakdown(geo),
         "device":             records(device.sort_values("watch_hours", ascending=False),       ["channel_name", "device_type", "watch_hours", "approx_unique_ips"], 30),
         "device_decode":      device_decode,
-        "concurrency":        concurrency,
         "asn":                records(asn.sort_values("watch_hours", ascending=False),          ["asn", "as_name", "as_country", "asn_type", "watch_hours", "approx_unique_ips", "distinct_hosts", "sample_reqHost"], 25),
         "ua":                 records(ua.sort_values("rows", ascending=False),                  ["UA", "rows", "approx_unique_ips", "distinct_hosts"], 20),
         "query_summary":      records(query_summary,                                            ["review_status", "rows", "requests", "sessions", "devices"]),

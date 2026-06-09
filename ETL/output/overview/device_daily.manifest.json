@@ -439,10 +439,10 @@
       "mtime_ns_sum": 10684493521178688500
     },
     "2026-06-06": {
-      "bytes": 1243276609,
-      "files": 4,
-      "mtime_ns_max": 1780897254865918700,
-      "mtime_ns_sum": 7123222571336762700
+      "bytes": 1243304511,
+      "files": 6,
+      "mtime_ns_max": 1780973868254199000,
+      "mtime_ns_sum": 10685170289917562200
     },
     "2026-06-07": {
       "bytes": 1203490562,
@@ -451,10 +451,16 @@
       "mtime_ns_sum": 7123593236508856500
     },
     "2026-06-08": {
-      "bytes": 76474756,
+      "bytes": 1362097171,
+      "files": 4,
+      "mtime_ns_max": 1780973868131707700,
+      "mtime_ns_sum": 7123746460876121000
+    },
+    "2026-06-09": {
+      "bytes": 83859786,
       "files": 2,
-      "mtime_ns_max": 1780899378679630500,
-      "mtime_ns_sum": 3561798742497864300
+      "mtime_ns_max": 1780973868242182100,
+      "mtime_ns_sum": 3561947718541092200
     }
   },
   "signature_basis": "parquet files grouped by lake year/month/day, using count, bytes, mtimes, and source-aware device_daily schema",
