@@ -39,6 +39,25 @@ DEFAULT_OUT = Path(
 )
 CHARTJS_CACHE = ETL_ROOT / "output" / "cache" / "chartjs" / "chart.umd.min.js"
 IST = ZoneInfo("Asia/Kolkata")
+STATUS_CODE_MEANINGS = {
+    "000": "Non-standard: no HTTP response code was logged; commonly indicates the request closed before a normal response was recorded.",
+    "200": "OK: request succeeded.",
+    "206": "Partial Content: byte-range response, commonly used for media segment delivery.",
+    "301": "Moved Permanently: client should use the redirected URL.",
+    "302": "Found: temporary redirect.",
+    "304": "Not Modified: cache validation response; payload not sent again.",
+    "400": "Bad Request: malformed or invalid request.",
+    "401": "Unauthorized: authentication is required or failed.",
+    "403": "Forbidden: server understood the request but refused access.",
+    "404": "Not Found: requested object was not available.",
+    "408": "Request Timeout: client did not complete the request in time.",
+    "429": "Too Many Requests: rate limit or throttling response.",
+    "500": "Internal Server Error: origin/server-side failure.",
+    "501": "Not Implemented: method or feature not supported by server.",
+    "502": "Bad Gateway: upstream server returned an invalid response.",
+    "503": "Service Unavailable: server or upstream temporarily unavailable.",
+    "504": "Gateway Timeout: upstream did not respond in time.",
+}
 
 
 def read_json(path: Path) -> dict:
@@ -56,6 +75,12 @@ def read_parquet(path: Path) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
+def read_optional_parquet(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
 def clean_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     text_cols = [
@@ -68,6 +93,7 @@ def clean_frame(df: pd.DataFrame) -> pd.DataFrame:
         "platform_name",
         "candidate_id",
         "channel_name",
+        "status_code",
         "peak_unique_viewers_minute_ist",
         "peak_unique_ua_minute_ist",
         "peak_segment_minute_ist",
@@ -98,6 +124,72 @@ def records(df: pd.DataFrame, columns: list[str]) -> list[dict]:
         return []
     out = df[[col for col in columns if col in df.columns]].copy()
     return json.loads(out.to_json(orient="records", date_format="iso"))
+
+
+def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    """Return status-code filter metadata plus sparse non-200 minute values."""
+    if status_minute.empty or "status_code" not in status_minute.columns:
+        return [], []
+
+    required = {
+        "pair_key",
+        "minute_ist",
+        "status_code",
+        "status_ts_rows",
+        "status_segment_viewers_estimate",
+    }
+    if not required.issubset(status_minute.columns):
+        return [], []
+
+    status = status_minute.copy()
+    status["status_code"] = status["status_code"].fillna("Unknown").astype(str)
+    status_codes = sorted(
+        status["status_code"].dropna().astype(str).unique(),
+        key=lambda value: (not value.isdigit(), value),
+    )
+    options = [
+        {
+            "code": code,
+            "meaning": STATUS_CODE_MEANINGS.get(
+                code,
+                "Observed in logs; no built-in reference meaning is configured yet.",
+            ),
+        }
+        for code in status_codes
+    ]
+
+    extra = status[status["status_code"] != "200"].copy()
+    if extra.empty:
+        return options, []
+
+    extra["status_ts_rows"] = (
+        pd.to_numeric(extra["status_ts_rows"], errors="coerce")
+        .fillna(0)
+        .round()
+        .astype("int64")
+    )
+    extra["status_segment_viewers_estimate"] = pd.to_numeric(
+        extra["status_segment_viewers_estimate"],
+        errors="coerce",
+    ).fillna(0.0)
+    extra = (
+        extra.groupby(["pair_key", "minute_ist", "status_code"], as_index=False, sort=False)
+        .agg(
+            status_ts_rows=("status_ts_rows", "sum"),
+            status_segment_viewers_estimate=("status_segment_viewers_estimate", "sum"),
+        )
+        .sort_values(["minute_ist", "pair_key", "status_code"])
+    )
+    extra = extra.rename(
+        columns={
+            "pair_key": "k",
+            "minute_ist": "m",
+            "status_code": "c",
+            "status_ts_rows": "r",
+            "status_segment_viewers_estimate": "v",
+        }
+    )
+    return options, records(extra, ["k", "m", "c", "r", "v"])
 
 
 def write_ua_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool = False) -> dict:
@@ -151,11 +243,18 @@ def write_ua_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool 
 
 def build_data(data_dir: Path, title: str) -> dict:
     minute_path = data_dir / "concurrency_minute.parquet"
+    status_minute_path = data_dir / "concurrency_status_minute.parquet"
     summary_path = data_dir / "concurrency_summary.parquet"
     manifest_path = data_dir / "concurrency_manifest.json"
 
     minute = clean_frame(read_parquet(minute_path))
+    status_minute = clean_frame(read_optional_parquet(status_minute_path))
     summary = clean_frame(read_parquet(summary_path))
+    if not status_minute.empty:
+        status_minute = status_minute.sort_values(
+            ["log_date", "platform_name", "channel_name", "candidate_id", "status_code", "minute_ist"]
+        )
+    status_code_options, status_extra = build_status_payload(status_minute)
     if not minute.empty:
         minute = minute.sort_values(["log_date", "platform_name", "channel_name", "candidate_id", "minute_ist"])
     if not summary.empty:
@@ -172,6 +271,7 @@ def build_data(data_dir: Path, title: str) -> dict:
 
     stats = {
         "minute_rows": int(len(minute)),
+        "status_extra_rows": int(len(status_extra)),
         "summary_rows": int(len(summary)),
         "first_date": dates[0] if dates else "",
         "last_date": dates[-1] if dates else "",
@@ -193,6 +293,25 @@ def build_data(data_dir: Path, title: str) -> dict:
         if not minute.empty
         else 0,
     }
+    minute_columns = [
+        "log_date",
+        "source",
+        "minute_utc",
+        "minute_ist",
+        "reqHost",
+        "platform_key",
+        "platform_name",
+        "candidate_id",
+        "channel_name",
+        "raw_ts_rows",
+        "status_200_ts_rows",
+        "distinct_hosts",
+        "unique_viewers",
+        "unique_ua_viewers",
+        "segment_viewers_estimate",
+        "status_200_segment_viewers_estimate",
+        "pair_key",
+    ]
 
     return {
         "title": title,
@@ -200,32 +319,18 @@ def build_data(data_dir: Path, title: str) -> dict:
         "data_dir": str(data_dir),
         "files": {
             "minute": str(minute_path),
+            "status_minute": str(status_minute_path) if status_minute_path.exists() else "",
             "summary": str(summary_path),
             "manifest": str(manifest_path),
         },
         "stats": stats,
         "manifest": read_json(manifest_path),
+        "status_meanings": STATUS_CODE_MEANINGS,
+        "status_code_options": status_code_options,
+        "status_extra": status_extra,
         "minute": records(
             minute,
-            [
-                "log_date",
-                "source",
-                "minute_utc",
-                "minute_ist",
-                "reqHost",
-                "platform_key",
-                "platform_name",
-                "candidate_id",
-                "channel_name",
-                "raw_ts_rows",
-                "status_200_ts_rows",
-                "distinct_hosts",
-                "unique_viewers",
-                "unique_ua_viewers",
-                "segment_viewers_estimate",
-                "status_200_segment_viewers_estimate",
-                "pair_key",
-            ],
+            minute_columns,
         ),
         "summary": records(
             summary,

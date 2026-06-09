@@ -28,10 +28,12 @@ input[type="date"]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 
 .btn:hover{border-color:#667085}
 .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .range-text{margin-left:auto;color:var(--soft);font-size:11px;font-weight:750}
-.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:12px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:10px}
 .mini{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 10px;min-width:0}
 .mini b{display:block;font-size:9px;text-transform:uppercase;color:var(--soft);margin-bottom:4px;line-height:1.15}
 .mini span{display:block;font-size:18px;font-weight:850;color:var(--text);line-height:1.1;overflow-wrap:anywhere}
+.metric-help{border:1px solid #334155;border-left:3px solid var(--accent);border-radius:7px;background:#14171c;color:#d7dee8;margin-bottom:12px;padding:9px 11px;font-size:11px;line-height:1.45;display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.metric-help b{color:#fff}.metric-help span{color:#aeb8c6}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:12px 14px;margin-bottom:12px}
 .panel h2{font-size:13px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .chart-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
@@ -94,12 +96,17 @@ tr:hover td{background:#1f2329}
     </div>
   </div>
   <div class="metrics" id="metrics"></div>
+  <div class="metric-help" id="metricHelp"></div>
   <div class="panel">
     <div class="chart-heading">
       <h2><span>Minute-Level Concurrency</span><span id="lineCount" style="color:var(--soft);font-size:11px;margin-left:8px"></span></h2>
       <div class="chart-actions"><button class="btn" onclick="openChartModal()">Expand</button></div>
     </div>
     <div class="chart-box"><canvas id="concurrencyChart"></canvas></div>
+  </div>
+  <div class="panel">
+    <h2>HTTP Status Code Reference</h2>
+    <div class="table-wrap" id="statusMeaningTable"></div>
   </div>
   <div class="grid-2">
     <div class="panel"><h2>Concurrency Summary</h2><div class="table-wrap" id="summaryTable"></div></div>
@@ -123,13 +130,13 @@ tr:hover td{background:#1f2329}
 const D = $DATA_BLOB;
 const COLORS=['#c77a32','#5794f2','#73bf69','#f2495c','#b877d9','#ffb357','#2ec7b8','#e0b400','#8ab8ff','#e24d42','#a352cc','#56a64b'];
 const VIEWER_IDENTITIES={
-  cliip:{label:'cliIP',short:'cliIP',minuteKey:'unique_viewers',avgKey:'avg_unique_viewers',peakKey:'peak_unique_viewers',peakMinuteKey:'peak_unique_viewers_minute_ist'},
-  ua:{label:'UA',short:'UA',minuteKey:'unique_ua_viewers',avgKey:'avg_unique_ua_viewers',peakKey:'peak_unique_ua_viewers',peakMinuteKey:'peak_unique_ua_minute_ist'}
+  cliip:{label:'IP address (cliIP)',short:'IP addresses',minuteKey:'unique_viewers',avgKey:'avg_unique_viewers',peakKey:'peak_unique_viewers',peakMinuteKey:'peak_unique_viewers_minute_ist'},
+  ua:{label:'Device/App signature (User-Agent)',short:'UA signatures',minuteKey:'unique_ua_viewers',avgKey:'avg_unique_ua_viewers',peakKey:'peak_unique_ua_viewers',peakMinuteKey:'peak_unique_ua_minute_ist'}
 };
 const METRICS={
-  active_viewers:{label:'Active viewers by selected ID',short:'Active Viewers'},
-  segment_viewers_estimate:{label:'.ts estimate - all statuses',short:'.ts Estimate'},
-  status_200_segment_viewers_estimate:{label:'.ts estimate - status 200 only',short:'Status 200 .ts Estimate'}
+  active_viewers:{label:'Distinct active IDs per minute',short:'Distinct Active IDs'},
+  segment_viewers_estimate:{label:'Estimated viewers from .ts requests - all HTTP statuses',short:'Estimated Viewers - All Statuses'},
+  status_200_segment_viewers_estimate:{label:'Estimated viewers from successful .ts requests - HTTP 200',short:'Estimated Viewers - HTTP 200'}
 };
 const LINE_MODES={
   total:{label:'Total line',short:'Total'},
@@ -148,6 +155,11 @@ let expandedChart=null;
 
 const minute=(D.minute||[]).sort(function(a,b){return String(a.minute_ist||'').localeCompare(String(b.minute_ist||''));});
 const summary=D.summary||[];
+const STATUS_MEANINGS=D.status_meanings||{};
+const STATUS_OPTIONS=(D.status_code_options||[]).slice().sort(function(a,b){return String(a.code).localeCompare(String(b.code),undefined,{numeric:true});});
+const STATUS_EXTRA=D.status_extra||[];
+const STATUS_EXTRA_MAP=new Map();
+STATUS_EXTRA.forEach(function(item){STATUS_EXTRA_MAP.set(statusLookupKey(item.k,item.m,item.c),{rows:Number(item.r||0),value:Number(item.v||0)});});
 const fmt=function(n,d){if(n==null||isNaN(n))return '-';return Number(n).toLocaleString('en-IN',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});};
 const compact=function(v){v=Number(v||0);return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':fmt(v,v<10&&v>0?1:0);};
 const escapeHtml=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
@@ -167,6 +179,7 @@ function formatDateTime(value){
   return m[3]+'-'+m[2]+'-'+m[1].slice(2)+' '+pad2(hour12)+':'+m[5]+':'+m[6]+' '+suffix;
 }
 
+function statusLookupKey(pair,minuteIst,code){return String(pair||'')+'\u001f'+String(minuteIst||'')+'\u001f'+String(code||'');}
 function pairKey(row){return String(row.pair_key||String(row.source||'fast')+'|'+String(row.platform_key||'')+'|'+String(row.candidate_id||'')+'|'+String(row.channel_name||''));}
 function platformKey(row){return String(row.platform_key||row.platform_name||'');}
 function channelLabel(row,withPlatform){
@@ -174,11 +187,47 @@ function channelLabel(row,withPlatform){
   return withPlatform?String(row.platform_name||'Unknown FAST Platform')+' - '+label:label;
 }
 function activeIdentity(){return VIEWER_IDENTITIES[identity]||VIEWER_IDENTITIES.cliip;}
+function statusMetricCode(key){key=String(key||metric);return key.startsWith('status:')?key.slice(7):'';}
+function isStatusMetric(key){return !!statusMetricCode(key);}
+function statusOption(code){return STATUS_OPTIONS.find(function(item){return String(item.code)===String(code);})||null;}
 function metricKey(key){key=key||metric;return key==='active_viewers'?activeIdentity().minuteKey:key;}
-function metricShort(key){key=key||metric;return key==='active_viewers'?'Active '+activeIdentity().short:(METRICS[key]?.short||'Value');}
-function metricLabel(key){key=key||metric;return key==='active_viewers'?'Active viewers by '+activeIdentity().label:(METRICS[key]?.label||'Value');}
-function metricOptionLabel(key){return key==='active_viewers'?'Active viewers by '+activeIdentity().label:(METRICS[key]?.label||key);}
-function metricValue(row,key){return Number(row[metricKey(key)]||0);}
+function metricShort(key){const code=statusMetricCode(key);if(code)return 'HTTP '+code+' Estimated Viewers';key=key||metric;return key==='active_viewers'?'Distinct '+activeIdentity().short:(METRICS[key]?.short||'Value');}
+function metricLabel(key){const code=statusMetricCode(key);if(code)return 'Estimated viewers from HTTP '+code+' .ts requests';key=key||metric;return key==='active_viewers'?'Distinct active '+activeIdentity().label+' per minute':(METRICS[key]?.label||'Value');}
+function shortMeaning(text){return String(text||'').split(':')[0].replace(/\.$/,'');}
+function metricOptionLabel(key){const code=statusMetricCode(key);if(code)return 'HTTP '+code+' estimated viewers - '+shortMeaning(STATUS_MEANINGS[code]||'Observed in logs');return key==='active_viewers'?'Distinct active '+activeIdentity().label+' per minute':(METRICS[key]?.label||key);}
+function metricHelpText(){
+  const code=statusMetricCode(metric);
+  if(metric==='active_viewers'){
+    return '<div><b>Selected chart value:</b> Distinct active '+escapeHtml(activeIdentity().label)+' per minute.</div><span>This counts unique IDs seen in each minute. UA means unique device/app User-Agent signatures, not exact people.</span>';
+  }
+  if(code){
+    return '<div><b>Selected chart value:</b> Estimated viewers from HTTP '+escapeHtml(code)+' .ts requests.</div><span>Formula: '+escapeHtml(code)+' .ts rows / 10 per minute. Meaning: '+escapeHtml(STATUS_MEANINGS[code]||'Observed in logs.')+'</span>';
+  }
+  return '<div><b>Selected chart value:</b> Estimated viewers from all .ts requests across every HTTP status.</div><span>Formula: all .ts rows / 10 per minute. Use this for total request-volume concurrency; use HTTP 200 for successful-delivery concurrency.</span>';
+}
+function metricOptions(){
+  const items=[
+    {value:'active_viewers',label:metricOptionLabel('active_viewers')},
+    {value:'segment_viewers_estimate',label:metricOptionLabel('segment_viewers_estimate')}
+  ];
+  STATUS_OPTIONS.forEach(function(item){items.push({value:'status:'+String(item.code),label:metricOptionLabel('status:'+String(item.code))});});
+  if(!STATUS_OPTIONS.length)items.push({value:'status_200_segment_viewers_estimate',label:metricOptionLabel('status_200_segment_viewers_estimate')});
+  return items;
+}
+function metricValue(row,key){
+  key=key||metric;
+  const code=statusMetricCode(key);
+  if(code){
+    return statusValues(row,code).value;
+  }
+  return Number(row[metricKey(key)]||0);
+}
+function statusValues(row,code){
+  code=String(code||'');
+  if(code==='200')return {value:Number(row.status_200_segment_viewers_estimate||0),rows:Number(row.status_200_ts_rows||0)};
+  const hit=STATUS_EXTRA_MAP.get(statusLookupKey(pairKey(row),row.minute_ist,code));
+  return hit||{value:0,rows:0};
+}
 function allDates(){
   return Array.from(new Set(minute.map(function(r){return String(r.log_date||'');}))).filter(Boolean).sort();
 }
@@ -223,7 +272,9 @@ function syncControls(){
   document.getElementById('latestBtn').classList.toggle('active',startDate===last&&endDate===last);
   document.getElementById('sevenBtn').classList.toggle('active',lastSeven.length&&startDate===lastSeven[0]&&endDate===lastSeven[lastSeven.length-1]);
   identity=setOptions('identitySelect',Object.keys(VIEWER_IDENTITIES).map(function(k){return {value:k,label:VIEWER_IDENTITIES[k].label};}),identity||'cliip');
-  setOptions('metricSelect',Object.keys(METRICS).map(function(k){return {value:k,label:metricOptionLabel(k)};}),metric);
+  const metricItems=metricOptions();
+  if(!metricItems.some(function(item){return item.value===metric;}))metric='active_viewers';
+  setOptions('metricSelect',metricItems,metric);
   lineMode=setOptions('lineModeSelect',Object.keys(LINE_MODES).map(function(k){return {value:k,label:LINE_MODES[k].label};}),lineMode||'total');
   const rRows=rangeRows();
   const platforms=[{value:'all',label:'All Platforms'}].concat(Array.from(new Map(rRows.map(function(r){return [platformKey(r),{value:platformKey(r),label:String(r.platform_name||'Unknown FAST Platform')}];})).values()).sort(function(a,b){return a.label.localeCompare(b.label);}));
@@ -255,15 +306,16 @@ function resetFilters(){
   render();
 }
 function lineGroups(rows){
+  const maxMetric=function(items){return (items||[]).reduce(function(a,r){return Math.max(a,metricValue(r));},0);};
   if(lineMode==='platform'){
     const buckets=new Map();
     (rows||[]).forEach(function(r){const key=platformKey(r);if(!buckets.has(key))buckets.set(key,{label:String(r.platform_name||'Unknown FAST Platform'),rows:[]});buckets.get(key).rows.push(r);});
-    return Array.from(buckets.values()).sort(function(a,b){return maxVal(b.rows,metricKey())-maxVal(a.rows,metricKey());});
+    return Array.from(buckets.values()).sort(function(a,b){return maxMetric(b.rows)-maxMetric(a.rows);});
   }
   if(lineMode!=='channel')return [{label:selectionLabel(),rows:rows||[]}];
   const buckets=new Map();
   (rows||[]).forEach(function(r){const key=pairKey(r);if(!buckets.has(key))buckets.set(key,{label:String(r.platform_name||'Unknown FAST Platform')+' - '+channelLabel(r,false),rows:[]});buckets.get(key).rows.push(r);});
-  return Array.from(buckets.values()).sort(function(a,b){return maxVal(b.rows,metricKey())-maxVal(a.rows,metricKey());});
+  return Array.from(buckets.values()).sort(function(a,b){return maxMetric(b.rows)-maxMetric(a.rows);});
 }
 function selectionLabel(){
   const p=document.getElementById('platformSelect').selectedOptions[0]?.textContent||'All Platforms';
@@ -333,23 +385,26 @@ function stats(rows){
   const avg=values.length?values.reduce(function(a,v){return a+v;},0)/values.length:0;
   let peakMinute='';
   s.datasets.forEach(function(ds){ds.data.forEach(function(v,i){if(v===peak&&!peakMinute)peakMinute=s.minutes[i];});});
-  return {lines:s.datasets.length,minutes:s.minutes.length,peak:peak,avg:avg,raw:sum(rows,'raw_ts_rows'),s200:sum(rows,'status_200_ts_rows'),peakMinute:peakMinute};
+  const totalSelected=values.reduce(function(a,v){return a+Number(v||0);},0);
+  return {lines:s.datasets.length,minutes:s.minutes.length,peak:peak,avg:avg,totalSelected:totalSelected,raw:sum(rows,'raw_ts_rows'),s200:sum(rows,'status_200_ts_rows'),peakMinute:peakMinute};
 }
 function mini(label,value){return '<div class="mini"><b>'+escapeHtml(label)+'</b><span>'+value+'</span></div>';}
 function renderMetrics(rows){
   const st=stats(rows);
+  document.getElementById('metricHelp').innerHTML=metricHelpText();
   document.getElementById('metrics').innerHTML=[
     mini('Date Range',escapeHtml(startDate+' to '+endDate)),
     mini('Platforms',platform==='all'?'All':escapeHtml(document.getElementById('platformSelect').selectedOptions[0]?.textContent||'-')),
     mini('Channels',channel==='all'?'All':escapeHtml(document.getElementById('channelSelect').selectedOptions[0]?.textContent||'-')),
     mini('Lines',escapeHtml(LINE_MODES[lineMode]?.short||'Total')),
-    mini('Viewer ID',escapeHtml(activeIdentity().label)),
+    mini('Viewer ID Basis',escapeHtml(activeIdentity().label)),
     mini('Peak '+metricShort(),fmt(st.peak,1)),
     mini('Average '+metricShort(),fmt(st.avg,1)),
+    mini('Selected Metric Sum',fmt(st.totalSelected,1)),
     mini('Minutes',fmt(st.minutes)),
     mini('Line Count',fmt(st.lines)),
-    mini('Raw TS Rows',fmt(st.raw)),
-    mini('Status 200 TS Rows',fmt(st.s200)),
+    mini('All .ts Request Rows',fmt(st.raw)),
+    mini('HTTP 200 .ts Rows',fmt(st.s200)),
     mini('Peak Minute IST',escapeHtml(st.peakMinute||'-'))
   ].join('');
 }
@@ -367,8 +422,23 @@ function groupRows(rows,keys,sumKeys,maxKeys,firstKeys){
 function filteredSummary(){
   return summary.filter(function(r){return rowInRange(r)&&(platform==='all'||platformKey(r)===platform)&&(channel==='all'||pairKey(r)===channel);});
 }
+function selectedMetricStatsByPair(rows){
+  const buckets=new Map();
+  (rows||[]).forEach(function(r){
+    const key=pairKey(r);
+    if(!buckets.has(key))buckets.set(key,{sum:0,count:0,peak:0});
+    const item=buckets.get(key);
+    const value=metricValue(r);
+    item.sum+=value;
+    item.count+=1;
+    item.peak=Math.max(item.peak,value);
+  });
+  buckets.forEach(function(item){item.avg=item.count?item.sum/item.count:0;});
+  return buckets;
+}
 function summaryRows(){
   const rows=filteredSummary();
+  const metricStats=selectedMetricStatsByPair(filteredRows());
   const grouped=groupRows(rows,['platform_name','channel_name','candidate_id','reqHost','platform_key','pair_key'],['minute_count','raw_ts_rows','status_200_ts_rows'],['peak_unique_viewers','peak_unique_ua_viewers','peak_segment_viewers_estimate','peak_status_200_segment_viewers_estimate','distinct_hosts'],['peak_unique_viewers_minute_ist','peak_unique_ua_minute_ist','peak_segment_minute_ist']);
   grouped.forEach(function(r){
     const source=rows.filter(function(x){return pairKey(x)===pairKey(r);});
@@ -377,9 +447,13 @@ function summaryRows(){
     const ident=activeIdentity();
     r.peak_active_viewers=Number(r[ident.peakKey]||0);
     r.avg_active_viewers=Number(r[ident.avgKey]||0);
+    const selected=metricStats.get(pairKey(r))||{peak:0,avg:0,sum:0};
+    r.selected_metric_peak=selected.peak||0;
+    r.selected_metric_avg=selected.avg||0;
+    r.selected_metric_sum=selected.sum||0;
     r.display_channel=channelLabel(r,platform==='all');
   });
-  const sortKey=metric==='active_viewers'?'peak_active_viewers':(metric==='segment_viewers_estimate'?'peak_segment_viewers_estimate':'peak_status_200_segment_viewers_estimate');
+  const sortKey='selected_metric_peak';
   return grouped.sort(function(a,b){return Number(b[sortKey]||0)-Number(a[sortKey]||0);}).slice(0,200);
 }
 function peakRows(rows){
@@ -401,11 +475,37 @@ function renderTables(rows){
   const num={fn:function(v){return fmt(v);},num:true};
   const num1={fn:function(v){return fmt(v,1);},num:true};
   document.getElementById('summaryTable').innerHTML=table(summaryRows(),[
-    {key:'platform_name',label:'Platform'},{key:'display_channel',label:'Channel'},{key:'peak_active_viewers',label:'Peak '+metricShort()},{key:'avg_active_viewers',label:'Avg '+metricShort()},{key:'peak_unique_viewers',label:'Peak cliIP'},{key:'peak_unique_ua_viewers',label:'Peak UA'},{key:'peak_segment_viewers_estimate',label:'Peak Segment Estimate'},{key:'minute_count',label:'Minutes'},{key:'distinct_hosts',label:'Hosts'},{key:'raw_ts_rows',label:'Raw TS Rows'},{key:'status_200_ts_rows',label:'Status 200 TS Rows'},{key:'reqHost',label:'Host Evidence'}
-  ],{peak_active_viewers:num1,avg_active_viewers:num1,peak_unique_viewers:num1,peak_unique_ua_viewers:num1,peak_segment_viewers_estimate:num1,minute_count:num,distinct_hosts:num,raw_ts_rows:num,status_200_ts_rows:num});
+    {key:'platform_name',label:'Platform'},{key:'display_channel',label:'Channel'},{key:'selected_metric_peak',label:'Peak '+metricShort()},{key:'selected_metric_avg',label:'Avg '+metricShort()},{key:'selected_metric_sum',label:'Sum '+metricShort()},{key:'peak_unique_viewers',label:'Peak distinct IPs'},{key:'peak_unique_ua_viewers',label:'Peak distinct UA signatures'},{key:'peak_segment_viewers_estimate',label:'Peak estimated viewers - all statuses'},{key:'minute_count',label:'Minutes'},{key:'distinct_hosts',label:'Hosts'},{key:'raw_ts_rows',label:'All .ts request rows'},{key:'status_200_ts_rows',label:'HTTP 200 .ts rows'},{key:'reqHost',label:'Host Evidence'}
+  ],{selected_metric_peak:num1,selected_metric_avg:num1,selected_metric_sum:num1,peak_unique_viewers:num1,peak_unique_ua_viewers:num1,peak_segment_viewers_estimate:num1,minute_count:num,distinct_hosts:num,raw_ts_rows:num,status_200_ts_rows:num});
   document.getElementById('peakTable').innerHTML=table(peakRows(rows),[
-    {key:'line_label',label:'Line'},{key:'minute_ist',label:'Minute IST'},{key:'minute_utc',label:'Minute UTC'},{key:'metric_value',label:metricShort()},{key:'unique_viewers',label:'Active cliIP'},{key:'unique_ua_viewers',label:'Active UA'},{key:'segment_viewers_estimate',label:'Segment Estimate'},{key:'status_200_segment_viewers_estimate',label:'Status 200 Estimate'},{key:'raw_ts_rows',label:'Raw TS Rows'},{key:'status_200_ts_rows',label:'Status 200 TS Rows'}
+    {key:'line_label',label:'Line'},{key:'minute_ist',label:'Minute IST'},{key:'minute_utc',label:'Minute UTC'},{key:'metric_value',label:metricShort()},{key:'unique_viewers',label:'Distinct IPs'},{key:'unique_ua_viewers',label:'Distinct UA signatures'},{key:'segment_viewers_estimate',label:'Estimated viewers - all statuses'},{key:'status_200_segment_viewers_estimate',label:'Estimated viewers - HTTP 200'},{key:'raw_ts_rows',label:'All .ts request rows'},{key:'status_200_ts_rows',label:'HTTP 200 .ts rows'}
   ],{metric_value:num1,unique_viewers:num1,unique_ua_viewers:num1,segment_viewers_estimate:num1,status_200_segment_viewers_estimate:num1,raw_ts_rows:num,status_200_ts_rows:num});
+  renderStatusMeaningTable();
+}
+function statusReferenceRows(){
+  const rows=filteredRows();
+  return STATUS_OPTIONS.map(function(item){
+    const code=String(item.code||'Unknown');
+    const totals=rows.reduce(function(acc,row){
+      const hit=statusValues(row,code);
+      acc.rows+=Number(hit.rows||0);
+      acc.value+=Number(hit.value||0);
+      return acc;
+    },{rows:0,value:0});
+    return {
+      status_code:code,
+      meaning:item.meaning||STATUS_MEANINGS[code]||'Observed in logs; no built-in reference meaning is configured yet.',
+      status_ts_rows:totals.rows,
+      status_segment_viewers_estimate:totals.value
+    };
+  }).sort(function(a,b){return Number(b.status_ts_rows||0)-Number(a.status_ts_rows||0)||String(a.status_code).localeCompare(String(b.status_code),undefined,{numeric:true});});
+}
+function renderStatusMeaningTable(){
+  const num={fn:function(v){return fmt(v);},num:true};
+  const num1={fn:function(v){return fmt(v,1);},num:true};
+  document.getElementById('statusMeaningTable').innerHTML=table(statusReferenceRows(),[
+    {key:'status_code',label:'HTTP status code'},{key:'meaning',label:'Industry meaning'},{key:'status_ts_rows',label:'Selected .ts request rows'},{key:'status_segment_viewers_estimate',label:'Estimated viewers sum'}
+  ],{status_ts_rows:num,status_segment_viewers_estimate:num1});
 }
 function render(){
   syncControls();
@@ -418,7 +518,7 @@ document.getElementById('title').textContent=D.title||'Veto Concurrency';
 document.getElementById('rangeMeta').textContent='True data range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.last_date)+' | '+fmt(D.stats?.minute_rows||0)+' minute rows';
 document.getElementById('fullDateMeta').textContent='Full-day filter range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.latest_full_date||D.stats?.last_date)+' IST';
 document.getElementById('generatedMeta').textContent='Last updated '+formatDateTime(D.generated_at);
-document.getElementById('dataStatus').innerHTML='<span><b>Default range</b>: full completed dates only</span><span><b>Current IST date</b>: '+escapeHtml(formatDate(D.stats?.current_ist_date))+(D.stats?.current_date_hidden?' hidden from filters because it is still in progress':'')+'</span><span><b>Viewer ID</b>: switch between cliIP and UA without changing channel/date filters</span><span><b>Chart Value</b>: Active viewers uses selected ID; .ts estimates use rows / 10 per minute</span>';
+document.getElementById('dataStatus').innerHTML='<span><b>Default range</b>: full completed dates only</span><span><b>Current IST date</b>: '+escapeHtml(formatDate(D.stats?.current_ist_date))+(D.stats?.current_date_hidden?' hidden from filters because it is still in progress':'')+'</span><span><b>Viewer ID Basis</b>: choose IP address or Device/App User-Agent signature.</span><span><b>Chart Value</b>: distinct active IDs, estimated viewers from all .ts requests, or estimated viewers from one HTTP status. Estimated viewers = .ts rows / 10 per minute.</span>';
 document.getElementById('fileMeta').textContent='Source parquet: '+(D.files?.minute||'');
 document.getElementById('chartModal').addEventListener('click',function(ev){if(ev.target===this)closeChartModal();});
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape')closeChartModal();});

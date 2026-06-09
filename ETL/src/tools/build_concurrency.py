@@ -143,7 +143,7 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
 
     con.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE concurrency_minute_new AS
+        CREATE OR REPLACE TEMP TABLE concurrency_resolved_new AS
         WITH base AS (
             SELECT
                 COALESCE(CAST(source AS VARCHAR), 'stream') AS source,
@@ -153,7 +153,7 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
                 lower(COALESCE(reqHost, '')) AS reqHost,
                 COALESCE(NULLIF(cliIP, ''), NULL) AS cliIP,
                 NULLIF(trim(regexp_replace(COALESCE(CAST(UA AS VARCHAR), ''), '\\s+', ' ', 'g')), '') AS UA,
-                regexp_replace(CAST(statusCode AS VARCHAR), '\\.0$', '') AS statusCode,
+                COALESCE(NULLIF(regexp_replace(CAST(statusCode AS VARCHAR), '\\.0$', ''), ''), 'Unknown') AS statusCode,
                 {candidate_expr} AS candidate_id
             FROM read_parquet('{lake_glob}', hive_partitioning=1, union_by_name=1)
             WHERE {source_filter(args.source)}
@@ -171,6 +171,13 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
             LEFT JOIN host_map h ON b.reqHost = h.reqHost
             LEFT JOIN path_map p ON b.candidate_id = p.candidate_id
         )
+        SELECT * FROM resolved
+        """
+    )
+
+    con.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE concurrency_minute_new AS
         SELECT
             log_date,
             source,
@@ -189,8 +196,29 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
             ROUND(COUNT(*) / {SEGMENTS_PER_MINUTE}, 3) AS segment_viewers_estimate,
             ROUND(COUNT(*) FILTER (WHERE statusCode = '200') / {SEGMENTS_PER_MINUTE}, 3)
                 AS status_200_segment_viewers_estimate
-        FROM resolved
+        FROM concurrency_resolved_new
         GROUP BY 1,2,3,4,5,6,7,8
+        """
+    )
+
+    con.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE concurrency_status_minute_new AS
+        SELECT
+            log_date,
+            source,
+            minute_utc,
+            minute_ist,
+            platform_key,
+            platform_name,
+            candidate_id,
+            channel_name,
+            any_value(reqHost ORDER BY reqHost) AS reqHost,
+            statusCode AS status_code,
+            COUNT(*)::BIGINT AS status_ts_rows,
+            ROUND(COUNT(*) / {SEGMENTS_PER_MINUTE}, 3) AS status_segment_viewers_estimate
+        FROM concurrency_resolved_new
+        GROUP BY 1,2,3,4,5,6,7,8,10
         """
     )
 
@@ -273,10 +301,15 @@ def write_append_table(
     copy_table(con, sql, out_path)
 
 
-def summarize_output(con: duckdb.DuckDBPyConnection, minute_path: Path, summary_path: Path) -> dict:
+def summarize_output(
+    con: duckdb.DuckDBPyConnection,
+    minute_path: Path,
+    summary_path: Path,
+    status_minute_path: Path,
+) -> dict:
     if not minute_path.exists():
         return {}
-    return con.execute(
+    stats = con.execute(
         f"""
         SELECT
             COUNT(*) AS minute_rows,
@@ -296,6 +329,18 @@ def summarize_output(con: duckdb.DuckDBPyConnection, minute_path: Path, summary_
     ).fetchdf().iloc[0].to_dict() | {
         "summary_rows": table_count_from_path(con, summary_path),
     }
+    if status_minute_path.exists():
+        status_stats = con.execute(
+            f"""
+            SELECT
+                COUNT(*) AS status_minute_rows,
+                COUNT(DISTINCT status_code) AS status_codes,
+                string_agg(DISTINCT status_code, ',' ORDER BY status_code) AS status_code_list
+            FROM read_parquet('{q(status_minute_path)}')
+            """
+        ).fetchdf().iloc[0].to_dict()
+        stats |= status_stats
+    return stats
 
 
 def table_count_from_path(con: duckdb.DuckDBPyConnection, path: Path) -> int:
@@ -310,6 +355,7 @@ def write_manifest(
     end: date | None,
     minute_path: Path,
     summary_path: Path,
+    status_minute_path: Path,
     new_counts: dict,
     output_stats: dict,
 ) -> None:
@@ -326,10 +372,12 @@ def write_manifest(
             "unique_ua_viewers": "Exact distinct normalized User-Agent string count per minute.",
             "segment_viewers_estimate": "raw .ts rows divided by 10 six-second segments per minute.",
             "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute.",
+            "status_code_segment_viewers_estimate": "Selected HTTP status .ts rows divided by 10 six-second segments per minute.",
         },
         "files": {
             "minute": str(minute_path.resolve()),
             "summary": str(summary_path.resolve()),
+            "status_minute": str(status_minute_path.resolve()),
         },
         "new_counts": new_counts,
         "output_stats": output_stats,
@@ -362,21 +410,25 @@ def main() -> None:
         build_new_tables(con, args)
         new_counts = {
             "minute_rows": table_count(con, "concurrency_minute_new"),
+            "status_minute_rows": table_count(con, "concurrency_status_minute_new"),
             "summary_rows": table_count(con, "concurrency_summary_new"),
         }
         if new_counts["minute_rows"] <= 0:
             raise SystemExit("No FAST .ts rows found for the selected concurrency range.")
 
         minute_path = args.out_dir / "concurrency_minute.parquet"
+        status_minute_path = args.out_dir / "concurrency_status_minute.parquet"
         summary_path = args.out_dir / "concurrency_summary.parquet"
         write_append_table(con, "concurrency_minute_new", minute_path, args.source, start, end)
+        write_append_table(con, "concurrency_status_minute_new", status_minute_path, args.source, start, end)
         write_append_table(con, "concurrency_summary_new", summary_path, args.source, start, end)
-        output_stats = summarize_output(con, minute_path, summary_path)
-        write_manifest(args, start, end, minute_path, summary_path, new_counts, output_stats)
+        output_stats = summarize_output(con, minute_path, summary_path, status_minute_path)
+        write_manifest(args, start, end, minute_path, summary_path, status_minute_path, new_counts, output_stats)
     finally:
         con.close()
 
     print(f"Concurrency minute parquet: {minute_path}")
+    print(f"Concurrency status minute parquet: {status_minute_path}")
     print(f"Concurrency summary parquet: {summary_path}")
     print(json.dumps({"new_counts": new_counts, "output_stats": output_stats}, indent=2, default=str))
 
