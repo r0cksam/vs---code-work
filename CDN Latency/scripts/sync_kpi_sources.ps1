@@ -1,35 +1,26 @@
 param(
-    [string]$OverviewSource = "Y:\Veto Logs Backup\Dashboards\OverView",
-    [string]$OverviewDest = "D:\Vs - Code Work\CDN Latency\kpi_sources\overview"
+    [string]$EtlRoot = "Z:\Vs - Code Work\ETL",
+    [string]$Destination = "D:\Vs - Code Work\CDN Latency\kpi_sources"
 )
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "Syncing KPI source files..." -ForegroundColor Cyan
-Write-Host "  Source: $OverviewSource"
-Write-Host "  Dest  : $OverviewDest"
+Write-Host "  ETL root: $EtlRoot"
+Write-Host "  Dest    : $Destination"
 
-if (-not (Test-Path -LiteralPath $OverviewSource)) {
-    throw "Overview source folder does not exist: $OverviewSource"
+if (-not (Test-Path -LiteralPath $EtlRoot)) {
+    throw "ETL root folder does not exist: $EtlRoot"
 }
 
-New-Item -ItemType Directory -Force -Path $OverviewDest | Out-Null
+if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+    throw "Python launcher 'py' was not found."
+}
 
-$files = @(
-    "overview_report.xlsx",
-    "device_daily.csv",
-    "device_snapshot.csv"
-)
-
-foreach ($file in $files) {
-    $src = Join-Path $OverviewSource $file
-    $dst = Join-Path $OverviewDest $file
-    if (Test-Path -LiteralPath $src) {
-        Copy-Item -LiteralPath $src -Destination $dst -Force
-        Write-Host ("  Copied: {0}" -f $file) -ForegroundColor Green
-    } else {
-        Write-Warning "Missing source file: $src"
-    }
+$script = Join-Path $PSScriptRoot "sync_kpi_sources.py"
+& py $script --etl-root $EtlRoot --destination $Destination
+if ($LASTEXITCODE -ne 0) {
+    throw "KPI source sync failed with exit code $LASTEXITCODE"
 }
 
 Write-Host "Done." -ForegroundColor Cyan

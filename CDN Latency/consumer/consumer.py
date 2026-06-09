@@ -4,7 +4,7 @@ import io
 import json
 import logging
 import os
-import socket
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +34,7 @@ ACCESS_KEY = env_required("ACCESS_KEY_ID")
 SECRET_KEY = env_required("SECRET_KEY")
 BUCKET_NAME = env_required("BUCKET_NAME")
 PUSHGATEWAY_URL = os.environ.get("PUSHGATEWAY_URL", "pushgateway:9091").strip()
+CONSUMER_INSTANCE = os.environ.get("CONSUMER_INSTANCE", "log-consumer").strip()
 POLL_INTERVAL_SEC = int(os.environ.get("POLL_INTERVAL_SEC", "30"))
 PROCESSED_FILE = Path(os.environ.get("PROCESSED_FILE", "/state/processed_keys.txt"))
 S3_PREFIX = os.environ.get("S3_PREFIX", "").strip()
@@ -124,6 +125,16 @@ consumer_last_error_unixtime = Gauge(
     "Unix timestamp for most recent poll error",
     registry=REGISTRY,
 )
+consumer_latest_event_unixtime = Gauge(
+    "cdn_consumer_latest_event_unixtime",
+    "Latest event timestamp parsed from a processed object key",
+    registry=REGISTRY,
+)
+consumer_event_lag_seconds = Gauge(
+    "cdn_consumer_event_lag_seconds",
+    "Seconds between now and the latest processed object event timestamp",
+    registry=REGISTRY,
+)
 consumer_cycle_seconds = Histogram(
     "cdn_consumer_cycle_seconds",
     "Duration of one consumer poll cycle",
@@ -163,6 +174,22 @@ def mark_processed(key: str) -> None:
     PROCESSED_FILE.parent.mkdir(parents=True, exist_ok=True)
     with PROCESSED_FILE.open("a", encoding="utf-8") as f:
         f.write(f"{key}\n")
+
+
+def event_timestamp_from_key(key: str) -> float | None:
+    now = time.time()
+    for match in re.finditer(r"(?:^|-)(\d{10})(?=-|$)", key):
+        value = float(match.group(1))
+        if 1_577_836_800 <= value <= now + 86_400:
+            return value
+    return None
+
+
+def set_event_freshness(event_timestamp: float | None) -> None:
+    if event_timestamp is None:
+        return
+    consumer_latest_event_unixtime.set(event_timestamp)
+    consumer_event_lag_seconds.set(max(0.0, time.time() - event_timestamp))
 
 
 def iter_new_object_keys(processed: set[str]) -> Iterator[str]:
@@ -279,12 +306,17 @@ def push_metrics() -> None:
         PUSHGATEWAY_URL,
         job="cdn_logs",
         registry=REGISTRY,
-        grouping_key={"instance": socket.gethostname()},
+        grouping_key={"instance": CONSUMER_INSTANCE},
     )
 
 
 def main() -> None:
     processed = load_processed_keys()
+    latest_event_timestamp = max(
+        (timestamp for key in processed if (timestamp := event_timestamp_from_key(key)) is not None),
+        default=None,
+    )
+    set_event_freshness(latest_event_timestamp)
     LOG.info(
         "Consumer started. Processed key cache size=%d prefix=%r suffixes=%r poll_sec=%d",
         len(processed),
@@ -292,6 +324,8 @@ def main() -> None:
         LOG_KEY_SUFFIXES,
         POLL_INTERVAL_SEC,
     )
+    consumer_last_success_unixtime.set(time.time())
+    push_metrics()
 
     while True:
         cycle_start = time.monotonic()
@@ -303,6 +337,12 @@ def main() -> None:
         try:
             for key in iter_new_object_keys(processed):
                 records, ips = process_log_object(key)
+                key_event_timestamp = event_timestamp_from_key(key)
+                if key_event_timestamp is not None and (
+                    latest_event_timestamp is None or key_event_timestamp > latest_event_timestamp
+                ):
+                    latest_event_timestamp = key_event_timestamp
+                    set_event_freshness(latest_event_timestamp)
                 processed.add(key)
                 mark_processed(key)
                 cycle_ips.update(ips)
@@ -319,6 +359,7 @@ def main() -> None:
 
             distinct_ip_recent.set(len(cycle_ips))
             consumer_last_success_unixtime.set(time.time())
+            set_event_freshness(latest_event_timestamp)
 
         except (ClientError, BotoCoreError, OSError, RuntimeError) as exc:
             consumer_last_error_unixtime.set(time.time())

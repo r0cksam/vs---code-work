@@ -48,6 +48,7 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - BUCKET_NAME=${BUCKET_NAME}
       - PUSHGATEWAY_URL=pushgateway:9091
+      - CONSUMER_INSTANCE=log-consumer
       - PROCESSED_FILE=/state/processed_keys.txt
       - S3_PREFIX=${S3_PREFIX:-}
       - LOG_KEY_SUFFIXES=${LOG_KEY_SUFFIXES:-.gz}
@@ -64,13 +65,22 @@ services:
     environment:
       - KPI_EXPORTER_PORT=9108
       - KPI_EXPORTER_REFRESH_SEC=${KPI_EXPORTER_REFRESH_SEC:-60}
+      - OVERVIEW_SNAPSHOT_JSON=/data/overview/overview_snapshot.json
       - OVERVIEW_XLSX_PATH=/data/overview/overview_report.xlsx
       - DEVICE_DAILY_CSV=/data/overview/device_daily.csv
       - DEVICE_SNAPSHOT_CSV=/data/overview/device_snapshot.csv
+      - WATCH_SNAPSHOT_JSON=/data/watch/watch_snapshot.json
       - WATCH_DAILY_CSV=/data/profile/daily_volume.csv
       - WATCH_CHANNEL_SUMMARY_CSV=/data/profile/channel_summary.csv
+      - WATCH_CHANNEL_DAILY_CSV=/data/profile/channel_daily.csv
+      - WATCH_GEO_CSV=/data/profile/geo_top.csv
+      - WATCH_DEVICE_TYPE_CSV=/data/profile/device_type_by_channel.csv
+      - WATCH_UA_CSV=/data/profile/ua_top.csv
+      - WATCH_CONTENT_CSV=/data/profile/querystr_channel_profile.csv
+      - PROFILE_TOP_N=${PROFILE_TOP_N:-20}
     volumes:
       - "./kpi_sources/overview:/data/overview:ro"
+      - "./kpi_sources/watch:/data/watch:ro"
       - "D:/Vs - Code Work/PC2 Full/Vs - Code Work/vglive_channel_profile/deep_profile_full:/data/profile:ro"
     ports:
       - "9108:9108"

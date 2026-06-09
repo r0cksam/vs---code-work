@@ -38,23 +38,27 @@ Grafana auto-loads:
 - Prometheus datasource (`uid=prometheus`)
 - Dashboard: `CDN Live Overview`
 - Dashboard: `CDN Unified Executive`
+- Dashboard: `CDN Audience & Viewership Analytics`
 
 ## KPI exporter sources
 
 The `kpi-exporter` service reads:
 
-- `./kpi_sources/overview` (local cache of overview_report.xlsx + device CSVs)
-- `D:\Vs - Code Work\PC2 Full\Vs - Code Work\vglive_channel_profile\deep_profile_full` (watch-hours profile CSVs)
+- `./kpi_sources/overview` (current overview workbook, device CSVs, and compact JSON snapshot)
+- `./kpi_sources/watch` (compact snapshot extracted from the current ETL watch-hours dashboard)
+- `D:\Vs - Code Work\PC2 Full\Vs - Code Work\vglive_channel_profile\deep_profile_full` (fallback profile CSVs)
 
 These mounts are configured in `docker-compose.yml`.
 
-### Refresh overview KPI cache
+### Refresh KPI cache
 
-Because mapped network drives (like `Y:`) are often not directly readable by Docker bind mounts on Windows, run this before `docker compose up` (or anytime source files change):
+Because mapped network drives like `Z:` are often not directly readable by Docker bind mounts on Windows, run this after the ETL pipeline finishes (and before starting the stack):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\sync_kpi_sources.ps1
 ```
+
+The sync reads `Z:\Vs - Code Work\ETL` by default and extracts only the fields Grafana needs, avoiding a Docker mount of the large generated HTML dashboards.
 
 ## Notes
 

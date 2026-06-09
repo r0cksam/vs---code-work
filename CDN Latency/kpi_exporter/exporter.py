@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import csv
 from collections import defaultdict
+import json
 import logging
 import os
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, unquote_plus
 
 import openpyxl
 from prometheus_client import Gauge, start_http_server
@@ -21,13 +23,31 @@ LOG = logging.getLogger("kpi-exporter")
 PORT = int(os.environ.get("KPI_EXPORTER_PORT", "9108"))
 REFRESH_SEC = int(os.environ.get("KPI_EXPORTER_REFRESH_SEC", "60"))
 
+OVERVIEW_SNAPSHOT_JSON = Path(
+    os.environ.get("OVERVIEW_SNAPSHOT_JSON", "/data/overview/overview_snapshot.json")
+)
 OVERVIEW_XLSX_PATH = Path(os.environ.get("OVERVIEW_XLSX_PATH", "/data/overview/overview_report.xlsx"))
 DEVICE_DAILY_CSV = Path(os.environ.get("DEVICE_DAILY_CSV", "/data/overview/device_daily.csv"))
 DEVICE_SNAPSHOT_CSV = Path(os.environ.get("DEVICE_SNAPSHOT_CSV", "/data/overview/device_snapshot.csv"))
+WATCH_SNAPSHOT_JSON = Path(
+    os.environ.get("WATCH_SNAPSHOT_JSON", "/data/watch/watch_snapshot.json")
+)
 WATCH_DAILY_CSV = Path(os.environ.get("WATCH_DAILY_CSV", "/data/profile/daily_volume.csv"))
 WATCH_CHANNEL_SUMMARY_CSV = Path(
     os.environ.get("WATCH_CHANNEL_SUMMARY_CSV", "/data/profile/channel_summary.csv")
 )
+WATCH_CHANNEL_DAILY_CSV = Path(
+    os.environ.get("WATCH_CHANNEL_DAILY_CSV", "/data/profile/channel_daily.csv")
+)
+WATCH_GEO_CSV = Path(os.environ.get("WATCH_GEO_CSV", "/data/profile/geo_top.csv"))
+WATCH_DEVICE_TYPE_CSV = Path(
+    os.environ.get("WATCH_DEVICE_TYPE_CSV", "/data/profile/device_type_by_channel.csv")
+)
+WATCH_UA_CSV = Path(os.environ.get("WATCH_UA_CSV", "/data/profile/ua_top.csv"))
+WATCH_CONTENT_CSV = Path(
+    os.environ.get("WATCH_CONTENT_CSV", "/data/profile/querystr_channel_profile.csv")
+)
+PROFILE_TOP_N = max(5, int(os.environ.get("PROFILE_TOP_N", "20")))
 
 DATA_START_ROW = 13
 COL = {
@@ -40,6 +60,7 @@ COL = {
 }
 
 CHUNK_HOURS = 6.0 / 3600.0
+JSON_CACHE: dict[Path, tuple[int, dict]] = {}
 
 
 def sn(value: object) -> float:
@@ -90,6 +111,34 @@ def day_key(d: date) -> str:
     return d.strftime("%Y-%m-%d")
 
 
+def clean_label(value: object, fallback: str = "Unknown") -> str:
+    decoded = unquote_plus(str(value or "").strip()).strip()
+    return decoded[:160] if decoded else fallback
+
+
+def display_name(value: object, fallback: str = "Unknown") -> str:
+    label = clean_label(value, fallback)
+    return label.replace("_", " ").strip().title()
+
+
+def platform_name(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    label = display_name(raw)
+    aliases = {
+        "Android Tv": "Android TV",
+        "Fire Tv": "Fire TV",
+        "Android Mobile Ott": "Android Mobile OTT",
+        "Appletv": "Apple TV",
+        "Lg Tv": "LG TV",
+        "Samsung Tv": "Samsung TV",
+        "Cloud Tv": "Cloud TV",
+        "Ios": "iOS",
+    }
+    return aliases.get(label, label)
+
+
 def read_csv_rows(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -97,7 +146,39 @@ def read_csv_rows(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+def read_json_snapshot(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    mtime_ns = path.stat().st_mtime_ns
+    cached = JSON_CACHE.get(path)
+    if cached and cached[0] == mtime_ns:
+        return cached[1]
+    value = json.loads(path.read_text(encoding="utf-8"))
+    JSON_CACHE[path] = (mtime_ns, value)
+    return value
+
+
 def load_overview_rows() -> list[dict]:
+    snapshot_rows = read_json_snapshot(OVERVIEW_SNAPSHOT_JSON).get("rows", [])
+    if snapshot_rows:
+        out = []
+        for row in snapshot_rows:
+            d = parse_date_any(row.get("date"))
+            if d is None:
+                continue
+            out.append(
+                {
+                    "date": d,
+                    "bytes_gib": sn(row.get("bytes")),
+                    "rows": sn(row.get("rows")),
+                    "dist_ip": sn(row.get("dist_ip")),
+                    "dist_dev": sn(row.get("dist_dev")),
+                    "dist_sess": sn(row.get("dist_sess")),
+                }
+            )
+        out.sort(key=lambda x: x["date"])
+        return out
+
     if not OVERVIEW_XLSX_PATH.exists():
         return []
     wb = openpyxl.load_workbook(OVERVIEW_XLSX_PATH, read_only=True, data_only=True)
@@ -151,7 +232,10 @@ def load_device_daily_sets() -> dict[date, set[str]]:
 
 def load_watch_daily_rows() -> list[dict]:
     rows: list[dict] = []
-    for r in read_csv_rows(WATCH_DAILY_CSV):
+    source_rows = read_json_snapshot(WATCH_SNAPSHOT_JSON).get("daily") or read_csv_rows(
+        WATCH_DAILY_CSV
+    )
+    for r in source_rows:
         d = parse_date_any(r.get("log_date"))
         if d is None:
             continue
@@ -182,16 +266,200 @@ def load_watch_daily_rows() -> list[dict]:
 
 def load_watch_channel_summary() -> list[dict]:
     rows: list[dict] = []
-    for r in read_csv_rows(WATCH_CHANNEL_SUMMARY_CSV):
+    source_rows = read_json_snapshot(WATCH_SNAPSHOT_JSON).get("channels") or read_csv_rows(
+        WATCH_CHANNEL_SUMMARY_CSV
+    )
+    for r in source_rows:
         rows.append(
             {
-                "channel_name": str(r.get("channel_name", "")).strip(),
+                "channel_name": clean_label(r.get("channel_name")),
+                "segments": sn(r.get("raw_ts_chunks")),
                 "raw_watch_hours": sn(r.get("raw_watch_hours")),
-                "status_200_watch_hours": sn(r.get("status_200_watch_hours")),
+                "approx_unique_ips": sn(r.get("approx_unique_ips")),
             }
         )
     rows.sort(key=lambda x: x["raw_watch_hours"], reverse=True)
     return rows
+
+
+def load_watch_channel_daily() -> list[dict]:
+    rows: list[dict] = []
+    source_rows = read_json_snapshot(WATCH_SNAPSHOT_JSON).get(
+        "channel_daily_all"
+    ) or read_csv_rows(WATCH_CHANNEL_DAILY_CSV)
+    for r in source_rows:
+        d = parse_date_any(r.get("log_date"))
+        if d is None:
+            continue
+        rows.append(
+            {
+                "date": d,
+                "channel_name": clean_label(r.get("channel_name")),
+                "raw_watch_hours": sn(r.get("raw_watch_hours")),
+                "approx_unique_ips": sn(r.get("approx_unique_ips")),
+            }
+        )
+    return rows
+
+
+def classify_os(raw_ua: object) -> str:
+    ua = clean_label(raw_ua).lower()
+    if "aft" in ua or "fire tv" in ua:
+        return "Fire OS"
+    if "android" in ua:
+        return "Android"
+    if any(token in ua for token in ("iphone", "ipad", "ipod")):
+        return "iOS"
+    if "windows" in ua:
+        return "Windows"
+    if "mac os" in ua or "macintosh" in ua:
+        return "macOS"
+    if "linux" in ua:
+        return "Linux"
+    return "Other"
+
+
+def content_title(row: dict) -> str:
+    query = str(row.get("sample_queryStr", "")).strip()
+    if query:
+        title = parse_qs(query, keep_blank_values=True).get("content_title", [""])[0]
+        if title:
+            return clean_label(title)
+    return clean_label(row.get("mapped_channel") or row.get("pure_channel"), "Unknown Content")
+
+
+def decoded_platform(row: dict) -> str:
+    os_name = clean_label(row.get("os_name"), "").lower()
+    os_family = clean_label(row.get("os_family"), "").lower()
+    device_type = clean_label(row.get("device_type"), "").lower()
+    model = clean_label(row.get("model"), "").lower()
+    combined = " ".join((os_name, os_family, model))
+    if "fire" in combined:
+        return "Fire TV"
+    if "tizen" in combined:
+        return "Samsung TV"
+    if "webos" in combined:
+        return "LG TV"
+    if "android" in combined and device_type == "tv":
+        return "Android TV"
+    if "android" in combined:
+        return "Android"
+    if any(token in combined for token in ("ios", "iphone", "ipad")):
+        return "iOS"
+    if "windows" in combined:
+        return "Windows"
+    if device_type:
+        return display_name(device_type)
+    return "Other"
+
+
+def aggregate_profile_rows() -> dict[str, list[dict]]:
+    geo: dict[tuple[str, str], dict[str, float]] = defaultdict(
+        lambda: {"ts_rows": 0.0, "unique_ips": 0.0}
+    )
+    snapshot = read_json_snapshot(WATCH_SNAPSHOT_JSON)
+    snapshot_geo = snapshot.get("geo") or {}
+    if snapshot_geo:
+        for r in snapshot_geo.get("india_regions", []):
+            key = ("IN", clean_label(r.get("state_region"), "Unknown"))
+            geo[key]["ts_rows"] += sn(r.get("watch_hours")) / CHUNK_HOURS
+            geo[key]["unique_ips"] += sn(r.get("approx_unique_ips"))
+        for r in snapshot_geo.get("other_regions", []):
+            key = (
+                clean_label(r.get("country_label"), "Other"),
+                clean_label(r.get("state_region"), "Unknown"),
+            )
+            geo[key]["ts_rows"] += sn(r.get("watch_hours")) / CHUNK_HOURS
+            geo[key]["unique_ips"] += sn(r.get("approx_unique_ips"))
+    else:
+        for r in read_csv_rows(WATCH_GEO_CSV):
+            key = (
+                clean_label(r.get("country"), "Unknown"),
+                clean_label(r.get("state"), "Unknown"),
+            )
+            geo[key]["ts_rows"] += sn(r.get("ts_rows"))
+            geo[key]["unique_ips"] += sn(r.get("approx_unique_ips"))
+
+    device_types: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"ts_rows": 0.0, "unique_ips": 0.0}
+    )
+    device_source = snapshot.get("device") or read_csv_rows(WATCH_DEVICE_TYPE_CSV)
+    for r in device_source:
+        key = display_name(r.get("device_type"))
+        ts_rows = sn(r.get("ts_rows"))
+        if ts_rows <= 0:
+            ts_rows = sn(r.get("watch_hours")) / CHUNK_HOURS
+        device_types[key]["ts_rows"] += ts_rows
+        device_types[key]["unique_ips"] += sn(r.get("approx_unique_ips"))
+
+    operating_systems: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"rows": 0.0, "unique_ips": 0.0}
+    )
+    ua_source = snapshot.get("ua") or read_csv_rows(WATCH_UA_CSV)
+    for r in ua_source:
+        key = classify_os(r.get("UA"))
+        operating_systems[key]["rows"] += sn(r.get("rows"))
+        operating_systems[key]["unique_ips"] += sn(r.get("approx_unique_ips"))
+
+    platforms: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"requests": 0.0, "sessions": 0.0, "viewers": 0.0}
+    )
+    content: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"requests": 0.0, "sessions": 0.0, "devices": 0.0, "viewers": 0.0}
+    )
+    decoded_rows = snapshot.get("device_decode_ua_cache") or []
+    if decoded_rows:
+        for r in decoded_rows:
+            platform = decoded_platform(r)
+            platforms[platform]["requests"] += sn(r.get("rows"))
+            platforms[platform]["sessions"] += sn(r.get("approx_ips"))
+            platforms[platform]["viewers"] += sn(r.get("approx_ips"))
+    for r in read_csv_rows(WATCH_CONTENT_CSV) if not decoded_rows else []:
+        platform = platform_name(r.get("platform"))
+        if platform:
+            platforms[platform]["requests"] += sn(r.get("requests"))
+            platforms[platform]["sessions"] += sn(r.get("sessions"))
+            platforms[platform]["viewers"] += sn(r.get("unique_viewers"))
+
+    mapping_rows = snapshot.get("mapping_quality") or []
+    if mapping_rows:
+        for r in mapping_rows:
+            title = clean_label(r.get("channel_name"), "Unknown Content")
+            content[title]["requests"] += sn(r.get("raw_ts_chunks"))
+            content[title]["viewers"] += sn(r.get("approx_unique_ips"))
+    else:
+        for r in read_csv_rows(WATCH_CONTENT_CSV):
+            title = content_title(r)
+            content[title]["requests"] += sn(r.get("requests"))
+            content[title]["sessions"] += sn(r.get("sessions"))
+            content[title]["devices"] += sn(r.get("devices"))
+            content[title]["viewers"] += sn(r.get("unique_viewers"))
+
+    geo_rows = [
+        {"country": key[0], "state": key[1], **values}
+        for key, values in geo.items()
+    ]
+    geo_rows.sort(key=lambda row: row["ts_rows"], reverse=True)
+
+    device_rows = [{"device_type": key, **values} for key, values in device_types.items()]
+    device_rows.sort(key=lambda row: row["ts_rows"], reverse=True)
+
+    os_rows = [{"os": key, **values} for key, values in operating_systems.items()]
+    os_rows.sort(key=lambda row: row["rows"], reverse=True)
+
+    platform_rows = [{"platform": key, **values} for key, values in platforms.items()]
+    platform_rows.sort(key=lambda row: row["requests"], reverse=True)
+
+    content_rows = [{"content_title": key, **values} for key, values in content.items()]
+    content_rows.sort(key=lambda row: row["requests"], reverse=True)
+
+    return {
+        "geo": geo_rows[:PROFILE_TOP_N],
+        "device_types": device_rows[:PROFILE_TOP_N],
+        "operating_systems": os_rows[:PROFILE_TOP_N],
+        "platforms": platform_rows[:PROFILE_TOP_N],
+        "content": content_rows[:PROFILE_TOP_N],
+    }
 
 
 KPI_EXPORTER_REFRESH_OK = Gauge(
@@ -366,6 +634,31 @@ WH_TOP_CHANNEL_INFO = Gauge(
     "Top channel marker (value=1, label carries channel_name)",
     ["channel_name"],
 )
+WH_CHANNEL_RAW_HOURS = Gauge(
+    "veto_watch_channel_raw_watch_hours",
+    "Raw watch hours by channel",
+    ["channel_name"],
+)
+WH_CHANNEL_SEGMENTS = Gauge(
+    "veto_watch_channel_segments",
+    "Raw TS segment count by channel",
+    ["channel_name"],
+)
+WH_CHANNEL_UNIQUE_IPS = Gauge(
+    "veto_watch_channel_unique_ips",
+    "Approx unique IP count by channel",
+    ["channel_name"],
+)
+WH_CHANNEL_DAY_RAW_HOURS = Gauge(
+    "veto_watch_channel_day_raw_watch_hours",
+    "Raw watch hours by day and channel",
+    ["day", "channel_name"],
+)
+WH_CHANNEL_DAY_UNIQUE_IPS = Gauge(
+    "veto_watch_channel_day_unique_ips",
+    "Approx unique IP count by day and channel",
+    ["day", "channel_name"],
+)
 WH_DAY_START_TS = Gauge(
     "veto_watch_day_start_timestamp_seconds",
     "Start timestamp for each used watch day",
@@ -401,15 +694,72 @@ WH_DAY_TS_ROWS = Gauge(
     "Watch TS rows by day",
     ["day"],
 )
+PROFILE_GEO_TS_ROWS = Gauge(
+    "veto_profile_geo_ts_rows",
+    "Profiled TS rows by country and state",
+    ["country", "state"],
+)
+PROFILE_GEO_UNIQUE_IPS = Gauge(
+    "veto_profile_geo_unique_ips",
+    "Approx unique IP signals by country and state",
+    ["country", "state"],
+)
+PROFILE_DEVICE_TYPE_TS_ROWS = Gauge(
+    "veto_profile_device_type_ts_rows",
+    "Profiled TS rows by device type",
+    ["device_type"],
+)
+PROFILE_DEVICE_TYPE_UNIQUE_IPS = Gauge(
+    "veto_profile_device_type_unique_ips",
+    "Approx unique IP signals by device type",
+    ["device_type"],
+)
+PROFILE_OS_ROWS = Gauge(
+    "veto_profile_os_rows",
+    "Profiled request rows by inferred operating system",
+    ["os"],
+)
+PROFILE_OS_UNIQUE_IPS = Gauge(
+    "veto_profile_os_unique_ips",
+    "Approx unique IP signals by inferred operating system",
+    ["os"],
+)
+PROFILE_PLATFORM_REQUESTS = Gauge(
+    "veto_profile_platform_requests",
+    "Profiled requests by application platform",
+    ["platform"],
+)
+PROFILE_PLATFORM_SESSIONS = Gauge(
+    "veto_profile_platform_sessions",
+    "Profiled sessions by application platform",
+    ["platform"],
+)
+PROFILE_PLATFORM_VIEWERS = Gauge(
+    "veto_profile_platform_viewers",
+    "Profiled unique viewer signals by application platform",
+    ["platform"],
+)
+PROFILE_CONTENT_INFO = Gauge(
+    "veto_profile_content_info",
+    "Popular content table; numeric values are carried as labels",
+    ["content_title", "requests", "sessions", "devices", "viewers"],
+)
 
 
 def set_source_mtimes() -> None:
     sources = {
+        "overview_snapshot_json": OVERVIEW_SNAPSHOT_JSON,
         "overview_xlsx": OVERVIEW_XLSX_PATH,
         "device_daily_csv": DEVICE_DAILY_CSV,
         "device_snapshot_csv": DEVICE_SNAPSHOT_CSV,
+        "watch_snapshot_json": WATCH_SNAPSHOT_JSON,
         "watch_daily_csv": WATCH_DAILY_CSV,
         "watch_channel_summary_csv": WATCH_CHANNEL_SUMMARY_CSV,
+        "watch_channel_daily_csv": WATCH_CHANNEL_DAILY_CSV,
+        "watch_geo_csv": WATCH_GEO_CSV,
+        "watch_device_type_csv": WATCH_DEVICE_TYPE_CSV,
+        "watch_ua_csv": WATCH_UA_CSV,
+        "watch_content_csv": WATCH_CONTENT_CSV,
     }
     for key, path in sources.items():
         if path.exists():
@@ -483,7 +833,8 @@ def refresh_overview_kpis() -> None:
     OV_DEVICE_DAY_START_TS.clear()
     OV_DEVICE_FIRST_SEEN_COUNT.clear()
     OV_DEVICE_LAST_SEEN_COUNT.clear()
-    for r in used:
+    # Daily series retain partial edge dates so Grafana can show the exact selected range.
+    for r in rows:
         d: date = r["date"]
         key = day_key(d)
         OV_DAY_START_TS.labels(day=key).set(date_to_epoch_start(d))
@@ -565,7 +916,8 @@ def refresh_watch_kpis() -> None:
     WH_DAY_STATUS_200_ROWS.clear()
     WH_DAY_NON_200_ROWS.clear()
     WH_DAY_TS_ROWS.clear()
-    for r in used:
+    # Daily series retain partial edge dates so Grafana can show today's available ETL data.
+    for r in daily:
         d: date = r["date"]
         key = day_key(d)
         WH_DAY_START_TS.labels(day=key).set(date_to_epoch_start(d))
@@ -582,22 +934,88 @@ def refresh_watch_kpis() -> None:
 
     WH_TOP_CHANNEL_RAW_HOURS.clear()
     WH_TOP_CHANNEL_INFO.clear()
+    WH_CHANNEL_RAW_HOURS.clear()
+    WH_CHANNEL_SEGMENTS.clear()
+    WH_CHANNEL_UNIQUE_IPS.clear()
+    for channel in active_channels:
+        channel_name = channel["channel_name"]
+        WH_CHANNEL_RAW_HOURS.labels(channel_name=channel_name).set(channel["raw_watch_hours"])
+        WH_CHANNEL_SEGMENTS.labels(channel_name=channel_name).set(channel["segments"])
+        WH_CHANNEL_UNIQUE_IPS.labels(channel_name=channel_name).set(channel["approx_unique_ips"])
+
     if channels:
         top = channels[0]
         channel_name = top["channel_name"] or "unknown"
         WH_TOP_CHANNEL_RAW_HOURS.labels(channel_name=channel_name).set(top["raw_watch_hours"])
         WH_TOP_CHANNEL_INFO.labels(channel_name=channel_name).set(1.0)
 
+    WH_CHANNEL_DAY_RAW_HOURS.clear()
+    WH_CHANNEL_DAY_UNIQUE_IPS.clear()
+    for row in load_watch_channel_daily():
+        labels = {
+            "day": day_key(row["date"]),
+            "channel_name": row["channel_name"],
+        }
+        WH_CHANNEL_DAY_RAW_HOURS.labels(**labels).set(row["raw_watch_hours"])
+        WH_CHANNEL_DAY_UNIQUE_IPS.labels(**labels).set(row["approx_unique_ips"])
+
+
+def refresh_profile_kpis() -> None:
+    profile = aggregate_profile_rows()
+
+    PROFILE_GEO_TS_ROWS.clear()
+    PROFILE_GEO_UNIQUE_IPS.clear()
+    for row in profile["geo"]:
+        labels = {"country": row["country"], "state": row["state"]}
+        PROFILE_GEO_TS_ROWS.labels(**labels).set(row["ts_rows"])
+        PROFILE_GEO_UNIQUE_IPS.labels(**labels).set(row["unique_ips"])
+
+    PROFILE_DEVICE_TYPE_TS_ROWS.clear()
+    PROFILE_DEVICE_TYPE_UNIQUE_IPS.clear()
+    for row in profile["device_types"]:
+        PROFILE_DEVICE_TYPE_TS_ROWS.labels(device_type=row["device_type"]).set(row["ts_rows"])
+        PROFILE_DEVICE_TYPE_UNIQUE_IPS.labels(device_type=row["device_type"]).set(
+            row["unique_ips"]
+        )
+
+    PROFILE_OS_ROWS.clear()
+    PROFILE_OS_UNIQUE_IPS.clear()
+    for row in profile["operating_systems"]:
+        PROFILE_OS_ROWS.labels(os=row["os"]).set(row["rows"])
+        PROFILE_OS_UNIQUE_IPS.labels(os=row["os"]).set(row["unique_ips"])
+
+    PROFILE_PLATFORM_REQUESTS.clear()
+    PROFILE_PLATFORM_SESSIONS.clear()
+    PROFILE_PLATFORM_VIEWERS.clear()
+    for row in profile["platforms"]:
+        platform = row["platform"]
+        PROFILE_PLATFORM_REQUESTS.labels(platform=platform).set(row["requests"])
+        PROFILE_PLATFORM_SESSIONS.labels(platform=platform).set(row["sessions"])
+        PROFILE_PLATFORM_VIEWERS.labels(platform=platform).set(row["viewers"])
+
+    PROFILE_CONTENT_INFO.clear()
+    for row in profile["content"]:
+        PROFILE_CONTENT_INFO.labels(
+            content_title=row["content_title"],
+            requests=str(int(row["requests"])),
+            sessions=str(int(row["sessions"])),
+            devices=str(int(row["devices"])),
+            viewers=str(int(row["viewers"])),
+        ).set(row["requests"])
+
 
 def refresh_all() -> None:
     set_source_mtimes()
     refresh_overview_kpis()
     refresh_watch_kpis()
+    refresh_profile_kpis()
 
 
 def main() -> None:
     LOG.info("Starting KPI exporter on :%d", PORT)
+    LOG.info("Overview snapshot: %s", OVERVIEW_SNAPSHOT_JSON)
     LOG.info("Overview source: %s", OVERVIEW_XLSX_PATH)
+    LOG.info("Watch snapshot: %s", WATCH_SNAPSHOT_JSON)
     LOG.info("Watch daily source: %s", WATCH_DAILY_CSV)
     start_http_server(PORT)
 
