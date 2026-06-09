@@ -1,0 +1,11 @@
+data/
+dependency/
+output/
+runtime/
+state/
+logs/
+.env
+*.exe
+*.zip
+*.log
+*.tmp
