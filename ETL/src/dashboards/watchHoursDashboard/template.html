@@ -164,6 +164,9 @@ tr:hover td{background:#f6f9ff}
       <button class="filter-btn" id="trendCompareBtn" onclick="setTrendFocus('compare')">Compare</button>
       <select class="channel-select compare-count" id="compareCount" onchange="setCompareCount(this.value)"></select>
       <span class="compare-channel-controls" id="compareChannelControls"></span>
+      <span class="filter-sep"></span>
+      <span class="filter-title">Region / State</span>
+      <select class="channel-select" id="trendRegionState" onchange="setTrendRegionState(this.value)"></select>
       <span class="filter-range" id="channelLimitText"></span>
     </div>
     <div class="grid-2">
@@ -328,6 +331,7 @@ tr:hover td{background:#f6f9ff}
         <button class="filter-btn" id="modalTrendCompareBtn" onclick="setTrendFocus('compare')">Compare</button>
         <select class="channel-select compare-count" id="modalCompareCount" onchange="setCompareCount(this.value)"></select>
         <span class="compare-channel-controls" id="modalCompareChannelControls"></span>
+        <select class="channel-select" id="modalTrendRegionState" onchange="setTrendRegionState(this.value)"></select>
         <input type="date" id="modalStart" onchange="setModalCustom()"/>
         <span style="font-size:12px;color:#64748b;font-weight:700">to</span>
         <input type="date" id="modalEnd" onchange="setModalCustom()"/>
@@ -432,6 +436,7 @@ let viewDaily = ALL_DAILY.slice();
 let viewChannels = [];
 let chartChannelLimit = 'all';
 let trendFocus = 'all';
+let trendRegionState = 'all';
 let compareCount = 2;
 let compareChannels = [];
 let modalChartSourceId = null;
@@ -1087,6 +1092,60 @@ function aggregateChannelGeo() {
   return getAgg('channelGeo',()=>channelGeoRowsForDaily(viewDaily));
 }
 
+function trendRegionKey(row){
+  return `${String(row?.country_code||'').trim().toUpperCase()}||${String(row?.state_region||'Unknown / NA')}`;
+}
+
+function trendRegionLabel(row){
+  const state=String(row?.state_region||'Unknown / NA');
+  const country=String(row?.country_label||row?.country_code||'').trim();
+  return country&&country!=='India'?`${state} - ${country}`:state;
+}
+
+function trendRegionOptionsForDaily(dailyRows=viewDaily){
+  const rows=groupRows(
+    channelGeoRowsForDaily(dailyRows),
+    ['country_code','country_label','state_region'],
+    ['raw_watch_hours'],
+    ['approx_unique_ips']
+  ).filter(r=>String(r.state_region||'').trim());
+  rows.forEach(r=>{
+    r.key=trendRegionKey(r);
+    r.label=trendRegionLabel(r);
+    r.india_rank=String(r.country_code||'').toUpperCase()==='IN'?0:1;
+  });
+  return rows.sort((a,b)=>
+    Number(a.india_rank)-Number(b.india_rank) ||
+    Number(b.raw_watch_hours||0)-Number(a.raw_watch_hours||0) ||
+    String(a.label).localeCompare(String(b.label))
+  );
+}
+
+function trendRegionMatch(row){
+  return trendRegionState==='all'||trendRegionKey(row)===trendRegionState;
+}
+
+function trendChannelsForDaily(dailyRows=viewDaily, fallbackRows=null){
+  if(trendRegionState==='all')return fallbackRows||aggregateChannels(dailyRows);
+  const rows=channelGeoRowsForDaily(dailyRows).filter(trendRegionMatch);
+  const grouped=groupRows(
+    rows,
+    ['channel_name'],
+    ['raw_watch_hours','status_200_watch_hours','raw_ts_rows','status_200_ts_rows'],
+    ['approx_unique_ips']
+  ).sort((a,b)=>Number(b.raw_watch_hours||0)-Number(a.raw_watch_hours||0)||String(a.channel_name).localeCompare(String(b.channel_name)));
+  grouped.forEach(r=>{
+    r.raw_ts_chunks=Number(r.raw_ts_rows||0);
+    r.status_200_ts_chunks=Number(r.status_200_ts_rows||0);
+    r.ts_status=channelTsStateText(r);
+  });
+  return grouped;
+}
+
+function activeTrendChannels(){
+  return trendChannelsForDaily(viewDaily, viewChannels);
+}
+
 function regionChannelAudienceRowsForDaily(dailyRows) {
   return rowsForDates(DAILY_TABLES.region_channel_audience_daily||[], dailyRows||viewDaily).map(r=>({
     ...r,
@@ -1234,21 +1293,36 @@ function trendChannelsFrom(rows){
 }
 
 function trendFocusText(){
+  const trendRows=activeTrendChannels();
   if(trendFocus==='all')return 'Trend: All channels';
-  if(trendFocus==='compare'){const names=selectedCompareNames(viewChannels);return `Compare ${names.length}: ${names.join(' vs ')}`;}
+  if(trendFocus==='compare'){const names=selectedCompareNames(trendRows);return `Compare ${names.length}: ${names.join(' vs ')}`;}
   if(String(trendFocus).startsWith('channel:'))return 'Trend: '+decodeURIComponent(String(trendFocus).slice(8));
   return 'Trend: Top '+(Number(String(trendFocus).replace('top',''))||10);
 }
 
+function renderTrendRegionOptions(){
+  const opts=[{key:'all',label:'All regions/states'}].concat(
+    trendRegionOptionsForDaily(viewDaily).map(r=>({key:r.key,label:`${r.label} (${fmtH(r.raw_watch_hours)} hrs)`}))
+  );
+  if(!opts.some(o=>String(o.key)===String(trendRegionState)))trendRegionState='all';
+  const html=opts.map(o=>`<option value="${escapeHtml(o.key)}"${String(o.key)===String(trendRegionState)?' selected':''}>${escapeHtml(o.label)}</option>`).join('');
+  ['trendRegionState','modalTrendRegionState'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=html;});
+}
+
 function renderTrendFocusOptions(){
-  if(trendFocus==='compare')ensureCompareDefaults(viewChannels);
+  const trendRows=activeTrendChannels();
+  if(String(trendFocus).startsWith('channel:')){
+    const name=decodeURIComponent(String(trendFocus).slice(8));
+    if(!selectableChannels(trendRows).some(c=>c.channel_name===name))trendFocus='all';
+  }
+  if(trendFocus==='compare')ensureCompareDefaults(trendRows);
   const baseOpts=[['all','All channels'],['compare','Compare channels'],['top15','Top 15'],['top10','Top 10']];
-  const chanOpts=selectableChannels(viewChannels).map(c=>['channel:'+encodeURIComponent(c.channel_name),c.channel_name]);
+  const chanOpts=selectableChannels(trendRows).map(c=>['channel:'+encodeURIComponent(c.channel_name),c.channel_name]);
   const html=baseOpts.concat(chanOpts).map(([v,l])=>`<option value="${escapeHtml(v)}"${v===trendFocus?' selected':''}>${escapeHtml(l)}</option>`).join('');
   ['trendFocus','modalTrendFocus'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=html;});
   ['trendCompareBtn','modalTrendCompareBtn'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.toggle('active',trendFocus==='compare');});
-  const maxC=selectableChannels(viewChannels).length;
-  compareCount=normalizeCompareCount(compareCount,viewChannels);
+  const maxC=selectableChannels(trendRows).length;
+  compareCount=normalizeCompareCount(compareCount,trendRows);
   const cntHtml=compareCountOptions(maxC).map(n=>`<option value="${n}"${n===compareCount?' selected':''}>${n===maxC&&maxC>20?'All channels':n+' channels'}</option>`).join('');
   ['compareCount','modalCompareCount'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=cntHtml;});
   const showC=trendFocus==='compare';
@@ -1265,7 +1339,7 @@ function renderComparePickers(containerId,show){
   el.classList.toggle('active',!!show);
   el.style.display=show?'inline-flex':'none';
   if(!show){el.innerHTML='';return;}
-  const channels=selectableChannels(viewChannels);
+  const channels=selectableChannels(activeTrendChannels());
   if(!channels.length){el.innerHTML='';return;}
   const options=(cur,lbl)=>[`<option value="">${lbl}</option>`].concat(channels.map(c=>`<option value="${escapeHtml(c.channel_name)}"${c.channel_name===cur?' selected':''}>${escapeHtml(c.channel_name)}</option>`)).join('');
   el.innerHTML=Array.from({length:compareCount},(_,i)=>`<select class="channel-select compare-picker" onchange="setCompareChannel(${i},this.value)">${options(compareChannels[i],'Channel '+(i+1))}</select>`).join('');
@@ -1292,13 +1366,15 @@ function updateChannelLimitText(){
   const shown=chartChannelLimit==='all'?total:Math.min(Number(chartChannelLimit),total);
   const lbl=chartChannelLimit==='all'?'All':`Top ${chartChannelLimit}`;
   const el=document.getElementById('channelLimitText');
-  if(el)el.textContent=`${sourceLabel(sourceFilter)} | ${lbl}: ${shown} of ${total} | ${trendFocusText()}`;
+  const region=trendRegionState==='all'?'All regions/states':(document.getElementById('trendRegionState')?.selectedOptions?.[0]?.textContent||'Selected region');
+  if(el)el.textContent=`${sourceLabel(sourceFilter)} | ${lbl}: ${shown} of ${total} | Region: ${region} | ${trendFocusText()}`;
 }
 
 function setChannelLimit(limit){chartChannelLimit=limit;setActiveChannelLimit(limit==='all'?'channelAll':limit===10?'channelTop10':'channelTop15');renderCharts();updateChannelLimitText();}
-function setTrendFocus(value){trendFocus=value||'all';if(trendFocus==='compare')ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
-function setCompareCount(value){compareCount=normalizeCompareCount(value,viewChannels);trendFocus='compare';ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
-function setCompareChannel(index,value){compareChannels[index]=value;trendFocus='compare';ensureCompareDefaults(viewChannels);renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
+function setTrendFocus(value){trendFocus=value||'all';if(trendFocus==='compare')ensureCompareDefaults(activeTrendChannels());renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
+function setTrendRegionState(value){trendRegionState=value||'all';renderTrendRegionOptions();renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
+function setCompareCount(value){compareCount=normalizeCompareCount(value,activeTrendChannels());trendFocus='compare';ensureCompareDefaults(activeTrendChannels());renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
+function setCompareChannel(index,value){compareChannels[index]=value;trendFocus='compare';ensureCompareDefaults(activeTrendChannels());renderTrendFocusOptions();renderCharts();updateChannelLimitText();if(modalChartSourceId==='channelTrend')renderModalChart();}
 function setConcurrencyDateRange(){
   concurrencyStart=document.getElementById('concurrencyStart')?.value||concurrencyStart;
   concurrencyEnd=document.getElementById('concurrencyEnd')?.value||concurrencyEnd;
@@ -1339,6 +1415,7 @@ function applyDateView(updateInputs=true){
   viewChannels=aggregateChannels(viewDaily);
   if(updateInputs)syncDateInputs();
   else document.getElementById('selectedRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${viewDaily[0].log_date} to ${viewDaily[viewDaily.length-1].log_date} | ${viewDaily.length} days`:`${sourceLabel(sourceFilter)} | No data in selected range`;
+  renderTrendRegionOptions();
   renderTrendFocusOptions();
   renderCards(selectedSummary());
   renderCharts();
@@ -1769,15 +1846,17 @@ function renderRegionCountryChart(targetId='regionCountryChart',expanded=false,g
 
 function renderChannelTrend(targetId='channelTrend',expanded=false,dailyRows=null,channelRows=null){
   const daily=dailyRows||viewDaily||[];
-  const sourceCh=channelRows||viewChannels||[];
+  const sourceCh=trendChannelsForDaily(daily,channelRows||viewChannels||[]);
   const ch=trendChannelsFrom(sourceCh);
   const trendTop=ch.map(c=>c.channel_name);
   const trendDates=daily.map(r=>r.log_date);
   const trendDateSet=new Set(trendDates);
+  const regionRows=trendRegionState==='all'?null:channelGeoRowsForDaily(daily).filter(trendRegionMatch);
+  const dataRows=regionRows||ALL_CHANNEL_DAILY;
   const single=trendTop.length===1;
   return makeLineChart(targetId,trendDates,trendTop.map((name,i)=>{
     const byDate=new Map();
-    ALL_CHANNEL_DAILY.filter(p=>p.channel_name===name&&trendDateSet.has(p.log_date)).forEach(p=>{
+    dataRows.filter(p=>p.channel_name===name&&trendDateSet.has(p.log_date)).forEach(p=>{
       const key=String(p.log_date);
       byDate.set(key,(byDate.get(key)||0)+Number(p.raw_watch_hours||0));
     });
@@ -1842,7 +1921,8 @@ function openChartModal(id){
   document.querySelector('#chartModal .chart-modal')?.classList.toggle('rank-modal',isRankModal);
   document.querySelector('#chartModal .modal-chart-wrap')?.classList.toggle('rank-modal-wrap',isRankModal);
   const isTrend=id==='channelTrend';
-  ['modalTrendFocus','modalTrendCompareBtn'].forEach(elId=>{const el=document.getElementById(elId);if(el)el.style.display=isTrend?'':'none';});
+  ['modalTrendFocus','modalTrendCompareBtn','modalTrendRegionState'].forEach(elId=>{const el=document.getElementById(elId);if(el)el.style.display=isTrend?'':'none';});
+  renderTrendRegionOptions();
   renderTrendFocusOptions();
   document.getElementById('chartModal').classList.add('open');
   setModalPreset('dashboard');
@@ -1901,15 +1981,17 @@ function renderModalStats(){
     return;
   }
   const channels=aggregateChannels(daily);
+  const trendChannels=trendChannelsForDaily(daily,channels);
   const rawHours=sum(daily,'raw_watch_hours')||sum(channels,'raw_watch_hours');
   const s200Hours=sum(daily,'status_200_watch_hours')||sum(channels,'status_200_watch_hours');
   const totalRows=sum(daily,'rows');
   const non200=sum(daily,'non_200_rows');
-  const focusCh=modalChartSourceId==='channelTrend'?trendChannelsFrom(channels):channels;
+  const focusCh=modalChartSourceId==='channelTrend'?trendChannelsFrom(trendChannels):channels;
   const top=focusCh[0]||channels[0]||{};
+  const trendRawHours=sum(trendChannels,'raw_watch_hours');
   const cards=modalChartSourceId==='dailyChart'
     ?[mini('Raw Watch Hours',fmtH(rawHours)),mini('Status 200 Hours',fmtH(s200Hours)),mini('Non-200 Rate',fmtPct(percent(non200,totalRows))),mini('Max Approx IPs',fmt(maxVal(daily,'approx_unique_ips')))]
-    :[mini('Top Channel',escapeHtml(top.channel_name||'-')),mini('Top Channel Hours',fmtH(top.raw_watch_hours||0)),mini('Active Channels',fmt(channels.filter(c=>c.channel_name!=='Other'&&Number(c.raw_watch_hours||0)>0).length)),mini('Range Raw Hours',fmtH(rawHours))];
+    :[mini('Top Channel',escapeHtml(top.channel_name||'-')),mini('Top Channel Hours',fmtH(top.raw_watch_hours||0)),mini('Active Channels',fmt((modalChartSourceId==='channelTrend'?trendChannels:channels).filter(c=>c.channel_name!=='Other'&&Number(c.raw_watch_hours||0)>0).length)),mini('Range Raw Hours',fmtH(modalChartSourceId==='channelTrend'&&trendRegionState!=='all'?trendRawHours:rawHours))];
   document.getElementById('modalStats').innerHTML=cards.join('');
 }
 
