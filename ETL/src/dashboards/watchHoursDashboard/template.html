@@ -192,6 +192,26 @@ tr:hover td{background:#f6f9ff}
       <div class="panel"><h2>FAST Platform Watch Hours<span class="chart-actions"><span class="chart-sub">platform from reqHost</span><button class="expand-btn" onclick="openChartModal('fastPlatformChart')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="fastPlatformChartWrap"><canvas id="fastPlatformChart"></canvas></div></div>
       <div class="panel"><h2>FAST Platform Breakdown<span class="count-chip" id="fastPlatformCount"></span></h2><div class="table-wrap" id="fastPlatformTable"></div></div>
     </div>
+    <div class="panel detail-panel" id="channelGeoPanel">
+      <h2><span id="channelGeoTitle">Selected Channel Geography</span><span class="chart-actions"><span class="count-chip" id="channelGeoCount"></span><button class="expand-btn" onclick="openChartModal('channelGeoChart')">Expand</button></span></h2>
+      <div class="filter-bar">
+        <span class="filter-title">Channel</span>
+        <select class="channel-select" id="channelGeoSelect" onchange="setChannelGeoDrilldown(this.value,false)"></select>
+        <span class="filter-range" id="channelGeoRange"></span>
+      </div>
+      <div class="metric-strip" id="channelGeoMetrics"></div>
+      <div class="chart-box tall channel-rank" id="channelGeoChartWrap"><canvas id="channelGeoChart"></canvas></div>
+      <div class="drilldown-tables">
+        <div>
+          <div class="panel-subhead">State / Region Distribution</div>
+          <div class="table-wrap" id="channelGeoRegionTable"></div>
+        </div>
+        <div>
+          <div class="panel-subhead">City Distribution</div>
+          <div class="table-wrap" id="channelGeoCityTable"></div>
+        </div>
+      </div>
+    </div>
     <div class="insight-grid" id="channelCardsGrid"></div>
     <div class="panel"><h2>Channel Detail<span class="count-chip" id="channelInsightCount"></span></h2><div class="table-wrap" id="channelInsightTable"></div></div>
   </section>
@@ -443,6 +463,7 @@ let modalChartSourceId = null;
 let modalDaily = [];
 let selectedRegion = null;
 let selectedRegionChannel = null;
+let selectedChannelGeo = null;
 let concurrencyStart = '';
 let concurrencyEnd = '';
 let concurrencyPlatform = 'all';
@@ -1090,6 +1111,35 @@ function channelGeoRowsForDaily(dailyRows) {
 
 function aggregateChannelGeo() {
   return getAgg('channelGeo',()=>channelGeoRowsForDaily(viewDaily));
+}
+
+function channelGeoData(channelName,dailyRows=null) {
+  const name=String(channelName||'');
+  const rows=(dailyRows?channelGeoRowsForDaily(dailyRows):aggregateChannelGeo()).filter(r=>r.channel_name===name);
+  const totalHours=sum(rows,'raw_watch_hours');
+  const regionRows=groupRows(
+    rows,
+    ['country_code','country_label','state_region'],
+    ['raw_watch_hours','status_200_watch_hours','raw_ts_rows','status_200_ts_rows'],
+    ['approx_unique_ips']
+  ).map(r=>({
+    ...r,
+    share_pct:percent(r.raw_watch_hours,totalHours),
+    india_rank:String(r.country_code||'').toUpperCase()==='IN'?0:1
+  })).sort((a,b)=>
+    Number(a.india_rank)-Number(b.india_rank) ||
+    Number(b.raw_watch_hours||0)-Number(a.raw_watch_hours||0) ||
+    String(a.country_label).localeCompare(String(b.country_label)) ||
+    String(a.state_region).localeCompare(String(b.state_region))
+  );
+  const cityRows=groupRows(
+    rows,
+    ['country_code','country_label','state_region','city_name'],
+    ['raw_watch_hours','status_200_watch_hours','raw_ts_rows','status_200_ts_rows'],
+    ['approx_unique_ips']
+  ).map(r=>({...r,share_pct:percent(r.raw_watch_hours,totalHours)}))
+    .sort((a,b)=>Number(b.raw_watch_hours||0)-Number(a.raw_watch_hours||0));
+  return {channelName:name,rows,totalHours,regionRows,cityRows};
 }
 
 function trendRegionKey(row){
@@ -1844,6 +1894,13 @@ function renderRegionCountryChart(targetId='regionCountryChart',expanded=false,g
   return makeDoughnut(targetId,rows.map(r=>r.segment),rows.map(r=>r.watch_hours),expanded);
 }
 
+function renderChannelGeoChart(targetId='channelGeoChart',expanded=false,dailyRows=null){
+  const d=channelGeoData(selectedChannelGeo,dailyRows||viewDaily);
+  const rows=d.regionRows.slice(0,expanded?60:30);
+  if(targetId==='channelGeoChart')syncTallChartHeight('channelGeoChartWrap',rows.length,360,760);
+  return makeBarChart(targetId,rows.map(channelGeoRegionLabel),rows.map(r=>r.raw_watch_hours),expanded,true);
+}
+
 function renderChannelTrend(targetId='channelTrend',expanded=false,dailyRows=null,channelRows=null){
   const daily=dailyRows||viewDaily||[];
   const sourceCh=trendChannelsForDaily(daily,channelRows||viewChannels||[]);
@@ -1871,6 +1928,7 @@ function renderCharts(){
   renderChannelInsightHours();
   renderChannelAverageCharts();
   renderFastPlatformChart();
+  renderChannelGeoChart();
   renderDeviceStatusChart();
   renderKnownDeviceChart();
   renderUnknownDeviceChart();
@@ -1898,6 +1956,7 @@ function renderSingleChart(sourceId,targetId,expanded=false,dailyRows=null){
     return renderChannelAverageChart(targetId,expanded,audience,sourceId);
   }
   if(sourceId==='fastPlatformChart')return renderFastPlatformChart(targetId,expanded,fastPlatformRowsForDaily(daily));
+  if(sourceId==='channelGeoChart')return renderChannelGeoChart(targetId,expanded,daily);
   if(sourceId==='concurrencyChart')return renderConcurrencyChart(targetId,expanded,daily);
   if(sourceId==='deviceStatusChart')return renderDeviceStatusChart(targetId,expanded,daily);
   if(sourceId==='knownDeviceChart')return renderKnownDeviceChart(targetId,expanded,daily);
@@ -1915,9 +1974,9 @@ function setActiveModalPreset(id){['modalDashboard','modalAll','modal30','modal7
 function openChartModal(id){
   if(typeof Chart==='undefined')return;
   modalChartSourceId=id;
-  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',concurrencyChart:'Minute-Level Concurrency',deviceStatusChart:'Device Decode Coverage',knownDeviceChart:'Top Known Devices',unknownDeviceChart:'Top Unknown Device Codes',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split',reliabilityWatchHoursTrend:'Watch Hours By Status',reliabilityNon200Trend:'Non-200 Status Watch Hours',statusChart:'Status Codes'};
+  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',channelGeoChart:'Selected Channel Geography',concurrencyChart:'Minute-Level Concurrency',deviceStatusChart:'Device Decode Coverage',knownDeviceChart:'Top Known Devices',unknownDeviceChart:'Top Unknown Device Codes',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split',reliabilityWatchHoursTrend:'Watch Hours By Status',reliabilityNon200Trend:'Non-200 Status Watch Hours',statusChart:'Status Codes'};
   document.getElementById('modalTitle').textContent=titles[id]||'Chart';
-  const isRankModal=id==='channelBar'||id==='knownDeviceChart'||id==='unknownDeviceChart'||!!CHANNEL_AVG_CHARTS[id];
+  const isRankModal=id==='channelBar'||id==='channelGeoChart'||id==='knownDeviceChart'||id==='unknownDeviceChart'||!!CHANNEL_AVG_CHARTS[id];
   document.querySelector('#chartModal .chart-modal')?.classList.toggle('rank-modal',isRankModal);
   document.querySelector('#chartModal .modal-chart-wrap')?.classList.toggle('rank-modal-wrap',isRankModal);
   const isTrend=id==='channelTrend';
@@ -1980,6 +2039,17 @@ function renderModalStats(){
     ].join('');
     return;
   }
+  if(modalChartSourceId==='channelGeoChart'){
+    const d=channelGeoData(selectedChannelGeo,daily);
+    const indiaHours=sum(d.regionRows.filter(r=>String(r.country_code||'').toUpperCase()==='IN'),'raw_watch_hours');
+    document.getElementById('modalStats').innerHTML=[
+      mini('Channel',escapeHtml(selectedChannelGeo||'-')),
+      mini('Raw Watch Hours',fmtH(d.totalHours)),
+      mini('Regions',fmt(d.regionRows.length)),
+      mini('India Share',fmtPct(percent(indiaHours,d.totalHours)))
+    ].join('');
+    return;
+  }
   const channels=aggregateChannels(daily);
   const trendChannels=trendChannelsForDaily(daily,channels);
   const rawHours=sum(daily,'raw_watch_hours')||sum(channels,'raw_watch_hours');
@@ -2034,18 +2104,23 @@ function regionChannelLink(value){
   const channel=String(value||'Unknown');
   return `<button type="button" class="drill-link" onclick="setRegionChannelDrilldown('${encodeURIComponent(channel)}')">${escapeHtml(channel)}</button>`;
 }
+function channelGeoLink(value){
+  const channel=String(value||'Unknown');
+  return `<button type="button" class="drill-link" onclick="setChannelGeoDrilldown('${encodeURIComponent(channel)}')">${escapeHtml(channel)}</button>`;
+}
 function renderChannelInsightCards(rows){
-  return (rows||[]).map(r=>insightCard(
-    r.channel_name || 'Unknown',
-    [
-      insightStat('Watch Hours', fmtH(r.raw_watch_hours)),
-      insightStat('Avg Min / IP', fmtMinFromHours(r.avg_hours_per_ip)),
-      insightStat('Avg Min / Session', fmtMinFromHours(r.avg_hours_per_session)),
-      insightStat('Avg Min / Device', fmtMinFromHours(r.avg_hours_per_device)),
-    ],
-    `IPs ${fmt(r.approx_unique_ips)} | Sessions ${Number(r.approx_sessions||0)>0?fmt(r.approx_sessions):'n/a'} | Devices ${Number(r.approx_devices||0)>0?fmt(r.approx_devices):'n/a'}`,
-    'gold'
-  )).join('') || '<div style="padding:14px;color:#64748b;font-size:12px">No channel data available.</div>';
+  return (rows||[]).map(r=>{
+    const channel=r.channel_name || 'Unknown';
+    const selected=selectedChannelGeo===channel?' selected':'';
+    return `<article class="insight-card gold drillable${selected}" onclick="setChannelGeoDrilldown('${encodeURIComponent(channel)}')"><h3>${escapeHtml(channel)}</h3><div class="insight-stats">`+
+      [
+        insightStat('Watch Hours', fmtH(r.raw_watch_hours)),
+        insightStat('Avg Min / IP', fmtMinFromHours(r.avg_hours_per_ip)),
+        insightStat('Avg Min / Session', fmtMinFromHours(r.avg_hours_per_session)),
+        insightStat('Avg Min / Device', fmtMinFromHours(r.avg_hours_per_device)),
+      ].join('')+
+      `</div><div class="insight-foot">${escapeHtml(`IPs ${fmt(r.approx_unique_ips)} | Sessions ${Number(r.approx_sessions||0)>0?fmt(r.approx_sessions):'n/a'} | Devices ${Number(r.approx_devices||0)>0?fmt(r.approx_devices):'n/a'}`)}</div></article>`;
+  }).join('') || '<div style="padding:14px;color:#64748b;font-size:12px">No channel data available.</div>';
 }
 function renderRegionInsightCards(rows,cities=[],countryRows=[]){
   const regions=rows||[];
@@ -2185,6 +2260,90 @@ function renderRegionDrilldown(geo){
   renderRegionChannelDetail(d);
 }
 
+function channelGeoRegionLabel(row){
+  const state=String(row?.state_region||'Unknown / NA');
+  const country=String(row?.country_label||row?.country_code||'').trim();
+  return country&&country!=='India'?`${state} - ${country}`:state;
+}
+
+function renderChannelGeoPanel(channelAudienceRows=null){
+  const panel=document.getElementById('channelGeoPanel');
+  if(!panel)return;
+  const selectRows=(channelAudienceRows||aggregateChannelAudience()).filter(r=>r.channel_name&&r.channel_name!=='Other'&&Number(r.raw_watch_hours||0)>0);
+  if(!selectRows.length){
+    selectedChannelGeo=null;
+    setSelectOptions('channelGeoSelect',[], '');
+    document.getElementById('channelGeoTitle').textContent='Selected Channel Geography';
+    document.getElementById('channelGeoRange').textContent='No channel data in selected range';
+    document.getElementById('channelGeoMetrics').innerHTML='';
+    document.getElementById('channelGeoRegionTable').innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">No channel geography data available.</div>';
+    document.getElementById('channelGeoCityTable').innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">No city data available.</div>';
+    resetChart('channelGeoChart');
+    setCount('channelGeoCount',0,'regions');
+    return;
+  }
+  const available=selectRows.map(r=>r.channel_name);
+  if(!selectedChannelGeo||!available.includes(selectedChannelGeo))selectedChannelGeo=available[0];
+  selectedChannelGeo=setSelectOptions(
+    'channelGeoSelect',
+    selectRows.map(r=>({value:r.channel_name,label:`${r.channel_name} (${fmtH(r.raw_watch_hours)} hrs)`})),
+    selectedChannelGeo
+  )||selectedChannelGeo;
+
+  const d=channelGeoData(selectedChannelGeo);
+  const indiaHours=sum(d.regionRows.filter(r=>String(r.country_code||'').toUpperCase()==='IN'),'raw_watch_hours');
+  const otherHours=Math.max(0,Number(d.totalHours||0)-indiaHours);
+  const unknownHours=sum(d.regionRows.filter(r=>isUnknownGeo(r.state_region)),'raw_watch_hours');
+  document.getElementById('channelGeoTitle').textContent=`${selectedChannelGeo} Geography Distribution`;
+  document.getElementById('channelGeoRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${viewDaily[0].log_date} to ${viewDaily[viewDaily.length-1].log_date}`:`${sourceLabel(sourceFilter)} | No data`;
+  document.getElementById('channelGeoMetrics').innerHTML=[
+    mini('Channel',escapeHtml(selectedChannelGeo)),
+    mini('Raw Watch Hours',fmtH(d.totalHours)),
+    mini('Status 200 Hours',fmtH(sum(d.regionRows,'status_200_watch_hours'))),
+    mini('Regions',fmt(d.regionRows.length)),
+    mini('Cities',fmt(d.cityRows.length)),
+    mini('India Share',fmtPct(percent(indiaHours,d.totalHours))),
+    mini('Other Countries',fmtH(otherHours)),
+    mini('Unknown / NA',fmtH(unknownHours)),
+  ].join('');
+  const chartRows=d.regionRows.slice(0,30);
+  syncTallChartHeight('channelGeoChartWrap',chartRows.length,360,760);
+  makeBarChart('channelGeoChart',chartRows.map(channelGeoRegionLabel),chartRows.map(r=>r.raw_watch_hours),false,true);
+  const wh={fn:v=>fmtH(v),num:true};const n={fn:v=>fmt(v),num:true};const p={fn:v=>fmtPct(v),num:true};
+  document.getElementById('channelGeoRegionTable').innerHTML=table(
+    d.regionRows,
+    [
+      {key:'country_label',label:'Country'},
+      {key:'state_region',label:'State / Region'},
+      {key:'raw_watch_hours',label:'Raw Hours'},
+      {key:'status_200_watch_hours',label:'Status 200 Hours'},
+      {key:'share_pct',label:'Channel Share'},
+      {key:'approx_unique_ips',label:'Approx IPs'}
+    ],
+    {
+      state_region:{fn:(v,row)=>String(row.country_code||'').toUpperCase()==='IN'?regionStateLink(v):escapeHtml(v)},
+      raw_watch_hours:wh,
+      status_200_watch_hours:wh,
+      share_pct:p,
+      approx_unique_ips:n
+    }
+  );
+  document.getElementById('channelGeoCityTable').innerHTML=table(
+    d.cityRows,
+    [
+      {key:'country_label',label:'Country'},
+      {key:'state_region',label:'State / Region'},
+      {key:'city_name',label:'City / Option'},
+      {key:'raw_watch_hours',label:'Raw Hours'},
+      {key:'status_200_watch_hours',label:'Status 200 Hours'},
+      {key:'share_pct',label:'Channel Share'},
+      {key:'approx_unique_ips',label:'Approx IPs'}
+    ],
+    {raw_watch_hours:wh,status_200_watch_hours:wh,share_pct:p,approx_unique_ips:n}
+  );
+  setCount('channelGeoCount',d.regionRows,'regions');
+}
+
 function setRegionDrilldown(stateName,shouldScroll=true){
   selectedRegion=decodeDrillValue(stateName)||null;
   selectedRegionChannel=null;
@@ -2201,6 +2360,17 @@ function setRegionChannelDrilldown(channelName,shouldScroll=true){
   if(shouldScroll){
     requestAnimationFrame(()=>{
       document.getElementById('regionChannelDetailPanel')?.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+  }
+}
+function setChannelGeoDrilldown(channelName,shouldScroll=true){
+  selectedChannelGeo=decodeDrillValue(channelName)||null;
+  renderTables();
+  renderCharts();
+  if(shouldScroll){
+    showTabById('channels');
+    requestAnimationFrame(()=>{
+      document.getElementById('channelGeoPanel')?.scrollIntoView({behavior:'smooth',block:'start'});
     });
   }
 }
@@ -2277,6 +2447,7 @@ function renderTables(){
       {key:'approx_unique_ips',label:'Approx IPs'}
     ],
     {
+      channel_name:{fn:v=>channelGeoLink(v)},
       raw_watch_hours:wh,
       status_200_watch_hours:wh,
       raw_ts_chunks:n,
@@ -2286,7 +2457,6 @@ function renderTables(){
       approx_unique_ips:n
     }
   );
-  document.getElementById('channelCardsGrid').innerHTML=renderChannelInsightCards(channelAudienceRows);
   document.getElementById('fastPlatformTable').innerHTML=table(
     fastPlatformRows,
     [
@@ -2299,12 +2469,15 @@ function renderTables(){
       {key:'reqHost',label:'Host Evidence'}
     ],
     {
+      channel_name:{fn:v=>channelGeoLink(v)},
       raw_watch_hours:wh,
       status_200_watch_hours:wh,
       share_pct:p,
       approx_unique_ips:n
     }
   );
+  renderChannelGeoPanel(channelAudienceRows);
+  document.getElementById('channelCardsGrid').innerHTML=renderChannelInsightCards(channelAudienceRows);
   document.getElementById('channelInsightTable').innerHTML=table(
     channelAudienceRows,
     [
@@ -2319,6 +2492,7 @@ function renderTables(){
       {key:'avg_hours_per_device',label:'Avg Min / Device'}
     ],
     {
+      channel_name:{fn:v=>channelGeoLink(v)},
       raw_watch_hours:wh,
       status_200_watch_hours:wh,
       approx_unique_ips:n,
@@ -2516,6 +2690,15 @@ function initTabs(){
   document.getElementById('tabs').innerHTML=tabs.map(([id,label],i)=>`<button class="tab-btn ${i===0?'active':''}" onclick="showTab('${id}',this)">${label}</button>`).join('');
 }
 function showTab(id,btn){document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');setTimeout(renderCharts,0);}
+function showTabById(id){
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById(id)?.classList.add('active');
+  const labels={overview:'Overview',channels:'Channel',regions:'State / Region',mapping:'Mapping QA',audience:'Audience',devices:'Devices & OS',reliability:'Reliability',quality:'Data Quality'};
+  const btn=[...document.querySelectorAll('.tab-btn')].find(el=>el.textContent===labels[id]);
+  if(btn)btn.classList.add('active');
+  setTimeout(renderCharts,0);
+}
 
 function renderHeader(){
   document.getElementById('reportTitle').textContent=sourceFilter==='all'?D.title:`${D.title} - ${sourceLabel(sourceFilter)}`;

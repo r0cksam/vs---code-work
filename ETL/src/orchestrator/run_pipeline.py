@@ -231,6 +231,11 @@ def main() -> None:
         action="store_true",
         help="Skip FAST minute-level concurrency aggregate generation.",
     )
+    parser.add_argument(
+        "--skip-latency",
+        action="store_true",
+        help="Skip Veto latency dashboard generation.",
+    )
 
     # 001.py controls
     parser.add_argument(
@@ -407,6 +412,34 @@ def main() -> None:
         help="Standalone FAST concurrency dashboard html output path.",
     )
 
+    # Latency dashboard controls
+    parser.add_argument("--latency-start", default=None, help="Latency IST start date YYYY-MM-DD.")
+    parser.add_argument("--latency-end", default=None, help="Latency IST end date YYYY-MM-DD.")
+    parser.add_argument(
+        "--latency-source",
+        choices=["fast", "stream"],
+        default="fast",
+        help="Source to process for incremental latency profile. Start with fast, then run stream later.",
+    )
+    parser.add_argument(
+        "--latency-window-days",
+        type=int,
+        default=1,
+        help="Recent lake window for latency dashboard when no explicit latency dates are supplied. Use 0 for all.",
+    )
+    parser.add_argument("--latency-threads", type=int, default=6)
+    parser.add_argument("--latency-memory", default="16GB")
+    parser.add_argument(
+        "--latency-html",
+        default=None,
+        help="Standalone Veto latency dashboard html output path.",
+    )
+    parser.add_argument(
+        "--latency-profile",
+        default=None,
+        help="Reusable latency aggregate/profile output folder.",
+    )
+
     args = parser.parse_args()
 
     base_root = Path(args.base).resolve()
@@ -427,6 +460,16 @@ def main() -> None:
         if args.concurrency_html
         else output_root / "watch_hours" / "concurrency" / "veto_concurrency.html"
     )
+    latency_out = (
+        Path(args.latency_html).resolve()
+        if args.latency_html
+        else output_root / "latency" / "veto_latency.html"
+    )
+    latency_profile = (
+        Path(args.latency_profile).resolve()
+        if args.latency_profile
+        else output_root / "latency" / "profile"
+    )
     overview_data_dir = Path(args.overview_data_dir).resolve() if args.overview_data_dir else output_root / "overview"
     overview_html = Path(args.overview_html).resolve() if args.overview_html else overview_data_dir / "overview_dashboard.html"
 
@@ -440,6 +483,7 @@ def main() -> None:
         and args.skip_deep_profile
         and args.skip_device_snapshot
         and (args.skip_watch or args.skip_concurrency)
+        and args.skip_latency
         and not args.run_ua_profile
     ):
         raise SystemExit("Nothing to run. Remove one skip flag.")
@@ -447,6 +491,8 @@ def main() -> None:
     profile_dir.mkdir(parents=True, exist_ok=True)
     watch_out.parent.mkdir(parents=True, exist_ok=True)
     concurrency_out.parent.mkdir(parents=True, exist_ok=True)
+    latency_out.parent.mkdir(parents=True, exist_ok=True)
+    latency_profile.mkdir(parents=True, exist_ok=True)
     overview_data_dir.mkdir(parents=True, exist_ok=True)
     overview_html.parent.mkdir(parents=True, exist_ok=True)
 
@@ -454,6 +500,7 @@ def main() -> None:
         (not args.skip_deep_profile)
         or (not args.skip_device_snapshot)
         or (not args.skip_overview)
+        or (not args.skip_latency)
         or ((not args.skip_watch) and (not args.skip_concurrency))
         or args.run_ua_profile
     )
@@ -469,6 +516,8 @@ def main() -> None:
             "VG_DASH_OVERVIEW_BASE": str(overview_data_dir),
             "VG_CONCURRENCY_DIR": str(output_root / "watch_hours" / "concurrency"),
             "VG_CONCURRENCY_HTML": str(concurrency_out),
+            "VG_LATENCY_HTML": str(latency_out),
+            "VG_LATENCY_PROFILE_DIR": str(latency_profile),
             "VG_ETL_LAKE_ROOT": str(lake_root),
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
@@ -533,6 +582,14 @@ def main() -> None:
     concurrency_dashboard_script = _local_script(
         etl_root,
         str(Path("src") / "dashboards" / "concurrencyDashboard" / "generate_concurrency.py"),
+    )
+    latency_dashboard_script = _local_script(
+        etl_root,
+        str(Path("src") / "dashboards" / "latencyDashboard" / "generate_latency.py"),
+    )
+    latency_incremental_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_latency_profile_incremental.py"),
     )
 
     if not args.skip_etl:
@@ -868,6 +925,53 @@ def main() -> None:
             )
     else:
         print("\n[skip] FAST concurrency step skipped.")
+
+    if not args.skip_latency:
+        latency_start = args.latency_start
+        latency_end = args.latency_end
+        if not (latency_start and latency_end) and args.etl1_daily_date:
+            daily_dates = _daily_profile_dates(lake_root, date.fromisoformat(args.etl1_daily_date))
+            if daily_dates:
+                latency_start = min(daily_dates).isoformat()
+                latency_end = max(daily_dates).isoformat()
+            else:
+                latency_start = args.etl1_daily_date
+                latency_end = args.etl1_daily_date
+
+        latency_cmd = [
+            python,
+            str(latency_incremental_script),
+            "--lake",
+            str(lake_root),
+            "--source",
+            args.latency_source,
+            "--out-dir",
+            str(latency_profile),
+            "--parts-dir",
+            str(output_root / "latency" / "parts"),
+            "--state",
+            str(output_root / "latency" / "latency_incremental_state.json"),
+            "--html-out",
+            str(latency_out),
+            "--title",
+            "Veto Latency",
+            "--threads",
+            str(max(1, int(args.latency_threads))),
+            "--memory-limit",
+            args.latency_memory,
+        ]
+        if latency_start and latency_end:
+            latency_cmd.extend(["--start", latency_start, "--end", latency_end])
+        elif args.latency_window_days and args.latency_window_days > 0:
+            latest_latency = _latest_lake_day(lake_root / f"source={args.latency_source}") or _latest_lake_day(lake_root)
+            if latest_latency:
+                latency_start_date = latest_latency - timedelta(days=args.latency_window_days - 1)
+                latency_cmd.extend(["--start", latency_start_date.isoformat(), "--end", latest_latency.isoformat()])
+        if args.dry_run:
+            latency_cmd.append("--dry-run")
+        run(latency_cmd, cwd=etl_root, env=env, step_name="latency_dashboard_html", log_dir=log_dir)
+    else:
+        print("\n[skip] latency dashboard skipped.")
 
     if not args.skip_watch:
         watch_cmd = [

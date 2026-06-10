@@ -17,7 +17,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .meta-items{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center}
 .meta-strip b{color:var(--ink);font-weight:700}
 .control-row{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;width:100%}
+.cards{display:flex;flex-direction:column;gap:14px;width:100%}
+.kpi-section{min-width:0}
+.kpi-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:0 0 7px}
+.kpi-section-head h2{font-size:12px;font-weight:850;color:#24324a;letter-spacing:.02em;text-transform:uppercase}
+.kpi-section-head span{display:none}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;width:100%}
 .card{min-width:0;max-width:100%;overflow:hidden;background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:11px 12px;text-align:center;transition:all 0.3s;box-shadow:0 1px 2px rgba(15,23,42,.05);border-top:3px solid currentColor}
 .clbl{font-size:10.5px;color:var(--muted);margin-bottom:7px;display:flex;align-items:flex-start;justify-content:center;text-align:center;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;line-height:1.15;min-height:24px;overflow-wrap:anywhere}
 .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
@@ -83,13 +88,13 @@ tr.drop-row td:first-child{text-align:center;padding:6px 5px}
 .pct{color:#185FA5;font-weight:500}
 .footer{text-align:center;font-size:11px;color:#94a3b8;padding:8px 0 20px}
 th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{background:#9a6000} th.p{background:#4a41a8}
-@media (max-width:1450px){#main{padding:18px 20px}.topbar{padding:16px 22px}.cards{gap:8px;grid-template-columns:repeat(auto-fit,minmax(136px,1fr))}.card{padding:10px 9px}.clbl{font-size:9.5px}.cval{font-size:21px}.csub{font-size:9.5px}.charts{gap:12px}.cbox{padding:13px 14px}.tbl-c{max-height:610px}table{font-size:9.5px}thead tr:last-child th{font-size:8.5px;padding:5px 3px}td{padding:5px 3px}}
-@media (max-width:1180px){.cards{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.cbox{flex-basis:calc((100% - 12px)/2);min-width:300px}.header-meta{max-width:100%;align-items:flex-start;text-align:left}}
+@media (max-width:1450px){#main{padding:18px 20px}.topbar{padding:16px 22px}.cards{gap:12px}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:8px}.card{padding:10px 9px}.clbl{font-size:9.5px}.cval{font-size:21px}.csub{font-size:9.5px}.charts{gap:12px}.cbox{padding:13px 14px}.tbl-c{max-height:610px}table{font-size:9.5px}thead tr:last-child th{font-size:8.5px;padding:5px 3px}td{padding:5px 3px}}
+@media (max-width:1180px){.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.cbox{flex-basis:calc((100% - 12px)/2);min-width:300px}.header-meta{max-width:100%;align-items:flex-start;text-align:left}}
 @media (min-width:1500px){.cbox{flex-basis:calc((100% - 32px)/3)}.tbl-c{max-height:720px}}
 @media (min-width:1900px){#main{max-width:1880px}.cbox{flex-basis:calc((100% - 64px)/5);min-width:0}.cbox canvas{height:clamp(190px,23vh,270px)!important}.tbl-c{max-height:760px}body{font-size:14px}}
 @media (min-width:2200px){#main{max-width:2200px}.cbox canvas{height:clamp(220px,24vh,310px)!important}.tbl-c{max-height:880px}.chart-modal{width:min(1500px,94vw);height:min(900px,92vh)}}
-@media (max-width:1050px){#main{padding:16px}.cards{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}.cbox{flex-basis:100%;min-width:0}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start;max-width:100%;text-align:left}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.control-row{align-items:stretch}}
-@media (max-width:760px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.cval{font-size:20px}.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-range{width:100%;margin-left:0}.chart-modal{height:94vh}.modal-backdrop{padding:10px}}
+@media (max-width:1050px){#main{padding:16px}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}.cbox{flex-basis:100%;min-width:0}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start;max-width:100%;text-align:left}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.control-row{align-items:stretch}}
+@media (max-width:760px){.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi-section-head{align-items:flex-start;flex-direction:column}.kpi-section-head span{text-align:left}.cval{font-size:20px}.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-range{width:100%;margin-left:0}.chart-modal{height:94vh}.modal-backdrop{padding:10px}}
 @media (max-width:420px){.card{padding:9px 7px}.clbl{font-size:8.8px}.cval{font-size:18px}.csub{font-size:8.8px}}
 @media print{body{background:#fff}.topbar,.meta-strip,.card,.cbox,.table-wrap{box-shadow:none}.filter-group{display:none}.tbl-c{max-height:none;overflow:visible}}
 </style>
@@ -277,12 +282,26 @@ function activeDeviceCountEnding(endDate, windowDays, src = sourceFilter) {
   return active.size;
 }
 
+function cliIpCountEnding(endDate, windowDays, src = sourceFilter) {
+  const endTs = dateStrToTs(endDate);
+  if (isNaN(endTs)) return 0;
+  const startTs = endTs - (Math.max(1, windowDays) - 1) * 86400000;
+  return completeRowsForSource(src)
+    .filter(r => r.ts >= startTs && r.ts <= endTs)
+    .reduce((sum, r) => sum + Number(r.dist_ip || 0), 0);
+}
+
 function activeWindowLabel(endDate, windowDays) {
   const endTs = dateStrToTs(endDate);
   if (isNaN(endTs)) return 'No date selected';
   const start = tsToDateStr(endTs - (Math.max(1, windowDays) - 1) * 86400000);
   if (windowDays === 1) return `Ref: ${fmtDateShort(endDate)} | 1D`;
   return `Ref: ${fmtDateShort(start)} to ${fmtDateShort(endDate)} | ${windowDays}D`;
+}
+
+function cliIpWindowLabel(endDate, windowDays) {
+  const base = activeWindowLabel(endDate, windowDays);
+  return windowDays === 1 ? base : `${base} day-sum`;
 }
 
 function selectedRangeLabel() {
@@ -494,22 +513,47 @@ function updateKPIs() {
   const returningInRange = Math.max(0, activeInRange - newInRange);
   const endDate = ensureActiveEndDate();
   const rangeLabel = selectedRangeLabel();
-  const tailCards = [
+  const selectedCliIpLabel = viewRows.length
+    ? `${sourceLabel(sourceFilter)} selected range daily distinct cliIP sum`
+    : 'No date selected';
+  const trafficCards = [
+    {l: 'Avg Volume / Day', v: fmtData(tBytes / ndays), clr: '#0F6E56'},
+    {l: 'Avg Rows / Day',   v: fmt(Math.round(tRows / ndays)), clr: '#b71c1c'},
+    {l: 'Avg Sessions / Day', v: fmt(Math.round(tSess / ndays)), clr: '#9a6000'},
+  ];
+  const deviceCards = [
     {l: 'Total Device Count', v: fmt(activeInRange), clr: '#173b5c', s: rangeLabel},
-    {l: 'Returning Devices',  v: fmt(returningInRange), clr: '#2e6b10', s: rangeLabel},
-    {l: 'New Devices',        v: fmt(newInRange), clr: '#c9a227', s: rangeLabel},
-    {l: 'Daily Active Devices',   v: fmt(activeDeviceCountEnding(endDate, 1, sourceFilter)),  clr: '#0f766e', s: activeWindowLabel(endDate, 1)},
-    {l: 'Weekly Active Devices',  v: fmt(activeDeviceCountEnding(endDate, 7, sourceFilter)),  clr: '#5b55a3', s: activeWindowLabel(endDate, 7)},
+    {l: 'Returning Devices', v: fmt(returningInRange), clr: '#2e6b10', s: rangeLabel},
+    {l: 'New Devices', v: fmt(newInRange), clr: '#c9a227', s: rangeLabel},
+    {l: 'Daily Active Devices', v: fmt(activeDeviceCountEnding(endDate, 1, sourceFilter)), clr: '#0f766e', s: activeWindowLabel(endDate, 1)},
+    {l: 'Weekly Active Devices', v: fmt(activeDeviceCountEnding(endDate, 7, sourceFilter)), clr: '#5b55a3', s: activeWindowLabel(endDate, 7)},
     {l: 'Monthly Active Devices', v: fmt(activeDeviceCountEnding(endDate, 30, sourceFilter)), clr: '#b42318', s: activeWindowLabel(endDate, 30)},
   ];
+  const cliIpCards = [
+    {l: 'Avg Distinct cliIP / Day', v: fmt(Math.round(tIP / ndays)), clr: '#4a41a8'},
+    {l: 'Daily Active cliIP', v: fmt(cliIpCountEnding(endDate, 1, sourceFilter)), clr: '#2563eb', s: cliIpWindowLabel(endDate, 1)},
+    {l: 'Weekly cliIP Sum', v: fmt(cliIpCountEnding(endDate, 7, sourceFilter)), clr: '#7c3aed', s: cliIpWindowLabel(endDate, 7)},
+    {l: 'Monthly cliIP Sum', v: fmt(cliIpCountEnding(endDate, 30, sourceFilter)), clr: '#be185d', s: cliIpWindowLabel(endDate, 30)},
+    {l: 'Selected Range cliIP Sum', v: fmt(tIP), clr: '#0f766e', s: selectedCliIpLabel},
+  ];
+  const identityCards = [
+    {l: 'Avg Device IDs / Day', v: fmt(Math.round(tDev / ndays)), clr: '#1f6f8b'},
+    {l: 'Avg Distinct IP+UA / Day', v: fmt(Math.round(viewRows.reduce((s, r) => s + Number(r.dist_ipua || 0), 0) / ndays)), clr: '#6d28d9'},
+    {l: 'Avg Session IDs / Day', v: fmt(Math.round(tSess / ndays)), clr: '#9a6000'},
+  ];
 
+  const cardHtml = c => `<div class="card"><div class="clbl"><span class="cdot" style="background:${c.clr}"></span>${c.l}</div><div class="cval" style="color:${c.clr}">${c.v}</div>${c.s ? `<div class="csub">${c.s}</div>` : ''}</div>`;
+  const sectionHtml = (title, cards) => `
+    <section class="kpi-section">
+      <div class="kpi-section-head"><h2>${title}</h2></div>
+      <div class="kpi-grid">${cards.map(cardHtml).join('')}</div>
+    </section>`;
   document.getElementById('cards').innerHTML = [
-    {l: 'Avg Volume / Day',      v: fmtData(tBytes / ndays),          clr: '#0F6E56'},
-    {l: 'Avg Distinct IPs / Day',v: fmt(Math.round(tIP / ndays)),      clr: '#4a41a8'},
-    {l: 'Avg Device IDs / Day',  v: fmt(Math.round(tDev / ndays)),     clr: '#1f6f8b'},
-    {l: 'Avg Sessions / Day',    v: fmt(Math.round(tSess / ndays)),    clr: '#9a6000'},
-    {l: 'Avg Rows / Day',        v: fmt(Math.round(tRows / ndays)),    clr: '#b71c1c'},
-  ].concat(tailCards).map(c => `<div class="card"><div class="clbl"><span class="cdot" style="background:${c.clr}"></span>${c.l}</div><div class="cval" style="color:${c.clr}">${c.v}</div>${c.s ? `<div class="csub">${c.s}</div>` : ''}</div>`).join('');
+    sectionHtml('Traffic Scale', trafficCards),
+    sectionHtml('Device Audience', deviceCards),
+    sectionHtml('cliIP Reach', cliIpCards),
+    sectionHtml('Identity & Sessions', identityCards),
+  ].join('');
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
