@@ -17,6 +17,18 @@ Linode/rclone source folders
 
 The live worker reuses channel and host mapping from `ETL/src/profile/vglive_core.py`, so stream and FAST names stay consistent with the historical dashboards.
 
+For production, prefer the server-side path:
+
+```text
+.gz log folders on server
+  -> ETLlive server_gz_worker.py on the same server
+  -> ClickHouse detail table for date/channel/platform/status/device queries
+  -> Prometheus metrics for live counters
+  -> Grafana over network
+```
+
+That means the office PC does not download raw files for live dashboards. It only opens Grafana.
+
 ## First target
 
 Build a reliable microbatch worker:
@@ -54,6 +66,53 @@ Controlled first download:
 ```powershell
 .\ETLlive\run_live_once.ps1 -Source fast -RemoteLookbackDays 1 -DownloadMaxAge 2h -MaxFiles 100
 ```
+
+## FAST First With ClickHouse
+
+For near-live analytics, start with FAST only:
+
+```powershell
+.\ETLlive\run_live_once.ps1 -Source fast -RemoteLookbackDays 1 -DownloadMaxAge 2h -MaxFiles 100
+```
+
+When ClickHouse is ready, set this in `ETLlive\config\live_config.json` or a local config file:
+
+```json
+"clickhouse": {
+  "enabled": true,
+  "url": "http://127.0.0.1:8123",
+  "database": "veto_live",
+  "user": "default",
+  "password": "",
+  "detail_table": "live_ts_detail"
+}
+```
+
+Create the schema first:
+
+```bash
+clickhouse-client --multiquery < ETLlive/sql/clickhouse_schema.sql
+```
+
+Then run a controlled FAST insert:
+
+```powershell
+.\ETLlive\run_live_once.ps1 -Source fast -RemoteLookbackDays 1 -DownloadMaxAge 2h -MaxFiles 100
+```
+
+Run continuously after the controlled test:
+
+```powershell
+.\ETLlive\run_live_loop.ps1 -Source fast -RemoteLookbackDays 1
+```
+
+Useful Grafana/ClickHouse starter queries are in:
+
+```text
+ETLlive\sql\grafana_fast_queries.sql
+```
+
+Prometheus can remain for worker health and freshness. ClickHouse should power the actual analytics charts.
 
 ## Environment
 
@@ -119,6 +178,74 @@ admin / admin
 ```
 
 This dashboard uses Prometheus scraping `http://127.0.0.1:9108/metrics`. The metrics server must be running, and charts update when `live_worker.py` or `run_live_loop.ps1` updates `live_metrics.prom`.
+
+## Server-Side `.gz` Worker
+
+Use this when the code is deployed on the server/VM that can read the raw `.gz` log folders directly.
+
+1. Create a local config from the template:
+
+```powershell
+Copy-Item ETLlive\config\server_live_config.example.json ETLlive\config\server_live_config.json
+```
+
+2. Edit these values in `ETLlive\config\server_live_config.json`:
+
+```text
+server_sources.stream.root
+server_sources.fast.root
+clickhouse.url
+clickhouse.user
+clickhouse.password
+clickhouse.enabled
+```
+
+3. Create the ClickHouse database/tables:
+
+```bash
+clickhouse-client --multiquery < ETLlive/sql/clickhouse_schema.sql
+```
+
+4. Test one small cycle:
+
+```powershell
+.\ETLlive\run_server_gz_once.ps1 -Source all -MaxFiles 50
+```
+
+5. Run continuously:
+
+```powershell
+.\ETLlive\run_server_gz_loop.ps1
+```
+
+On Linux/Linode, use:
+
+```bash
+ETLlive/run_server_gz_once.sh all
+ETLlive/run_server_gz_loop.sh
+```
+
+For a real service, adapt:
+
+```text
+ETLlive/deploy/systemd/veto-etllive-server.service
+```
+
+The server worker reads only stable `.gz` files, stores processed-file state in `ETLlive\state\server_gz_state.json`, and skips files it has already processed.
+
+ClickHouse is the proper store for "any date over network" questions. Example query:
+
+```sql
+SELECT
+    minute_ist,
+    channel_name,
+    platform_name,
+    estimated_viewers_all_status,
+    estimated_viewers_http_200
+FROM veto_live.live_minute_view
+WHERE log_date = '2026-06-09'
+ORDER BY minute_ist, channel_name, platform_name;
+```
 
 ## Important Accuracy Notes
 

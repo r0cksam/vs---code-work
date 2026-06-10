@@ -1,29 +1,20 @@
 {
   "timezone": "Asia/Kolkata",
   "poll_interval_seconds": 60,
-  "remote_lookback_days": 2,
+  "server_lookback_days": 2,
   "min_file_age_seconds": 120,
   "max_files_per_cycle": 0,
-  "rebuild_dates": [],
-  "download": {
-    "enabled": true,
-    "transfers": 8,
-    "checkers": 16,
-    "buffer_size": "16M",
-    "retries": 3,
-    "low_level_retries": 10
-  },
-  "sources": {
+  "server_sources": {
     "stream": {
       "enabled": true,
-      "remote_root": "veto:veto-stream-logs/veto-stream-logs",
-      "local_root": "data/raw/source=stream"
+      "root": "/srv/veto-stream-logs/veto-stream-logs",
+      "path_template": "{month}/{day}"
     },
     "fast": {
       "enabled": true,
-      "remote_root": "veto:veto-stream-logs/veto-fast-logs",
-      "remote_children": ["110280"],
-      "local_root": "data/raw/source=fast"
+      "root": "/srv/veto-stream-logs/veto-fast-logs",
+      "path_template": "{month}/{day}",
+      "children": ["110280"]
     }
   },
   "clickhouse": {

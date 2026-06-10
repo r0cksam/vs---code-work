@@ -1,38 +1,44 @@
 {
-  "generated_at_utc": "2026-06-09T05:05:01.968292+00:00",
+  "generated_at_utc": "2026-06-10T02:58:55.224391+00:00",
   "source": "fast",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "date_range_replaced": {
-    "start": "",
-    "end": ""
+    "start": "2026-06-09",
+    "end": "2026-06-10"
   },
   "metric_notes": {
     "unique_viewers": "Exact distinct cliIP count per minute.",
     "unique_ua_viewers": "Exact distinct normalized User-Agent string count per minute.",
     "segment_viewers_estimate": "raw .ts rows divided by 10 six-second segments per minute.",
-    "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute."
+    "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute.",
+    "status_code_segment_viewers_estimate": "Selected HTTP status .ts rows divided by 10 six-second segments per minute."
   },
   "files": {
     "minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_minute.parquet",
-    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_summary.parquet"
+    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_summary.parquet",
+    "status_minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_status_minute.parquet"
   },
   "new_counts": {
-    "minute_rows": 441164,
-    "summary_rows": 447
+    "minute_rows": 19529,
+    "status_minute_rows": 24230,
+    "summary_rows": 31
   },
   "output_stats": {
-    "minute_rows": 441164,
+    "minute_rows": 458005,
     "first_date": "2026-05-13",
-    "last_date": "2026-06-09",
-    "dates": 28,
+    "last_date": "2026-06-10",
+    "dates": 29,
     "platforms": 4,
     "channels": 4,
     "platform_channel_candidates": 16,
     "peak_unique_viewers": 3637,
-    "avg_unique_viewers": 52.205,
+    "avg_unique_viewers": 52.213,
     "peak_unique_ua_viewers": 153,
-    "avg_unique_ua_viewers": 8.384,
+    "avg_unique_ua_viewers": 8.382,
     "peak_segment_viewers_estimate": 3212.3,
-    "summary_rows": 447
+    "summary_rows": 463,
+    "status_minute_rows": 555044,
+    "status_codes": 7,
+    "status_code_list": "000,200,206,304,500,503,504"
   }
 }

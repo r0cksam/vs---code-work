@@ -1,10 +1,10 @@
 param(
     [ValidateSet("all", "stream", "fast")]
     [string]$Source = "all",
-    [switch]$SkipDownload,
+    [string]$Config = "",
     [switch]$SkipClickHouse,
-    [int]$RemoteLookbackDays = 0,
-    [string]$DownloadMaxAge = ""
+    [int]$MaxFiles = 0,
+    [int]$LookbackDays = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,16 +14,19 @@ $Python = Join-Path $WorkspaceRoot "venv\Scripts\python.exe"
 if (-not (Test-Path $Python)) {
     $Python = "python"
 }
+if (-not $Config) {
+    $Config = Join-Path $LiveRoot "config\server_live_config.json"
+}
 
 $argsList = @(
-    (Join-Path $LiveRoot "src\live_worker.py"),
+    (Join-Path $LiveRoot "src\server_gz_worker.py"),
     "--loop",
+    "--config", $Config,
     "--source", $Source
 )
-if ($SkipDownload) { $argsList += "--skip-download" }
 if ($SkipClickHouse) { $argsList += "--skip-clickhouse" }
-if ($RemoteLookbackDays -gt 0) { $argsList += @("--remote-lookback-days", [string]$RemoteLookbackDays) }
-if ($DownloadMaxAge) { $argsList += @("--download-max-age", $DownloadMaxAge) }
+if ($MaxFiles -gt 0) { $argsList += @("--max-files", [string]$MaxFiles) }
+if ($LookbackDays -gt 0) { $argsList += @("--lookback-days", [string]$LookbackDays) }
 
 & $Python @argsList
 exit $LASTEXITCODE

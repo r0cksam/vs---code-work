@@ -29,6 +29,7 @@ try:
 except Exception:  # pragma: no cover - fallback for minimal envs
     orjson = None
 
+from clickhouse_sink import clickhouse_enabled, insert_detail_rows, ping
 from live_common import (
     DEFAULT_CONFIG,
     DEFAULT_STATE,
@@ -67,6 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--loop", action="store_true", help="Run forever.")
     parser.add_argument("--skip-download", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--skip-clickhouse", action="store_true")
     parser.add_argument("--max-files", type=int, default=None, help="Limit files processed per cycle. 0 means no limit.")
     parser.add_argument("--date", default=None, help="IST date to aggregate, YYYY-MM-DD. Default is current IST date.")
     parser.add_argument(
@@ -656,6 +658,11 @@ def process_source(config: dict, source: SourceConfig, state: dict, args: argpar
         log(f"{source.name}: processed {index}/{len(selected)} {path.name}: ts_rows={len(rows):,}")
 
     batch_paths = write_detail_batch(config, all_rows, source.name, args.dry_run)
+    clickhouse_rows = 0
+    if all_rows and clickhouse_enabled(config) and not args.skip_clickhouse and not args.dry_run:
+        clickhouse_rows = insert_detail_rows(config, all_rows)
+        log(f"{source.name}: inserted {clickhouse_rows:,} detail rows into ClickHouse")
+
     if not args.dry_run:
         processed = state.setdefault("processed_files", {})
         for path in selected:
@@ -680,6 +687,7 @@ def process_source(config: dict, source: SourceConfig, state: dict, args: argpar
         "new_files": len(selected),
         "changed_skipped": skipped_changed,
         "detail_rows": len(all_rows),
+        "clickhouse_rows": clickhouse_rows,
         "counters": dict(counters),
     }
 
@@ -717,6 +725,9 @@ def main() -> None:
     state_path = args.state.expanduser()
     if not state_path.is_absolute():
         state_path = (Path(__file__).resolve().parents[1] / state_path).resolve()
+
+    if clickhouse_enabled(config) and not args.skip_clickhouse:
+        log(f"ClickHouse ping: {'ok' if ping(config) else 'failed'}")
 
     env_poll = os.getenv("VETO_LIVE_POLL_SECONDS")
     interval = max(10, int(env_poll or config.get("poll_interval_seconds") or 60))

@@ -1,0 +1,17 @@
+[Unit]
+Description=Veto ETLlive server-side gz worker
+After=network-online.target clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/veto/Vs-Code-Work
+Environment=VETO_LIVE_SERVER_CONFIG=/opt/veto/Vs-Code-Work/ETLlive/config/server_live_config.json
+ExecStart=/opt/veto/Vs-Code-Work/ETLlive/run_server_gz_loop.sh
+Restart=always
+RestartSec=10
+User=veto
+Group=veto
+
+[Install]
+WantedBy=multi-user.target
