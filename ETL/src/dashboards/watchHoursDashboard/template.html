@@ -49,10 +49,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .state-pill.ok{background:#ecfdf3;border-color:#bbf7d0;color:#166534}
 .state-pill.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
 .state-pill.zero{background:#f1f5f9;border-color:#d8e1ee;color:#475569}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 18px}
+.sticky-controls{position:sticky;top:0;z-index:45;background:rgba(238,243,248,.96);backdrop-filter:blur(8px);padding:10px 0 2px;margin:-10px 0 16px}
+.sticky-controls .filter-bar{margin-bottom:8px}
+.tabs{display:flex;gap:6px;flex-wrap:nowrap;margin:0 0 8px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 1px 2px rgba(15,23,42,.05);overflow-x:auto}
 .tab-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:750;cursor:pointer}
 .tab-btn.active{background:var(--brand);color:#fff;border-color:var(--brand)}
-.tab{display:none}.tab.active{display:block}
+.tab{display:block;scroll-margin-top:220px;margin-bottom:16px}.tab.active{display:block}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));gap:16px;margin-bottom:16px}
 .grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:16px;margin-bottom:16px}
 .grid-span-all{grid-column:1/-1}
@@ -123,7 +125,7 @@ tr:hover td{background:#f6f9ff}
 @media(max-width:1180px){.card{flex-basis:calc((100% - 24px)/4)}.topbar .sub{max-width:100%;text-align:left}}
 @media(min-width:1900px){.wrap{max-width:1880px}.chart-box{height:clamp(300px,31vh,390px)}.chart-box.channel-trend{height:clamp(340px,38vh,480px)}.chart-box.tall{height:clamp(380px,44vh,540px)}.chart-box.channel-rank{height:clamp(560px,62vh,780px)}.chart-box.channel-rank-wide{height:clamp(720px,72vh,940px)}.table-wrap{max-height:620px}}
 @media(min-width:2200px){.wrap{max-width:2200px}.chart-box{height:clamp(330px,32vh,440px)}.chart-box.channel-trend{height:clamp(390px,40vh,540px)}.chart-box.tall{height:clamp(430px,46vh,610px)}.chart-box.channel-rank{height:clamp(640px,64vh,860px)}.chart-modal{width:min(1500px,94vw);height:min(900px,92vh)}}
-@media(max-width:900px){.wrap{padding:16px}.card{flex-basis:calc((100% - 16px)/3)}.grid-2,.grid-3{grid-template-columns:1fr}.metric-strip,.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar .sub{text-align:left;max-width:100%}.filter-range{margin-left:0;width:100%}.date-filter{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.chart-box{height:240px}.chart-box.concurrency{height:440px}.chart-box.channel-rank{height:520px}.chart-box.channel-rank-wide{height:640px}.chart-actions{gap:6px}.modal-chart-wrap.rank-modal-wrap{min-height:560px}}
+@media(max-width:900px){.wrap{padding:16px}.sticky-controls{max-height:58vh;overflow:auto;margin:-8px 0 14px}.tab{scroll-margin-top:58vh}.tabs{padding:7px}.tab-btn{padding:7px 10px;font-size:11px}.card{flex-basis:calc((100% - 16px)/3)}.grid-2,.grid-3{grid-template-columns:1fr}.metric-strip,.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar .sub{text-align:left;max-width:100%}.filter-range{margin-left:0;width:100%}.date-filter{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.chart-box{height:240px}.chart-box.concurrency{height:440px}.chart-box.channel-rank{height:520px}.chart-box.channel-rank-wide{height:640px}.chart-actions{gap:6px}.modal-chart-wrap.rank-modal-wrap{min-height:560px}}
 @media(max-width:680px){.card{flex-basis:calc((100% - 8px)/2)}}
 @media print{.tabs,.tab-btn{display:none}.tab{display:block}body{background:#fff}.panel,.card,.note{box-shadow:none}.table-wrap{max-height:none;overflow:visible}}
 </style>
@@ -134,24 +136,26 @@ tr:hover td{background:#f6f9ff}
   <div class="sub"><span id="rangeText"></span><span id="genText"></span></div>
 </div>
 <div class="wrap">
-  <div class="filter-bar date-filter">
-    <span class="filter-title">Source</span>
-    <button class="filter-btn active" id="sourceAll" onclick="setSourceFilter('all')">ALL</button>
-    <button class="filter-btn" id="sourceStream" onclick="setSourceFilter('stream')">STREAM</button>
-    <button class="filter-btn" id="sourceFast" onclick="setSourceFilter('fast')">FAST</button>
-    <span class="filter-sep"></span>
-    <span class="filter-title">Date Range</span>
-    <button class="filter-btn active" id="presetAll" onclick="setDatePreset('all')">ALL</button>
-    <button class="filter-btn" id="preset30" onclick="setDatePreset(30)">30D</button>
-    <button class="filter-btn" id="preset7" onclick="setDatePreset(7)">7D</button>
-    <span class="filter-sep"></span>
-    <input type="date" id="dateStart" onchange="handleCustomDate()"/>
-    <span style="font-size:12px;color:#64748b;font-weight:700">to</span>
-    <input type="date" id="dateEnd" onchange="handleCustomDate()"/>
-    <span class="filter-range" id="selectedRange"></span>
+  <div class="sticky-controls">
+    <div class="filter-bar date-filter">
+      <span class="filter-title">Source</span>
+      <button class="filter-btn active" id="sourceAll" onclick="setSourceFilter('all')">ALL</button>
+      <button class="filter-btn" id="sourceStream" onclick="setSourceFilter('stream')">STREAM</button>
+      <button class="filter-btn" id="sourceFast" onclick="setSourceFilter('fast')">FAST</button>
+      <span class="filter-sep"></span>
+      <span class="filter-title">Date Range</span>
+      <button class="filter-btn active" id="presetAll" onclick="setDatePreset('all')">ALL</button>
+      <button class="filter-btn" id="preset30" onclick="setDatePreset(30)">30D</button>
+      <button class="filter-btn" id="preset7" onclick="setDatePreset(7)">7D</button>
+      <span class="filter-sep"></span>
+      <input type="date" id="dateStart" onchange="handleCustomDate()"/>
+      <span style="font-size:12px;color:#64748b;font-weight:700">to</span>
+      <input type="date" id="dateEnd" onchange="handleCustomDate()"/>
+      <span class="filter-range" id="selectedRange"></span>
+    </div>
+    <div class="tabs" id="tabs"></div>
   </div>
   <div class="cards" id="summaryCards"></div>
-  <div class="tabs" id="tabs"></div>
   <section class="tab active" id="overview">
     <div class="filter-bar">
       <span class="filter-title">Channel Charts</span>
@@ -998,7 +1002,7 @@ function finalizeDeviceRows(rows){
 }
 function knownDeviceRowsForDaily(dailyRows=viewDaily){
   const rows=deviceDecodeRowsForDaily(dailyRows).filter(r=>String(r.decode_status)==='decoded');
-  const grouped=groupRows(rows,['decoded_device_name','vendor','product_family','generation','device_code'],['rows','ts_rows','status_200_rows'],['approx_ips','distinct_device_ids'],['sample_UA','sample_reqHost','signal_source']);
+  const grouped=groupRows(rows,['decoded_device_name','vendor','product_family','generation','device_code'],['rows','ts_rows','status_200_rows'],['approx_ips','distinct_device_ids'],['sample_UA','sample_reqHost','signal_source','mapping_notes']);
   return topRows(finalizeDeviceRows(grouped),'rows',80);
 }
 function unknownDeviceRowsForDaily(dailyRows=viewDaily){
@@ -2593,9 +2597,10 @@ function renderTables(){
       {key:'ts_rows',label:'.ts Rows'},
       {key:'approx_ips',label:'Approx IPs'},
       {key:'signal_label',label:'Signal'},
+      {key:'mapping_notes',label:'Notes'},
       {key:'sample_UA',label:'Sample UA'}
     ],
-    {watch_hours:wh,rows:n,ts_rows:n,approx_ips:n,sample_UA:sample}
+    {watch_hours:wh,rows:n,ts_rows:n,approx_ips:n,mapping_notes:sample,sample_UA:sample}
   );
   document.getElementById('unknownDeviceTable').innerHTML=table(
     unknownDeviceRows,
@@ -2689,15 +2694,27 @@ function initTabs(){
   const tabs=[['overview','Overview'],['channels','Channel'],['regions','State / Region'],['mapping','Mapping QA'],['audience','Audience'],['devices','Devices & OS'],['reliability','Reliability'],['quality','Data Quality']];
   document.getElementById('tabs').innerHTML=tabs.map(([id,label],i)=>`<button class="tab-btn ${i===0?'active':''}" onclick="showTab('${id}',this)">${label}</button>`).join('');
 }
-function showTab(id,btn){document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');setTimeout(renderCharts,0);}
-function showTabById(id){
-  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));
-  document.getElementById(id)?.classList.add('active');
+function setActiveSection(id,btn){
   const labels={overview:'Overview',channels:'Channel',regions:'State / Region',mapping:'Mapping QA',audience:'Audience',devices:'Devices & OS',reliability:'Reliability',quality:'Data Quality'};
-  const btn=[...document.querySelectorAll('.tab-btn')].find(el=>el.textContent===labels[id]);
-  if(btn)btn.classList.add('active');
+  document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.id===id));
+  document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));
+  const activeBtn=btn||[...document.querySelectorAll('.tab-btn')].find(el=>el.textContent===labels[id]);
+  if(activeBtn)activeBtn.classList.add('active');
+}
+function showTab(id,btn){
+  setActiveSection(id,btn);
+  document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'});
   setTimeout(renderCharts,0);
+}
+function showTabById(id){showTab(id);}
+function initSectionObserver(){
+  if(!('IntersectionObserver' in window))return;
+  const ids=['overview','channels','regions','mapping','audience','devices','reliability','quality'];
+  const observer=new IntersectionObserver(entries=>{
+    const visible=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top)[0];
+    if(visible)setActiveSection(visible.target.id);
+  },{root:null,rootMargin:'-28% 0px -58% 0px',threshold:0.01});
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)observer.observe(el);});
 }
 
 function renderHeader(){
@@ -2721,6 +2738,7 @@ rebuildSourceViews(sourceFilter);
 setActiveSource();
 renderHeader();
 setDatePreset('all');
+initSectionObserver();
 </script>
 </body>
 </html>

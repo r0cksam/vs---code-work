@@ -13,6 +13,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .title-block{display:flex;flex-direction:column;gap:3px}
 .topbar h1{font-size:20px;font-weight:700;letter-spacing:0}.topbar .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#cbd5e1;font-weight:700}.header-meta{display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right;max-width:min(980px,72vw);line-height:1.35}.topbar .sub{font-size:12px;color:#dbe7f2}.range-pill{font-size:12px;font-weight:700;color:#fff}
 #main{padding:22px 28px;max-width:1760px;margin:0 auto}
+.sticky-controls{position:sticky;top:0;z-index:45;background:rgba(238,243,248,.96);backdrop-filter:blur(8px);padding:10px 0 2px;margin:-10px 0 16px}
+.sticky-controls .meta-strip,.sticky-controls .filter-group{margin-bottom:8px}
 .meta-strip{background:var(--panel);border-radius:8px;border:1px solid var(--line);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 18px;font-size:12px;color:#475569;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .meta-items{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center}
 .meta-strip b{color:var(--ink);font-weight:700}
@@ -93,7 +95,7 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
 @media (min-width:1500px){.cbox{flex-basis:calc((100% - 32px)/3)}.tbl-c{max-height:720px}}
 @media (min-width:1900px){#main{max-width:1880px}.cbox{flex-basis:calc((100% - 64px)/5);min-width:0}.cbox canvas{height:clamp(190px,23vh,270px)!important}.tbl-c{max-height:760px}body{font-size:14px}}
 @media (min-width:2200px){#main{max-width:2200px}.cbox canvas{height:clamp(220px,24vh,310px)!important}.tbl-c{max-height:880px}.chart-modal{width:min(1500px,94vw);height:min(900px,92vh)}}
-@media (max-width:1050px){#main{padding:16px}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}.cbox{flex-basis:100%;min-width:0}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start;max-width:100%;text-align:left}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.control-row{align-items:stretch}}
+@media (max-width:1050px){#main{padding:16px}.sticky-controls{max-height:58vh;overflow:auto;margin:-8px 0 14px}.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}.cbox{flex-basis:100%;min-width:0}.topbar{padding:16px 18px}.topbar h1{font-size:18px}.header-meta{align-items:flex-start;max-width:100%;text-align:left}.meta-strip{align-items:flex-start}.filter-group{width:100%;overflow-x:visible;white-space:normal;flex-wrap:wrap}.control-row{align-items:stretch}}
 @media (max-width:760px){.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi-section-head{align-items:flex-start;flex-direction:column}.kpi-section-head span{text-align:left}.cval{font-size:20px}.modal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-range{width:100%;margin-left:0}.chart-modal{height:94vh}.modal-backdrop{padding:10px}}
 @media (max-width:420px){.card{padding:9px 7px}.clbl{font-size:8.8px}.cval{font-size:18px}.csub{font-size:8.8px}}
 @media print{body{background:#fff}.topbar,.meta-strip,.card,.cbox,.table-wrap{box-shadow:none}.filter-group{display:none}.tbl-c{max-height:none;overflow:visible}}
@@ -110,11 +112,10 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
   </div>
 </div>
 <div id="main">
-  <div class="meta-strip" id="metaWrap">
-    <div class="meta-items" id="metaStrip"></div>
-  </div>
-  <div class="control-row">
-    <div class="cards" id="cards"></div>
+  <div class="sticky-controls">
+    <div class="meta-strip" id="metaWrap">
+      <div class="meta-items" id="metaStrip"></div>
+    </div>
     <div class="filter-group">
        <span>Source</span>
        <button class="btn-preset active" id="srcAll" onclick="setSourceFilter('all')">ALL</button>
@@ -133,6 +134,9 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
        <input type="date" id="activeEndDate" onchange="setActiveEndDate(this.value)" />
        <button class="btn-preset" id="activeEndSyncBtn" onclick="syncActiveEndToRange()">Range End</button>
     </div>
+  </div>
+  <div class="control-row">
+    <div class="cards" id="cards"></div>
   </div>
 
   <div class="charts">

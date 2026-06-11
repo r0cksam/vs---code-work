@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import random
 import re
 import time
 import urllib.error
@@ -262,7 +263,8 @@ def dedupe_cache(cache: pd.DataFrame) -> pd.DataFrame:
 
     priority = {
         "whatmyuseragent": 0,
-        "local_rule": 1,
+        "whatmyuseragent_error": 1,
+        "local_rule": 9,
     }
     out = cache.copy()
     out["_decoder_priority"] = out["decoder"].map(priority).fillna(9)
@@ -398,7 +400,7 @@ def decode_api(ua: str, args: argparse.Namespace) -> dict:
     elif isinstance(bot, dict):
         bot_name = str(bot.get("name") or bot.get("type") or "")
 
-    return {
+    result = {
         "decoder": "whatmyuseragent",
         "decode_status": "decoded_api",
         "device_type": safe_text(device.get("deviceType")),
@@ -414,6 +416,51 @@ def decode_api(ua: str, args: argparse.Namespace) -> dict:
         "decoded_at_utc": datetime.now(timezone.utc).isoformat(),
         "error": "",
     }
+    if not any(
+        result.get(key)
+        for key in [
+            "device_type",
+            "brand",
+            "model",
+            "os_name",
+            "browser_name",
+            "bot_name",
+        ]
+    ):
+        result["decode_status"] = "unknown"
+        result["error"] = "API returned no usable device/OS/browser fields"
+    return result
+
+
+def unknown_api_decode(row: pd.Series, error: str) -> dict:
+    ua = normalize_ua(row.get("ua_sample") or row.get("ua_norm_key") or "")
+    return {
+        "ua_hash": row["ua_hash"],
+        "ua_norm_key": row["ua_norm_key"],
+        "ua_sample": ua,
+        "decoder": "whatmyuseragent_error",
+        "decode_status": "unknown",
+        "device_type": "",
+        "brand": "",
+        "model": "",
+        "os_name": "",
+        "os_version": "",
+        "os_family": "",
+        "browser_name": "",
+        "browser_version": "",
+        "browser_engine": "",
+        "bot_name": "",
+        "decoded_at_utc": datetime.now(timezone.utc).isoformat(),
+        "error": error,
+    }
+
+
+def api_sleep_seconds(args: argparse.Namespace) -> float:
+    if args.api_sleep_seconds is not None:
+        return max(0.0, float(args.api_sleep_seconds))
+    low = max(0.0, float(args.api_sleep_min_seconds))
+    high = max(low, float(args.api_sleep_max_seconds))
+    return random.uniform(low, high)
 
 
 def update_cache(profile: pd.DataFrame, cache: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
@@ -424,20 +471,32 @@ def update_cache(profile: pd.DataFrame, cache: pd.DataFrame, args: argparse.Name
         cache = pd.concat([cache, pd.DataFrame(local_rows)], ignore_index=True)
         cache = dedupe_cache(cache)
 
-    if args.api_limit <= 0:
+    if args.api_limit == 0:
         return cache
 
     cache_by_hash = cache.set_index("ua_hash", drop=False)
     candidates = profile[profile["rows"] >= args.min_rows_for_api].sort_values("rows", ascending=False)
+    decode_all = args.api_limit < 0
     to_decode = []
     for _, row in candidates.iterrows():
         cached = cache_by_hash.loc[row["ua_hash"]] if row["ua_hash"] in cache_by_hash.index else None
         if cached is None or safe_text(cached.get("decoder")) != "whatmyuseragent":
             to_decode.append(row)
-        if len(to_decode) >= args.api_limit:
+        if not decode_all and len(to_decode) >= args.api_limit:
             break
 
     api_rows = []
+
+    def flush_api_rows() -> None:
+        nonlocal cache, api_rows
+        if not api_rows:
+            return
+        cache = pd.concat([cache, pd.DataFrame(api_rows)], ignore_index=True)
+        cache = dedupe_cache(cache)
+        write_parquet(cache, args.cache)
+        print(f"[api flush] cache rows={len(cache)}")
+        api_rows = []
+
     print(f"API decode candidates: {len(to_decode)}")
     for idx, row in enumerate(to_decode, start=1):
         ua = normalize_ua(row.get("ua_sample") or row.get("ua_norm_key") or "")
@@ -451,14 +510,13 @@ def update_cache(profile: pd.DataFrame, cache: pd.DataFrame, args: argparse.Name
             decoded = decode_api(ua, args)
             api_rows.append({**base, **decoded})
         except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            fallback = local_decode(row)
-            fallback["error"] = str(exc)
-            api_rows.append(fallback)
+            api_rows.append(unknown_api_decode(row, str(exc)))
+        if args.api_flush_every > 0 and len(api_rows) >= args.api_flush_every:
+            flush_api_rows()
         if idx < len(to_decode):
-            time.sleep(max(0.0, args.api_sleep_seconds))
+            time.sleep(api_sleep_seconds(args))
 
-    if api_rows:
-        cache = pd.concat([cache, pd.DataFrame(api_rows)], ignore_index=True)
+    flush_api_rows()
     return dedupe_cache(cache)
 
 
@@ -532,9 +590,12 @@ def main() -> None:
     parser.add_argument("--memory-limit", default="12GB")
     parser.add_argument("--temp-dir", type=Path, default=ETL_ROOT / "output" / "cache" / "duckdb_temp")
     parser.add_argument("--profile-limit", type=int, default=0, help="Optional top-N distinct UA rows to retain after aggregation.")
-    parser.add_argument("--api-limit", type=int, default=0, help="Number of high-impact UAs to decode through whatmyuseragent.com. Default: 0.")
+    parser.add_argument("--api-limit", type=int, default=0, help="Number of high-impact UAs to decode through whatmyuseragent.com. Use -1 for all candidates. Default: 0.")
     parser.add_argument("--min-rows-for-api", type=int, default=1, help="Minimum rows before a UA is eligible for API decode.")
-    parser.add_argument("--api-sleep-seconds", type=float, default=3.2, help="Sleep between API calls. Free API is rate limited.")
+    parser.add_argument("--api-sleep-seconds", type=float, default=None, help="Fixed sleep between API calls. Overrides random min/max when set.")
+    parser.add_argument("--api-sleep-min-seconds", type=float, default=2.0)
+    parser.add_argument("--api-sleep-max-seconds", type=float, default=5.0)
+    parser.add_argument("--api-flush-every", type=int, default=25, help="Write API cache progress every N decoded UA rows.")
     parser.add_argument("--api-timeout", type=float, default=20.0)
     parser.add_argument("--api-key", default=os.getenv("WHATMYUA_KEY", "NOTREQUIED"))
     parser.add_argument("--api-url", default="https://whatmyuseragent.com/api")

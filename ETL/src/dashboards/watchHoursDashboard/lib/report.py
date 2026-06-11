@@ -285,9 +285,10 @@ def load_device_decode_outputs(folder: Path = DEFAULT_DEVICE_DECODE_DIR) -> dict
             [
                 "log_date", "source", "decode_status", "signal_source", "vendor",
                 "device_code", "decoded_device_name", "product_family", "generation",
-                "model_number", "release_year", "platform", "query_device", "rows",
-                "ts_rows", "status_200_rows", "approx_ips", "distinct_device_ids",
-                "sample_UA", "sample_reqHost", "sample_reqPath",
+                "model_number", "release_year", "mapping_status", "mapping_notes",
+                "platform", "query_device", "rows", "ts_rows", "status_200_rows",
+                "approx_ips", "distinct_device_ids", "sample_UA", "sample_reqHost",
+                "sample_reqPath",
             ],
         ),
         "unknown_codes": records(

@@ -227,6 +227,11 @@ def main() -> None:
         help="Skip device_snapshot/device_daily generation.",
     )
     parser.add_argument(
+        "--skip-device-decode-profile",
+        action="store_true",
+        help="Skip UA model-code device decode profile generation.",
+    )
+    parser.add_argument(
         "--skip-concurrency",
         action="store_true",
         help="Skip FAST minute-level concurrency aggregate generation.",
@@ -392,8 +397,21 @@ def main() -> None:
     parser.add_argument("--ua-profile-start", default=None, help="UA profile IST start date YYYY-MM-DD.")
     parser.add_argument("--ua-profile-end", default=None, help="UA profile IST end date YYYY-MM-DD.")
     parser.add_argument("--ua-profile-source", choices=["stream", "fast"], default=None)
-    parser.add_argument("--ua-api-limit", type=int, default=0, help="Optional whatmyuseragent.com API decode count.")
+    parser.add_argument("--ua-api-limit", type=int, default=0, help="Optional whatmyuseragent.com API decode count. Use -1 for all candidates.")
     parser.add_argument("--ua-min-rows-for-api", type=int, default=1)
+
+    # UA model-code device decode controls
+    parser.add_argument(
+        "--device-decode-window-days",
+        type=int,
+        default=None,
+        help="Rolling lake window for UA model-code device decode. Defaults to 7 days.",
+    )
+    parser.add_argument("--device-decode-start", default=None, help="Device decode IST start date YYYY-MM-DD.")
+    parser.add_argument("--device-decode-end", default=None, help="Device decode IST end date YYYY-MM-DD.")
+    parser.add_argument("--device-decode-source", choices=["stream", "fast"], default=None)
+    parser.add_argument("--device-decode-threads", type=int, default=4)
+    parser.add_argument("--device-decode-memory", default="12GB")
 
     # FAST concurrency controls
     parser.add_argument(
@@ -482,6 +500,7 @@ def main() -> None:
         and args.skip_overview
         and args.skip_deep_profile
         and args.skip_device_snapshot
+        and args.skip_device_decode_profile
         and (args.skip_watch or args.skip_concurrency)
         and args.skip_latency
         and not args.run_ua_profile
@@ -499,6 +518,7 @@ def main() -> None:
     needs_lake = (
         (not args.skip_deep_profile)
         or (not args.skip_device_snapshot)
+        or (not args.skip_device_decode_profile)
         or (not args.skip_overview)
         or (not args.skip_latency)
         or ((not args.skip_watch) and (not args.skip_concurrency))
@@ -574,6 +594,10 @@ def main() -> None:
     ua_profile_script = _local_script(
         etl_root,
         str(Path("src") / "tools" / "profile_user_agents.py"),
+    )
+    device_decode_profile_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "profile_device_decode.py"),
     )
     concurrency_script = _local_script(
         etl_root,
@@ -829,6 +853,43 @@ def main() -> None:
         run(ua_cmd, cwd=etl_root, env=env, step_name="ua_distinct_profile_decode_cache", log_dir=log_dir)
     else:
         print("\n[skip] UA profile/cache step skipped.")
+
+    if not args.skip_device_decode_profile:
+        device_decode_start = args.device_decode_start
+        device_decode_end = args.device_decode_end
+        if not (device_decode_start and device_decode_end):
+            device_decode_start, device_decode_end = _build_profile_range(
+                lake_root,
+                args.device_decode_window_days or 7,
+            )
+
+        device_decode_cmd = [
+            python,
+            str(device_decode_profile_script),
+            "--lake",
+            str(lake_root),
+            "--out-dir",
+            str(output_root / "device_decode"),
+            "--threads",
+            str(max(1, int(args.device_decode_threads))),
+            "--memory-limit",
+            str(args.device_decode_memory),
+            "--temp-dir",
+            str(output_root / "cache" / "duckdb_temp"),
+        ]
+        if device_decode_start and device_decode_end:
+            device_decode_cmd.extend(["--start", device_decode_start, "--end", device_decode_end])
+        if args.device_decode_source:
+            device_decode_cmd.extend(["--source", args.device_decode_source])
+        run(
+            device_decode_cmd,
+            cwd=etl_root,
+            env=env,
+            step_name="ua_model_code_device_decode_profile",
+            log_dir=log_dir,
+        )
+    else:
+        print("\n[skip] UA model-code device decode profile step skipped.")
 
     if not args.skip_overview:
         run(

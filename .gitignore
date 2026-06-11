@@ -23,6 +23,7 @@ superset/
 
 # CSV / Excel
 *.csv
+!ETL/config/device_decode/*.csv
 *.xlsx
 *.xls
 

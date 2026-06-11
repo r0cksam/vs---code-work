@@ -208,8 +208,9 @@ def main() -> None:
     ua_path = args.out_dir / f"top_user_agents_{suffix}.parquet"
     manifest_path = args.out_dir / f"device_decode_manifest_{suffix}.json"
 
-    summary_sql = f"""
-    WITH resolved AS ({base})
+    con.execute(f"CREATE OR REPLACE TEMP TABLE resolved_device_decode AS {base}")
+
+    summary_sql = """
     SELECT
         log_date,
         source,
@@ -222,6 +223,8 @@ def main() -> None:
         COALESCE(generation, '') AS generation,
         COALESCE(model_number, '') AS model_number,
         COALESCE(CAST(release_year AS VARCHAR), '') AS release_year,
+        COALESCE(mapping_status, '') AS mapping_status,
+        COALESCE(mapping_notes, '') AS mapping_notes,
         COALESCE(platform, '') AS platform,
         COALESCE(query_device, '') AS query_device,
         COUNT(*)::BIGINT AS rows,
@@ -232,12 +235,11 @@ def main() -> None:
         ANY_VALUE(UA) AS sample_UA,
         ANY_VALUE(reqHost) AS sample_reqHost,
         ANY_VALUE(reqPath) AS sample_reqPath
-    FROM resolved
+    FROM resolved_device_decode
     GROUP BY ALL
     ORDER BY log_date, source, rows DESC
     """
-    unknown_sql = f"""
-    WITH resolved AS ({base})
+    unknown_sql = """
     SELECT
         device_code,
         COUNT(*)::BIGINT AS rows,
@@ -248,13 +250,12 @@ def main() -> None:
         ANY_VALUE(UA) AS sample_UA,
         ANY_VALUE(reqHost) AS sample_reqHost,
         ANY_VALUE(reqPath) AS sample_reqPath
-    FROM resolved
+    FROM resolved_device_decode
     WHERE decode_status = 'unknown_model_code'
     GROUP BY device_code
     ORDER BY rows DESC
     """
-    ua_sql = f"""
-    WITH resolved AS ({base})
+    ua_sql = """
     SELECT
         source,
         decode_status,
@@ -266,7 +267,7 @@ def main() -> None:
         COUNT(DISTINCT NULLIF(cliIP, ''))::BIGINT AS approx_ips,
         MIN(log_date) AS first_date,
         MAX(log_date) AS last_date
-    FROM resolved
+    FROM resolved_device_decode
     WHERE NULLIF(UA, '') IS NOT NULL
     GROUP BY ALL
     ORDER BY rows DESC
