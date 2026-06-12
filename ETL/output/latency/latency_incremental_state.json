@@ -1130,6 +1130,38 @@
       "source": "fast",
       "status": "done"
     },
+    "fast|2026-06-12": {
+      "date": "2026-06-12",
+      "duration_seconds": 1.708,
+      "processed_at": "2026-06-12T11:13:25",
+      "result": {
+        "base_rows": 641839,
+        "rows": {
+          "cache_daily": 4,
+          "channel_daily": 8,
+          "daily": 2,
+          "geo_daily": 114,
+          "host_daily": 9,
+          "hourly": 12,
+          "status_daily": 5,
+          "summary": 1
+        }
+      },
+      "signature": {
+        "file_count": 1,
+        "files": [
+          {
+            "bytes": 23021295,
+            "mtime_ns": 1781231952584813400,
+            "name": "part_fast_2026_06_11_0.parquet"
+          }
+        ],
+        "max_mtime_ns": 1781231952584813400,
+        "total_bytes": 23021295
+      },
+      "source": "fast",
+      "status": "done"
+    },
     "stream|2026-03-25": {
       "date": "2026-03-25",
       "duration_seconds": 0.596,

@@ -62,6 +62,8 @@ def connect(args: argparse.Namespace) -> duckdb.DuckDBPyConnection:
     if args.temp_dir:
         args.temp_dir.mkdir(parents=True, exist_ok=True)
         con.execute(f"SET temp_directory={sql_text(q(args.temp_dir))}")
+    if args.max_temp_size:
+        con.execute(f"SET max_temp_directory_size={sql_text(args.max_temp_size)}")
     return con
 
 
@@ -178,9 +180,14 @@ def main() -> None:
     parser.add_argument("--start", help="Optional IST start date YYYY-MM-DD")
     parser.add_argument("--end", help="Optional IST end date YYYY-MM-DD")
     parser.add_argument("--source", choices=["stream", "fast"], default=None)
-    parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--memory-limit", default="12GB")
     parser.add_argument("--temp-dir", type=Path, default=ETL_ROOT / "output" / "cache" / "duckdb_temp")
+    parser.add_argument(
+        "--max-temp-size",
+        default="80GB",
+        help="DuckDB max_temp_directory_size, e.g. 80GB. Use a value below free disk space.",
+    )
     args = parser.parse_args()
 
     args.lake = args.lake.expanduser().resolve()
@@ -207,10 +214,9 @@ def main() -> None:
     unknown_path = args.out_dir / f"unknown_device_codes_{suffix}.csv"
     ua_path = args.out_dir / f"top_user_agents_{suffix}.parquet"
     manifest_path = args.out_dir / f"device_decode_manifest_{suffix}.json"
+    resolved_from = f"({base}) AS resolved_device_decode"
 
-    con.execute(f"CREATE OR REPLACE TEMP TABLE resolved_device_decode AS {base}")
-
-    summary_sql = """
+    summary_sql = f"""
     SELECT
         log_date,
         source,
@@ -235,11 +241,11 @@ def main() -> None:
         ANY_VALUE(UA) AS sample_UA,
         ANY_VALUE(reqHost) AS sample_reqHost,
         ANY_VALUE(reqPath) AS sample_reqPath
-    FROM resolved_device_decode
+    FROM {resolved_from}
     GROUP BY ALL
     ORDER BY log_date, source, rows DESC
     """
-    unknown_sql = """
+    unknown_sql = f"""
     SELECT
         device_code,
         COUNT(*)::BIGINT AS rows,
@@ -250,12 +256,12 @@ def main() -> None:
         ANY_VALUE(UA) AS sample_UA,
         ANY_VALUE(reqHost) AS sample_reqHost,
         ANY_VALUE(reqPath) AS sample_reqPath
-    FROM resolved_device_decode
+    FROM {resolved_from}
     WHERE decode_status = 'unknown_model_code'
     GROUP BY device_code
     ORDER BY rows DESC
     """
-    ua_sql = """
+    ua_sql = f"""
     SELECT
         source,
         decode_status,
@@ -267,7 +273,7 @@ def main() -> None:
         COUNT(DISTINCT NULLIF(cliIP, ''))::BIGINT AS approx_ips,
         MIN(log_date) AS first_date,
         MAX(log_date) AS last_date
-    FROM resolved_device_decode
+    FROM {resolved_from}
     WHERE NULLIF(UA, '') IS NOT NULL
     GROUP BY ALL
     ORDER BY rows DESC
@@ -298,6 +304,9 @@ def main() -> None:
         "source": args.source or "all",
         "start": args.start,
         "end": args.end,
+        "threads": args.threads,
+        "memory_limit": args.memory_limit,
+        "max_temp_size": args.max_temp_size,
         "outputs": {
             "summary": str(summary_path),
             "unknown_codes": str(unknown_path),

@@ -79,13 +79,14 @@ def run(
     cwd: Optional[Path] = None,
     step_name: str = "command",
     log_dir: Optional[Path] = None,
-) -> None:
+    allow_failure: bool = False,
+) -> bool:
     nice = " ".join(f'"{c}"' if " " in c else c for c in command)
     print(f"\n[run] {nice}")
 
     if log_dir is None:
-        subprocess.run(command, check=True, cwd=str(cwd) if cwd else None, env=env)
-        return
+        result = subprocess.run(command, check=not allow_failure, cwd=str(cwd) if cwd else None, env=env)
+        return result.returncode == 0
 
     log_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -121,7 +122,11 @@ def run(
         log.write(f"exit_code={return_code}\n")
 
     if return_code:
+        if allow_failure:
+            print(f"[warn] Optional step failed: {step_name} (exit {return_code}). Log: {log_path}")
+            return False
         raise SystemExit(f"Step failed: {step_name} (exit {return_code}). Log: {log_path}")
+    return True
 
 
 def _latest_lake_day(lake_root: Path) -> Optional[date]:
@@ -410,8 +415,18 @@ def main() -> None:
     parser.add_argument("--device-decode-start", default=None, help="Device decode IST start date YYYY-MM-DD.")
     parser.add_argument("--device-decode-end", default=None, help="Device decode IST end date YYYY-MM-DD.")
     parser.add_argument("--device-decode-source", choices=["stream", "fast"], default=None)
-    parser.add_argument("--device-decode-threads", type=int, default=4)
+    parser.add_argument("--device-decode-threads", type=int, default=2)
     parser.add_argument("--device-decode-memory", default="12GB")
+    parser.add_argument(
+        "--device-decode-max-temp-size",
+        default="80GB",
+        help="DuckDB max_temp_directory_size for UA model-code device decode.",
+    )
+    parser.add_argument(
+        "--strict-device-decode-profile",
+        action="store_true",
+        help="Fail the full pipeline if UA model-code device decode fails. Default is best-effort.",
+    )
 
     # FAST concurrency controls
     parser.add_argument(
@@ -876,6 +891,8 @@ def main() -> None:
             str(args.device_decode_memory),
             "--temp-dir",
             str(output_root / "cache" / "duckdb_temp"),
+            "--max-temp-size",
+            str(args.device_decode_max_temp_size),
         ]
         if device_decode_start and device_decode_end:
             device_decode_cmd.extend(["--start", device_decode_start, "--end", device_decode_end])
@@ -887,6 +904,7 @@ def main() -> None:
             env=env,
             step_name="ua_model_code_device_decode_profile",
             log_dir=log_dir,
+            allow_failure=not args.strict_device_decode_profile,
         )
     else:
         print("\n[skip] UA model-code device decode profile step skipped.")
