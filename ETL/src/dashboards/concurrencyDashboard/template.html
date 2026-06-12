@@ -288,7 +288,7 @@ tr:hover td{background:#f8fafc}
     </div>
     <div class="insight-grid">
       <div class="panel"><h2>Weekly Platform Movers</h2><div class="table-wrap" id="insightWeeklyPlatform"></div></div>
-      <div class="panel"><h2>Selected Range Channel Movers</h2><div class="table-wrap" id="insightRangeChannel"></div></div>
+      <div class="panel"><h2>Latest Day Vs Range Avg - Channels</h2><div class="table-wrap" id="insightRangeChannel"></div></div>
     </div>
   </div>
 </div>
@@ -1197,6 +1197,23 @@ function insightAggregate(rows){
   const item=flashGroupRows(rows,function(){return 'all';},function(){return 'All';})[0];
   return item||{sum:0,peak:0,avg:0,count:0};
 }
+function insightDailyAverage(days){
+  days=(days||[]).filter(Boolean);
+  if(!days.length)return {sum:0,peak:0,avg:0,count:0,days:0};
+  const daily=days.map(function(day){
+    return insightAggregate(rowsForDateList([day]));
+  });
+  const total=daily.reduce(function(a,item){return a+Number(item.sum||0);},0);
+  const peaks=daily.map(function(item){return Number(item.peak||0);});
+  const counts=daily.reduce(function(a,item){return a+Number(item.count||0);},0);
+  return {
+    sum:total/days.length,
+    peak:peaks.length?Math.max.apply(null,peaks):0,
+    avg:counts?total/counts:0,
+    count:counts,
+    days:days.length
+  };
+}
 function insightPct(delta,previous,current){
   if(previous>0)return delta*100/previous;
   if(current>0)return null;
@@ -1213,19 +1230,19 @@ function insightChangeText(delta,pct){
   const sign=delta>0?'+':'';
   return sign+fmt(delta,1)+(pct==null?' (new)':' ('+(pct>0?'+':'')+fmt(pct,1)+'%)');
 }
-function insightCard(label,current,previous,periodText){
+function insightCard(label,current,previous,periodText,currentLabel,previousLabel){
   const delta=Number(current||0)-Number(previous||0);
   const pct=insightPct(delta,Number(previous||0),Number(current||0));
   const cls=delta>0?'up':delta<0?'down':'neutral';
+  currentLabel=currentLabel||'Current';
+  previousLabel=previousLabel||'Previous';
   return '<article class="insight-card '+cls+'">'+
     '<b>'+escapeHtml(label)+'</b>'+
     '<div class="insight-value">'+escapeHtml(insightChangeText(delta,pct))+'</div>'+
-    '<div class="insight-sub">Current '+fmt(current,1)+' vs previous '+fmt(previous,1)+'<br>'+escapeHtml(periodText)+'</div>'+
+    '<div class="insight-sub">'+escapeHtml(currentLabel)+' '+fmt(current,1)+' vs '+escapeHtml(previousLabel)+' '+fmt(previous,1)+'<br>'+escapeHtml(periodText)+'</div>'+
   '</article>';
 }
-function compareEntityRows(currentRows,previousRows,keyFn,labelFn,limit){
-  const current=flashGroupRows(currentRows,keyFn,labelFn);
-  const previous=flashGroupRows(previousRows,keyFn,labelFn);
+function compareEntityItems(current,previous,limit){
   const currentMap=new Map(current.map(function(item){return [item.key,item];}));
   const previousMap=new Map(previous.map(function(item){return [item.key,item];}));
   const keys=new Set(Array.from(currentMap.keys()).concat(Array.from(previousMap.keys())));
@@ -1249,18 +1266,56 @@ function compareEntityRows(currentRows,previousRows,keyFn,labelFn,limit){
     return Math.abs(Number(b.delta||0))-Math.abs(Number(a.delta||0))||Number(b.current||0)-Number(a.current||0);
   }).slice(0,limit||20).map(function(row,index){row.rank='#'+(index+1);return row;});
 }
-function movementTable(rows,labelName){
+function compareEntityRows(currentRows,previousRows,keyFn,labelFn,limit){
+  return compareEntityItems(
+    flashGroupRows(currentRows,keyFn,labelFn),
+    flashGroupRows(previousRows,keyFn,labelFn),
+    limit
+  );
+}
+function averageEntityRowsByDay(days,keyFn,labelFn){
+  days=(days||[]).filter(Boolean);
+  if(!days.length)return [];
+  const baseline=new Map();
+  days.forEach(function(day){
+    flashGroupRows(rowsForDateList([day]),keyFn,labelFn).forEach(function(item){
+      if(!baseline.has(item.key)){
+        baseline.set(item.key,{key:item.key,label:item.label,sum:0,peak:0,avg:0,count:0,platforms:new Set(),platform_count:0});
+      }
+      const target=baseline.get(item.key);
+      target.sum+=Number(item.sum||0);
+      target.peak=Math.max(Number(target.peak||0),Number(item.peak||0));
+      target.count+=Number(item.count||0);
+      target.platform_count=Math.max(Number(target.platform_count||0),Number(item.platform_count||0));
+    });
+  });
+  return Array.from(baseline.values()).map(function(item){
+    item.sum=Number(item.sum||0)/days.length;
+    item.avg=item.count?Number(item.sum||0)*days.length/Number(item.count||0):0;
+    return item;
+  }).sort(function(a,b){return Number(b.sum||0)-Number(a.sum||0);});
+}
+function compareEntityRowsToDailyAverage(currentRows,baselineDays,keyFn,labelFn,limit){
+  return compareEntityItems(
+    flashGroupRows(currentRows,keyFn,labelFn),
+    averageEntityRowsByDay(baselineDays,keyFn,labelFn),
+    limit
+  );
+}
+function movementTable(rows,labelName,valueHeader,previousLabel){
   if(!rows.length)return '<div style="padding:14px;color:#98a2b3;font-size:12px">Not enough rows for this comparison.</div>';
+  valueHeader=valueHeader||'Current vs Previous';
+  previousLabel=previousLabel||'Prev';
   const body=rows.map(function(r){
     const cls=r.delta>0?'movement-up':r.delta<0?'movement-down':'movement-flat';
     return '<tr>'+
       '<td>'+escapeHtml(r.rank)+'</td>'+
       '<td><div class="movement-main">'+escapeHtml(r.label)+'</div><div class="movement-sub">'+escapeHtml(r.direction)+'</div></td>'+
-      '<td><div class="movement-main">'+fmt(r.current,1)+'</div><div class="movement-sub">Prev '+fmt(r.previous,1)+'</div></td>'+
+      '<td><div class="movement-main">'+fmt(r.current,1)+'</div><div class="movement-sub">'+escapeHtml(previousLabel)+' '+fmt(r.previous,1)+'</div></td>'+
       '<td><div class="'+cls+'">'+escapeHtml(insightChangeText(Number(r.delta||0),r.pct))+'</div></td>'+
     '</tr>';
   }).join('');
-  return '<table><thead><tr><th>#</th><th>'+escapeHtml(labelName)+'</th><th>Current vs Previous</th><th>Movement</th></tr></thead><tbody>'+body+'</tbody></table>';
+  return '<table><thead><tr><th>#</th><th>'+escapeHtml(labelName)+'</th><th>'+escapeHtml(valueHeader)+'</th><th>Movement</th></tr></thead><tbody>'+body+'</tbody></table>';
 }
 function nearestPreviousDay(day){
   const dates=selectedDates();
@@ -1276,14 +1331,13 @@ function insightPeriods(){
   const uptoLatest=latestIndex>=0?all.slice(0,latestIndex+1):all;
   const currentWeek=uptoLatest.slice(-7);
   const previousWeek=uptoLatest.slice(-14,-7);
-  const first=inRange[0]||latest;
   return {
     latestDay:latest?[latest]:[],
     previousDay:previous?[previous]:[],
     currentWeek:currentWeek,
     previousWeek:previousWeek,
-    rangeFirst:first?[first]:[],
-    rangeLast:latest?[latest]:[]
+    rangeLast:latest?[latest]:[],
+    rangeAll:inRange.length?inRange:(latest?[latest]:[])
   };
 }
 function renderInsights(rows){
@@ -1292,25 +1346,24 @@ function renderInsights(rows){
   const previousRows=rowsForDateList(periods.previousDay);
   const weekRows=rowsForDateList(periods.currentWeek);
   const prevWeekRows=rowsForDateList(periods.previousWeek);
-  const rangeFirstRows=rowsForDateList(periods.rangeFirst);
   const rangeLastRows=rowsForDateList(periods.rangeLast);
   const dayCurrent=insightAggregate(latestRows);
   const dayPrevious=insightAggregate(previousRows);
   const weekCurrent=insightAggregate(weekRows);
   const weekPrevious=insightAggregate(prevWeekRows);
   const rangeCurrent=insightAggregate(rangeLastRows);
-  const rangePrevious=insightAggregate(rangeFirstRows);
+  const rangePrevious=insightDailyAverage(periods.rangeAll);
   const dayText=periodLabel(periods.latestDay)+' vs '+periodLabel(periods.previousDay);
   const weekText=periodLabel(periods.currentWeek)+' vs '+periodLabel(periods.previousWeek);
-  const rangeText=periodLabel(periods.rangeLast)+' vs '+periodLabel(periods.rangeFirst);
+  const rangeText='Latest '+periodLabel(periods.rangeLast)+' vs avg/day '+periodLabel(periods.rangeAll)+' ('+fmt(periods.rangeAll.length)+' days)';
   const note=document.getElementById('insightNote');
   if(note){
-    note.innerHTML='<b>Quick insights use the same filters:</b> '+escapeHtml(selectionLabel())+' | '+escapeHtml(metricShort())+' | '+escapeHtml(intervalLabel())+'. Values use '+escapeHtml(flashValueLabel())+', so movement compares the displayed interval-aware concurrency volume, not raw request rows or watch hours.';
+    note.innerHTML='<b>Quick insights use the same filters:</b> '+escapeHtml(selectionLabel())+' | '+escapeHtml(metricShort())+' | '+escapeHtml(intervalLabel())+'. Values use '+escapeHtml(flashValueLabel())+'. Day and week cards compare period totals; selected-range cards compare the latest day against the selected range daily average.';
   }
   document.getElementById('insightCards').innerHTML=[
     insightCard('Day-to-day movement',dayCurrent.sum,dayPrevious.sum,dayText),
     insightCard('Weekly movement',weekCurrent.sum,weekPrevious.sum,weekText),
-    insightCard('Selected range first vs latest day',rangeCurrent.sum,rangePrevious.sum,rangeText)
+    insightCard('Latest day vs selected range avg',rangeCurrent.sum,rangePrevious.sum,rangeText,'Latest day','Range avg/day')
   ].join('');
   const channelRows=compareEntityRows(
     latestRows,
@@ -1347,9 +1400,9 @@ function renderInsights(rows){
     function(r){return String(r.platform_name||'Unknown FAST Platform');},
     20
   );
-  const rangeChannelRows=compareEntityRows(
+  const rangeAvgChannelRows=compareEntityRowsToDailyAverage(
     rangeLastRows,
-    rangeFirstRows,
+    periods.rangeAll,
     function(r){return String(r.channel_name||'Other');},
     function(r){return String(r.channel_name||'Other');},
     20
@@ -1359,7 +1412,7 @@ function renderInsights(rows){
   document.getElementById('insightPlatformChannel').innerHTML=movementTable(platformChannelRows,platform==='all'?'Platform / Channel':'Channel');
   document.getElementById('insightWeeklyChannel').innerHTML=movementTable(weeklyChannelRows,'Channel');
   document.getElementById('insightWeeklyPlatform').innerHTML=movementTable(weeklyPlatformRows,'Platform');
-  document.getElementById('insightRangeChannel').innerHTML=movementTable(rangeChannelRows,'Channel');
+  document.getElementById('insightRangeChannel').innerHTML=movementTable(rangeAvgChannelRows,'Channel','Latest vs Range Avg','Avg/day');
 }
 function groupRows(rows,keys,sumKeys,maxKeys,firstKeys){
   const buckets=new Map();
@@ -1493,14 +1546,6 @@ function downloadSelectedCsv(){
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-function copyParquetPath(){
-  const text=D.files?.minute||'';
-  if(!text)return;
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text);
-  }
-  document.getElementById('selectionText').textContent='Copied parquet path: '+text;
 }
 function showRenderOverlay(show){
   const overlay=document.getElementById('renderOverlay');
