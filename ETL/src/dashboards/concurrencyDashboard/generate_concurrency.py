@@ -192,17 +192,26 @@ def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[
     return options, records(extra, ["k", "m", "c", "r", "v"])
 
 
-def write_ua_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool = False) -> dict:
-    csv_path = data_dir / "concurrency_ua_viewers.csv"
-    parquet_path = data_dir / "concurrency_ua_viewers.parquet"
-    required = {"minute_ist", "channel_name", "platform_name", "unique_ua_viewers"}
+def write_viewer_exports(
+    data_dir: Path,
+    minute: pd.DataFrame,
+    *,
+    source_column: str,
+    output_stem: str,
+    viewer_label: str,
+    dry_run: bool = False,
+) -> dict:
+    csv_path = data_dir / f"{output_stem}.csv"
+    parquet_path = data_dir / f"{output_stem}.parquet"
+    viewer_column = f"Number of viewers({viewer_label})"
+    required = {"minute_ist", "channel_name", "platform_name", source_column}
     if minute.empty or not required.issubset(minute.columns):
         empty = pd.DataFrame(
             columns=[
                 "Timestamp (IST)",
                 "Channel name",
                 "Platform name",
-                "Number of viewers(UA)",
+                viewer_column,
             ]
         )
         if not dry_run:
@@ -211,17 +220,17 @@ def write_ua_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool 
         return {"csv": str(csv_path), "parquet": str(parquet_path), "rows": 0}
 
     export = minute[
-        ["minute_ist", "channel_name", "platform_name", "unique_ua_viewers"]
+        ["minute_ist", "channel_name", "platform_name", source_column]
     ].rename(
         columns={
             "minute_ist": "Timestamp (IST)",
             "channel_name": "Channel name",
             "platform_name": "Platform name",
-            "unique_ua_viewers": "Number of viewers(UA)",
+            source_column: viewer_column,
         }
     )
-    export["Number of viewers(UA)"] = (
-        pd.to_numeric(export["Number of viewers(UA)"], errors="coerce")
+    export[viewer_column] = (
+        pd.to_numeric(export[viewer_column], errors="coerce")
         .fillna(0)
         .round()
         .astype("int64")
@@ -231,7 +240,7 @@ def write_ua_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool 
             ["Timestamp (IST)", "Channel name", "Platform name"],
             as_index=False,
             sort=False,
-        )["Number of viewers(UA)"]
+        )[viewer_column]
         .sum()
         .sort_values(["Timestamp (IST)", "Platform name", "Channel name"])
     )
@@ -239,6 +248,28 @@ def write_ua_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool 
         export.to_csv(csv_path, index=False, encoding="utf-8")
         export.to_parquet(parquet_path, index=False, compression="zstd")
     return {"csv": str(csv_path), "parquet": str(parquet_path), "rows": int(len(export))}
+
+
+def write_ua_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool = False) -> dict:
+    return write_viewer_exports(
+        data_dir,
+        minute,
+        source_column="unique_ua_viewers",
+        output_stem="concurrency_ua_viewers",
+        viewer_label="UA",
+        dry_run=dry_run,
+    )
+
+
+def write_cliip_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bool = False) -> dict:
+    return write_viewer_exports(
+        data_dir,
+        minute,
+        source_column="unique_viewers",
+        output_stem="concurrency_cliip_viewers",
+        viewer_label="cliIP",
+        dry_run=dry_run,
+    )
 
 
 def build_data(data_dir: Path, title: str) -> dict:
@@ -409,6 +440,11 @@ def main() -> None:
     data = build_data(data_dir, args.title)
     minute_for_export = clean_frame(read_parquet(data_dir / "concurrency_minute.parquet"))
     data["files"]["ua_viewers_export"] = write_ua_viewer_exports(
+        data_dir,
+        minute_for_export,
+        dry_run=args.dry_run,
+    )
+    data["files"]["cliip_viewers_export"] = write_cliip_viewer_exports(
         data_dir,
         minute_for_export,
         dry_run=args.dry_run,
