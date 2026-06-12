@@ -27,6 +27,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .seg-btn.active{background:var(--brand);color:#fff;box-shadow:0 1px 2px rgba(15,23,42,.12)}
 .date-inputs{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .filter-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+.insights-active .dashboard-only-filter{display:none!important}
 .filter-title{font-size:10px;font-weight:850;text-transform:uppercase;color:var(--soft);letter-spacing:.04em}
 .filter-sep{width:1px;height:24px;background:var(--line)}
 input[type="date"],select{background:#fff;border:1px solid #cbd5e1;color:var(--text);border-radius:5px;padding:6px 8px;font:inherit;font-size:11px;font-weight:750;min-width:150px;outline:none}
@@ -45,6 +46,31 @@ input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 
 .mini-row:first-of-type{border-top:0;padding-top:0}
 .mini-row strong{font-size:10px;text-transform:uppercase;color:var(--soft)}
 .mini .mini-row span{font-size:17px;text-align:right}
+.page-tabs{display:flex;align-items:center;gap:8px;margin:0 0 12px;border-bottom:1px solid var(--line)}
+.page-tab{border:1px solid transparent;border-bottom:0;background:transparent;color:#475569;border-radius:8px 8px 0 0;padding:9px 13px;font-size:12px;font-weight:900;cursor:pointer}
+.page-tab:hover{color:var(--brand);background:#f8fafc}
+.page-tab.active{background:#fff;border-color:var(--line);color:var(--brand);box-shadow:0 -1px 2px rgba(15,23,42,.03)}
+.tab-view{display:none}
+.tab-view.active{display:block}
+.insight-note{border:1px solid #dbe5ef;border-left:4px solid var(--gold);border-radius:8px;background:#fffdf6;color:#475569;padding:9px 11px;margin-bottom:12px;font-size:11px;line-height:1.45}
+.insight-note b{color:var(--brand)}
+.insight-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px;margin-bottom:12px}
+.insight-grid{display:grid;grid-template-columns:1fr;gap:12px}
+.insight-card{background:#fff;border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.insight-card.up{border-top-color:#15803d}.insight-card.down{border-top-color:#b42318}.insight-card.neutral{border-top-color:#64748b}
+.insight-card b{display:block;font-size:9px;text-transform:uppercase;color:var(--soft);margin-bottom:5px}
+.insight-value{font-size:19px;font-weight:900;color:var(--text);line-height:1.1;overflow-wrap:anywhere}
+.insight-card.up .insight-value{color:#15803d}.insight-card.down .insight-value{color:#b42318}
+.insight-sub{font-size:11px;color:#667085;margin-top:5px;line-height:1.35}
+#insightsTab .table-wrap{max-height:none;overflow-x:hidden;overflow-y:auto}
+#insightsTab table{min-width:0;table-layout:fixed}
+#insightsTab th,#insightsTab td{white-space:normal;overflow-wrap:anywhere}
+#insightsTab th:nth-child(1),#insightsTab td:nth-child(1){width:48px}
+#insightsTab th:nth-child(3),#insightsTab td:nth-child(3){width:210px}
+#insightsTab th:nth-child(4),#insightsTab td:nth-child(4){width:190px}
+.movement-main{font-weight:850;color:var(--brand)}
+.movement-sub{font-size:10px;color:#667085;margin-top:2px;line-height:1.3}
+.movement-up{color:#15803d;font-weight:900}.movement-down{color:#b42318;font-weight:900}.movement-flat{color:#64748b;font-weight:900}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px 17px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .panel h2{font-size:13px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .chart-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
@@ -74,6 +100,8 @@ body.rendering .chart-box::after{content:'Updating chart...';position:absolute;i
 .platform-flashgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;max-height:410px;overflow:auto;padding-right:3px}
 .platform-card{border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04);overflow:hidden}
 .platform-head{background:#f8fafc;border-bottom:1px solid var(--line);padding:9px 10px;font-size:12px;font-weight:850;color:var(--brand);display:flex;justify-content:space-between;gap:8px}
+.platform-name{display:flex;align-items:center;gap:7px;min-width:0;overflow-wrap:anywhere}
+.platform-rank{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:var(--brand);color:#fff;font-size:10px;font-weight:900;padding:3px 7px;line-height:1;white-space:nowrap}
 .platform-total{display:flex;flex-direction:column;align-items:flex-end;gap:1px;color:var(--brand);font-variant-numeric:tabular-nums}
 .platform-total small{font-size:8px;text-transform:uppercase;color:var(--soft);font-weight:850}
 .rank-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid #edf2f7;font-size:11px}
@@ -142,11 +170,11 @@ tr:hover td{background:#f8fafc}
         <select id="identitySelect" onchange="setIdentity(this.value)"></select>
         <span class="filter-title">Interval</span>
         <select id="intervalSelect" onchange="setTimeInterval(this.value)"></select>
-        <span class="filter-sep"></span>
-        <span class="filter-title">Lines</span>
-        <div class="segmented" id="lineModeButtons" role="group" aria-label="Lines"></div>
-        <span class="filter-title">Compare</span>
-        <select id="compareSelect" onchange="setCompareMode(this.value)"></select>
+        <span class="filter-sep dashboard-only-filter"></span>
+        <span class="filter-title dashboard-only-filter">Lines</span>
+        <div class="segmented dashboard-only-filter" id="lineModeButtons" role="group" aria-label="Lines"></div>
+        <span class="filter-title dashboard-only-filter">Compare</span>
+        <select class="dashboard-only-filter" id="compareSelect" onchange="setCompareMode(this.value)"></select>
         <div class="filter-actions">
           <button class="btn" onclick="resetFilters()">Reset</button>
           <button class="btn" onclick="downloadSelectedCsv()">Export CSV</button>
@@ -156,6 +184,11 @@ tr:hover td{background:#f8fafc}
     </div>
   </div>
   <div class="metrics" id="metrics"></div>
+  <div class="page-tabs" role="tablist" aria-label="Concurrency dashboard views">
+    <button class="page-tab active" id="dashboardTabBtn" onclick="setMainTab('dashboard')" role="tab" aria-controls="dashboardTab">Dashboard</button>
+    <button class="page-tab" id="insightsTabBtn" onclick="setMainTab('insights')" role="tab" aria-controls="insightsTab">Quick insights</button>
+  </div>
+  <div class="tab-view active" id="dashboardTab" role="tabpanel">
   <div class="panel quick-panel">
     <div class="chart-heading">
       <h2>Quick Ranking Flashcards</h2>
@@ -238,6 +271,26 @@ tr:hover td{background:#f8fafc}
     <div class="panel"><h2>Peak Minutes</h2><div class="table-wrap" id="peakTable"></div></div>
   </div>
   <div class="footer" id="fileMeta"></div>
+  </div>
+  <div class="tab-view" id="insightsTab" role="tabpanel">
+    <div class="panel">
+      <div class="chart-heading"><h2>Quick insights</h2></div>
+      <div class="insight-note" id="insightNote"></div>
+      <div class="insight-cards" id="insightCards"></div>
+    </div>
+    <div class="insight-grid">
+      <div class="panel"><h2>Day-To-Day Channel Movers</h2><div class="table-wrap" id="insightDayChannel"></div></div>
+      <div class="panel"><h2>Day-To-Day Platform Movers</h2><div class="table-wrap" id="insightDayPlatform"></div></div>
+    </div>
+    <div class="insight-grid">
+      <div class="panel"><h2>Inside Platform Channel Movers</h2><div class="table-wrap" id="insightPlatformChannel"></div></div>
+      <div class="panel"><h2>Weekly Channel Movers</h2><div class="table-wrap" id="insightWeeklyChannel"></div></div>
+    </div>
+    <div class="insight-grid">
+      <div class="panel"><h2>Weekly Platform Movers</h2><div class="table-wrap" id="insightWeeklyPlatform"></div></div>
+      <div class="panel"><h2>Selected Range Channel Movers</h2><div class="table-wrap" id="insightRangeChannel"></div></div>
+    </div>
+  </div>
 </div>
 <div class="chart-modal" id="chartModal" aria-hidden="true">
   <div class="chart-modal-panel">
@@ -294,6 +347,7 @@ let lineMode='total';
 let compareMode='none';
 let timeInterval='60m';
 let platformChannelScale='indexed';
+let activeTab='dashboard';
 let modalMode='main';
 let chart=null;
 let expandedChart=null;
@@ -316,7 +370,6 @@ const fmt=function(n,d){if(n==null||isNaN(n))return '-';return Number(n).toLocal
 const compact=function(v){v=Number(v||0);return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':fmt(v,v<10&&v>0?1:0);};
 const escapeHtml=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
 const sum=function(rows,key){return (rows||[]).reduce(function(a,r){return a+Number(r[key]||0);},0);};
-const maxVal=function(rows,key){return (rows||[]).reduce(function(a,r){return Math.max(a,Number(r[key]||0));},0);};
 const pad2=function(v){return String(v).padStart(2,'0');};
 function formatDate(value){
   const m=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -402,8 +455,6 @@ function channelLabel(row,withPlatform){
 }
 function activeIdentity(){return VIEWER_IDENTITIES[identity]||VIEWER_IDENTITIES.cliip;}
 function statusMetricCode(key){key=String(key||metric);return key.startsWith('status:')?key.slice(7):'';}
-function isStatusMetric(key){return !!statusMetricCode(key);}
-function statusOption(code){return STATUS_OPTIONS.find(function(item){return String(item.code)===String(code);})||null;}
 function metricKey(key){key=key||metric;return key==='active_viewers'?activeIdentity().minuteKey:key;}
 function metricShort(key){const code=statusMetricCode(key);if(code==='200')return 'Successful Viewers';if(code)return 'HTTP '+code+' Viewers';key=key||metric;return key==='active_viewers'?'Active '+activeIdentity().short:(METRICS[key]?.short||'Value');}
 function metricLabel(key){const code=statusMetricCode(key);if(code==='200')return 'Estimated successful viewers - HTTP 200';if(code)return 'Estimated viewers from HTTP '+code+' .ts requests';key=key||metric;return key==='active_viewers'?'Active '+activeIdentity().label+' per minute':(METRICS[key]?.label||'Value');}
@@ -479,6 +530,24 @@ function renderLineModeButtons(id){
     const active=k===lineMode?' active':'';
     return '<button type="button" class="seg-btn'+active+'" onclick="setLineMode(\''+k+'\')">'+escapeHtml(item.short||item.label)+'</button>';
   }).join('');
+}
+function syncMainTabs(){
+  document.body.classList.toggle('insights-active',activeTab==='insights');
+  [['dashboard','dashboardTab','dashboardTabBtn'],['insights','insightsTab','insightsTabBtn']].forEach(function(item){
+    const isActive=activeTab===item[0];
+    const panel=document.getElementById(item[1]);
+    const btn=document.getElementById(item[2]);
+    if(panel)panel.classList.toggle('active',isActive);
+    if(btn){
+      btn.classList.toggle('active',isActive);
+      btn.setAttribute('aria-selected',isActive?'true':'false');
+    }
+  });
+}
+function setMainTab(tab){
+  activeTab=tab==='insights'?'insights':'dashboard';
+  syncMainTabs();
+  render();
 }
 function syncControls(){
   const days=selectedDates();
@@ -956,14 +1025,22 @@ function flashMetricBaseLabel(){
   if(code)return 'HTTP '+code+' Viewer';
   return 'Estimated Viewer';
 }
+function flashIntervalBasisLabel(){
+  const step=intervalMinutes();
+  if(step>=60)return 'Hourly Avg';
+  if(step>=30)return '30-Min Avg';
+  return 'Minute';
+}
 function flashValueLabel(){
-  return 'Total '+flashMetricBaseLabel()+'-Minute Count';
+  return 'Total '+flashMetricBaseLabel()+' '+flashIntervalBasisLabel()+' Count';
 }
 function flashPeakLabel(){
-  return 'Peak '+flashMetricBaseLabel()+' / min';
+  const step=intervalMinutes();
+  return 'Peak '+flashMetricBaseLabel()+(step>=60?' / hourly avg':step>=30?' / 30-min avg':' / min');
 }
 function flashAverageLabel(){
-  return 'Avg '+flashMetricBaseLabel()+' / min';
+  const step=intervalMinutes();
+  return 'Avg '+flashMetricBaseLabel()+(step>=60?' / hourly avg':step>=30?' / 30-min avg':' / min');
 }
 function selectedWindowLabel(rows){
   const minutes=Array.from(new Set((rows||[]).map(function(r){return String(r.minute_ist||'');}).filter(Boolean))).sort();
@@ -987,17 +1064,33 @@ function flashGroupRows(rows,keyFn,labelFn,metaFn){
     const key=keyFn(row);
     if(!key)return;
     if(!buckets.has(key)){
-      buckets.set(key,{key:key,label:labelFn(row),sum:0,peak:0,count:0,platforms:new Set(),meta:metaFn?metaFn(row):{}});
+      buckets.set(key,{key:key,label:labelFn(row),minuteTotals:new Map(),platforms:new Set(),meta:metaFn?metaFn(row):{}});
     }
     const item=buckets.get(key);
+    const minute=String(row.minute_ist||'');
     const value=metricValue(row);
-    item.sum+=value;
-    item.peak=Math.max(item.peak,value);
-    item.count+=1;
+    if(minute)item.minuteTotals.set(minute,(item.minuteTotals.get(minute)||0)+Number(value||0));
     item.platforms.add(String(row.platform_name||'Unknown FAST Platform'));
   });
   return Array.from(buckets.values())
-    .map(function(item){item.avg=item.count?item.sum/item.count:0;item.platform_count=item.platforms.size;return item;})
+    .map(function(item){
+      const intervalTotals=new Map();
+      const intervalCounts=new Map();
+      Array.from(item.minuteTotals.keys()).sort().forEach(function(minute){
+        const bucket=bucketMinute(minute);
+        intervalTotals.set(bucket,(intervalTotals.get(bucket)||0)+Number(item.minuteTotals.get(minute)||0));
+        intervalCounts.set(bucket,(intervalCounts.get(bucket)||0)+1);
+      });
+      const values=Array.from(intervalTotals.keys()).sort().map(function(bucket){
+        return Number(intervalTotals.get(bucket)||0)/Math.max(1,Number(intervalCounts.get(bucket)||0));
+      });
+      item.sum=values.reduce(function(a,v){return a+Number(v||0);},0);
+      item.peak=values.length?Math.max.apply(null,values):0;
+      item.count=values.length;
+      item.avg=item.count?item.sum/item.count:0;
+      item.platform_count=item.platforms.size;
+      return item;
+    })
     .sort(function(a,b){return Number(b.sum||0)-Number(a.sum||0)||Number(b.peak||0)-Number(a.peak||0);});
 }
 function flashCard(item,index){
@@ -1038,7 +1131,10 @@ function renderFlashcards(rows){
   }
   const explain=document.getElementById('flashExplain');
   if(explain){
-    explain.innerHTML='<b>How to read these cards:</b> '+escapeHtml(flashValueLabel())+' adds every minute-level '+escapeHtml(flashMetricBaseLabel())+' count in the selected data window: '+escapeHtml(windowLabel)+'. It is not unique users, watch minutes, or watch hours. '+escapeHtml(flashPeakLabel())+' is the highest minute value; '+escapeHtml(flashAverageLabel())+' is the average minute-level concurrency.';
+    const intervalText=intervalMinutes()>1
+      ?'The dashboard first averages minute-level counts inside each '+escapeHtml(intervalLabel())+' bucket, then totals those displayed bucket values.'
+      :'The dashboard uses each minute-level count directly, then totals those minute values.';
+    explain.innerHTML='<b>How to read these cards:</b> '+escapeHtml(flashValueLabel())+' is calculated for the selected data window: '+escapeHtml(windowLabel)+'. '+intervalText+' It is not unique users, watch minutes, or watch hours. '+escapeHtml(flashPeakLabel())+' is the highest displayed bucket value; '+escapeHtml(flashAverageLabel())+' is the average displayed bucket value.';
   }
   const allChannelsAll=flashGroupRows(
     rows,
@@ -1071,16 +1167,199 @@ function renderFlashcards(rows){
     return platformItem;
   }).sort(function(a,b){
     return Number(b.total||0)-Number(a.total||0)||String(a.label).localeCompare(String(b.label));
-  }).map(function(platformItem){
+  }).map(function(platformItem,platformIndex){
     const channels=platformItem.channels;
     return '<article class="platform-card">'+
-      '<div class="platform-head"><span>'+escapeHtml(platformItem.label)+'</span><span class="platform-total"><small>'+escapeHtml(flashValueLabel())+'</small>'+fmt(platformItem.total,1)+'</span></div>'+
+      '<div class="platform-head"><span class="platform-name"><span class="platform-rank">#'+(platformIndex+1)+'</span><span>'+escapeHtml(platformItem.label)+'</span></span><span class="platform-total"><small>'+escapeHtml(flashValueLabel())+'</small>'+fmt(platformItem.total,1)+'</span></div>'+
       (channels.length?channels.map(function(c,i){
         return '<div class="rank-row"><span>#'+(i+1)+'</span><span class="name">'+escapeHtml(c.label)+'</span><span class="value">'+fmt(c.sum,1)+'</span></div>';
       }).join(''):'<div class="rank-row"><span></span><span class="name">No rows</span><span class="value">-</span></div>')+
     '</article>';
   });
   document.getElementById('platformFlashcards').innerHTML=platformCards.length?platformCards.join(''):emptyFlash();
+}
+function rowsForDateList(days){
+  const wanted=new Set((days||[]).filter(Boolean));
+  if(!wanted.size)return [];
+  return minute.filter(function(r){
+    return wanted.has(String(r.log_date||''))
+      && (platform==='all'||platformKey(r)===platform)
+      && (channel==='all'||pairKey(r)===channel);
+  });
+}
+function periodLabel(days){
+  days=(days||[]).filter(Boolean);
+  if(!days.length)return 'Not available';
+  if(days.length===1)return formatDate(days[0]);
+  return formatDate(days[0])+' to '+formatDate(days[days.length-1]);
+}
+function insightAggregate(rows){
+  const item=flashGroupRows(rows,function(){return 'all';},function(){return 'All';})[0];
+  return item||{sum:0,peak:0,avg:0,count:0};
+}
+function insightPct(delta,previous,current){
+  if(previous>0)return delta*100/previous;
+  if(current>0)return null;
+  return 0;
+}
+function insightDirection(delta,previous,current){
+  if(previous===0&&current>0)return 'New';
+  if(previous>0&&current===0)return 'Dropped';
+  if(delta>0)return 'Up';
+  if(delta<0)return 'Down';
+  return 'Flat';
+}
+function insightChangeText(delta,pct){
+  const sign=delta>0?'+':'';
+  return sign+fmt(delta,1)+(pct==null?' (new)':' ('+(pct>0?'+':'')+fmt(pct,1)+'%)');
+}
+function insightCard(label,current,previous,periodText){
+  const delta=Number(current||0)-Number(previous||0);
+  const pct=insightPct(delta,Number(previous||0),Number(current||0));
+  const cls=delta>0?'up':delta<0?'down':'neutral';
+  return '<article class="insight-card '+cls+'">'+
+    '<b>'+escapeHtml(label)+'</b>'+
+    '<div class="insight-value">'+escapeHtml(insightChangeText(delta,pct))+'</div>'+
+    '<div class="insight-sub">Current '+fmt(current,1)+' vs previous '+fmt(previous,1)+'<br>'+escapeHtml(periodText)+'</div>'+
+  '</article>';
+}
+function compareEntityRows(currentRows,previousRows,keyFn,labelFn,limit){
+  const current=flashGroupRows(currentRows,keyFn,labelFn);
+  const previous=flashGroupRows(previousRows,keyFn,labelFn);
+  const currentMap=new Map(current.map(function(item){return [item.key,item];}));
+  const previousMap=new Map(previous.map(function(item){return [item.key,item];}));
+  const keys=new Set(Array.from(currentMap.keys()).concat(Array.from(previousMap.keys())));
+  const rows=Array.from(keys).map(function(key){
+    const c=currentMap.get(key)||{};
+    const p=previousMap.get(key)||{};
+    const currentValue=Number(c.sum||0);
+    const previousValue=Number(p.sum||0);
+    const delta=currentValue-previousValue;
+    const pct=insightPct(delta,previousValue,currentValue);
+    return {
+      label:c.label||p.label||key,
+      current:currentValue,
+      previous:previousValue,
+      delta:delta,
+      pct:pct,
+      direction:insightDirection(delta,previousValue,currentValue)
+    };
+  }).filter(function(row){return row.current||row.previous;});
+  return rows.sort(function(a,b){
+    return Math.abs(Number(b.delta||0))-Math.abs(Number(a.delta||0))||Number(b.current||0)-Number(a.current||0);
+  }).slice(0,limit||20).map(function(row,index){row.rank='#'+(index+1);return row;});
+}
+function movementTable(rows,labelName){
+  if(!rows.length)return '<div style="padding:14px;color:#98a2b3;font-size:12px">Not enough rows for this comparison.</div>';
+  const body=rows.map(function(r){
+    const cls=r.delta>0?'movement-up':r.delta<0?'movement-down':'movement-flat';
+    return '<tr>'+
+      '<td>'+escapeHtml(r.rank)+'</td>'+
+      '<td><div class="movement-main">'+escapeHtml(r.label)+'</div><div class="movement-sub">'+escapeHtml(r.direction)+'</div></td>'+
+      '<td><div class="movement-main">'+fmt(r.current,1)+'</div><div class="movement-sub">Prev '+fmt(r.previous,1)+'</div></td>'+
+      '<td><div class="'+cls+'">'+escapeHtml(insightChangeText(Number(r.delta||0),r.pct))+'</div></td>'+
+    '</tr>';
+  }).join('');
+  return '<table><thead><tr><th>#</th><th>'+escapeHtml(labelName)+'</th><th>Current vs Previous</th><th>Movement</th></tr></thead><tbody>'+body+'</tbody></table>';
+}
+function nearestPreviousDay(day){
+  const dates=selectedDates();
+  const index=dates.indexOf(day);
+  return index>0?dates[index-1]:'';
+}
+function insightPeriods(){
+  const inRange=selectedRangeDates();
+  const latest=(inRange[inRange.length-1]||selectedDates().slice(-1)[0]||'');
+  const previous=nearestPreviousDay(latest);
+  const all=selectedDates();
+  const latestIndex=all.indexOf(latest);
+  const uptoLatest=latestIndex>=0?all.slice(0,latestIndex+1):all;
+  const currentWeek=uptoLatest.slice(-7);
+  const previousWeek=uptoLatest.slice(-14,-7);
+  const first=inRange[0]||latest;
+  return {
+    latestDay:latest?[latest]:[],
+    previousDay:previous?[previous]:[],
+    currentWeek:currentWeek,
+    previousWeek:previousWeek,
+    rangeFirst:first?[first]:[],
+    rangeLast:latest?[latest]:[]
+  };
+}
+function renderInsights(rows){
+  const periods=insightPeriods();
+  const latestRows=rowsForDateList(periods.latestDay);
+  const previousRows=rowsForDateList(periods.previousDay);
+  const weekRows=rowsForDateList(periods.currentWeek);
+  const prevWeekRows=rowsForDateList(periods.previousWeek);
+  const rangeFirstRows=rowsForDateList(periods.rangeFirst);
+  const rangeLastRows=rowsForDateList(periods.rangeLast);
+  const dayCurrent=insightAggregate(latestRows);
+  const dayPrevious=insightAggregate(previousRows);
+  const weekCurrent=insightAggregate(weekRows);
+  const weekPrevious=insightAggregate(prevWeekRows);
+  const rangeCurrent=insightAggregate(rangeLastRows);
+  const rangePrevious=insightAggregate(rangeFirstRows);
+  const dayText=periodLabel(periods.latestDay)+' vs '+periodLabel(periods.previousDay);
+  const weekText=periodLabel(periods.currentWeek)+' vs '+periodLabel(periods.previousWeek);
+  const rangeText=periodLabel(periods.rangeLast)+' vs '+periodLabel(periods.rangeFirst);
+  const note=document.getElementById('insightNote');
+  if(note){
+    note.innerHTML='<b>Quick insights use the same filters:</b> '+escapeHtml(selectionLabel())+' | '+escapeHtml(metricShort())+' | '+escapeHtml(intervalLabel())+'. Values use '+escapeHtml(flashValueLabel())+', so movement compares the displayed interval-aware concurrency volume, not raw request rows or watch hours.';
+  }
+  document.getElementById('insightCards').innerHTML=[
+    insightCard('Day-to-day movement',dayCurrent.sum,dayPrevious.sum,dayText),
+    insightCard('Weekly movement',weekCurrent.sum,weekPrevious.sum,weekText),
+    insightCard('Selected range first vs latest day',rangeCurrent.sum,rangePrevious.sum,rangeText)
+  ].join('');
+  const channelRows=compareEntityRows(
+    latestRows,
+    previousRows,
+    function(r){return String(r.channel_name||'Other');},
+    function(r){return String(r.channel_name||'Other');},
+    20
+  );
+  const platformRows=compareEntityRows(
+    latestRows,
+    previousRows,
+    function(r){return platformKey(r)||'unknown';},
+    function(r){return String(r.platform_name||'Unknown FAST Platform');},
+    20
+  );
+  const platformChannelRows=compareEntityRows(
+    latestRows,
+    previousRows,
+    function(r){return platformKey(r)+'|'+String(r.channel_name||'Other');},
+    function(r){return platform==='all'?String(r.platform_name||'Unknown FAST Platform')+' - '+String(r.channel_name||'Other'):String(r.channel_name||'Other');},
+    30
+  );
+  const weeklyChannelRows=compareEntityRows(
+    weekRows,
+    prevWeekRows,
+    function(r){return String(r.channel_name||'Other');},
+    function(r){return String(r.channel_name||'Other');},
+    20
+  );
+  const weeklyPlatformRows=compareEntityRows(
+    weekRows,
+    prevWeekRows,
+    function(r){return platformKey(r)||'unknown';},
+    function(r){return String(r.platform_name||'Unknown FAST Platform');},
+    20
+  );
+  const rangeChannelRows=compareEntityRows(
+    rangeLastRows,
+    rangeFirstRows,
+    function(r){return String(r.channel_name||'Other');},
+    function(r){return String(r.channel_name||'Other');},
+    20
+  );
+  document.getElementById('insightDayChannel').innerHTML=movementTable(channelRows,'Channel');
+  document.getElementById('insightDayPlatform').innerHTML=movementTable(platformRows,'Platform');
+  document.getElementById('insightPlatformChannel').innerHTML=movementTable(platformChannelRows,platform==='all'?'Platform / Channel':'Channel');
+  document.getElementById('insightWeeklyChannel').innerHTML=movementTable(weeklyChannelRows,'Channel');
+  document.getElementById('insightWeeklyPlatform').innerHTML=movementTable(weeklyPlatformRows,'Platform');
+  document.getElementById('insightRangeChannel').innerHTML=movementTable(rangeChannelRows,'Channel');
 }
 function groupRows(rows,keys,sumKeys,maxKeys,firstKeys){
   const buckets=new Map();
@@ -1231,13 +1510,18 @@ function showRenderOverlay(show){
 }
 function renderNow(){
   syncControls();
+  syncMainTabs();
   const rows=filteredRows();
+  renderMetrics(rows);
+  if(activeTab==='insights'){
+    renderInsights(rows);
+    return;
+  }
   drawChart(rows);
   renderPlatformChannelTrend(rows);
   renderBreakdownCharts(rows);
   renderDailyTrend(rows);
   renderHeatmap(rows);
-  renderMetrics(rows);
   renderFlashcards(rows);
   renderTables(rows);
 }
