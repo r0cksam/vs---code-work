@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -12,7 +13,7 @@ import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 def _resolve_default_base(project_root: Path) -> Path:
@@ -73,6 +74,208 @@ def _print_subprocess_line(line: str) -> None:
         return
 
 
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _tail_file(path: Path, max_chars: int = 4000) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return text[-max_chars:]
+
+
+def _classify_failure(text: str) -> dict[str, str]:
+    lower = text.lower()
+    checks = [
+        (
+            "memory_or_temp_spill",
+            [
+                "out of memory",
+                "failed to offload",
+                "max_temp_directory_size",
+                "memoryerror",
+                "cannot allocate memory",
+                "could not allocate",
+            ],
+            "Memory/temp spill. Rerun that step with fewer threads, smaller date range, or a larger DuckDB temp limit.",
+        ),
+        (
+            "disk_space",
+            ["no space left on device", "not enough space", "disk full", "there is not enough space"],
+            "Disk is full or temp output cannot be written. Free space on the ETL drive and rerun the failed step.",
+        ),
+        (
+            "missing_input",
+            ["not found", "no such file", "no lake days found", "folder not found", "required etl script not found"],
+            "Input file/folder is missing. Check raw download, lake partitions, and configured paths.",
+        ),
+        (
+            "permission",
+            ["permission denied", "access is denied", "unauthorized"],
+            "Permission issue. Check file locks, credentials, or whether another process is using the output.",
+        ),
+        (
+            "data_empty",
+            ["no fast .ts rows", "zero rows", "remote file count is zero", "empty output"],
+            "Selected range/source produced no usable rows. Validate source/date filters and upstream data.",
+        ),
+        (
+            "python_exception",
+            ["traceback", "exception"],
+            "Python exception. Open the step log for the traceback and rerun after fixing the code/data issue.",
+        ),
+    ]
+    for error_class, tokens, hint in checks:
+        if any(token in lower for token in tokens):
+            return {"error_class": error_class, "hint": hint}
+    return {
+        "error_class": "unknown",
+        "hint": "Open the step log and inspect the last traceback/error lines.",
+    }
+
+
+def _safe_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _lower_parallelism(command: list[str]) -> tuple[Optional[list[str]], list[str]]:
+    retry = list(command)
+    changes: list[str] = []
+    parallel_flags = {
+        "--threads",
+        "--workers",
+        "--etl1-workers",
+        "--deep-profile-threads",
+        "--device-decode-threads",
+        "--concurrency-threads",
+        "--latency-threads",
+    }
+    for i, token in enumerate(retry[:-1]):
+        if token not in parallel_flags:
+            continue
+        try:
+            current = int(retry[i + 1])
+        except ValueError:
+            continue
+        lowered = max(1, current // 2)
+        if lowered < current:
+            retry[i + 1] = str(lowered)
+            changes.append(f"{token} {current}->{lowered}")
+    return (retry, changes) if changes else (None, [])
+
+
+class RunRecorder:
+    def __init__(self, output_root: Path, args: argparse.Namespace, base_root: Path, lake_root: Path) -> None:
+        self.output_root = output_root
+        self.state_dir = output_root / "state"
+        self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.last_path = self.state_dir / "pipeline_last_run.json"
+        self.run_path = self.state_dir / f"pipeline_run_{self.run_id}.json"
+        self.steps_csv = self.state_dir / "pipeline_last_run_steps.csv"
+        self.data: dict[str, Any] = {
+            "schema_version": 1,
+            "run_id": self.run_id,
+            "status": "running",
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "finished_at": "",
+            "base_root": str(base_root),
+            "lake_root": str(lake_root),
+            "output_root": str(output_root),
+            "target_date": getattr(args, "etl1_daily_date", "") or "",
+            "continue_on_error": bool(getattr(args, "continue_on_error", False)),
+            "args": _jsonable(vars(args)),
+            "steps": [],
+        }
+        self.write()
+
+    def record_step(self, entry: dict[str, Any]) -> None:
+        self.data.setdefault("steps", []).append(_jsonable(entry))
+        self.write()
+
+    def record_skip(self, step_name: str, reason: str) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        self.record_step(
+            {
+                "step": step_name,
+                "status": "skipped",
+                "allow_failure": True,
+                "started_at": now,
+                "finished_at": now,
+                "duration_seconds": 0,
+                "reason": reason,
+            }
+        )
+
+    def finish(self, status: str) -> None:
+        steps = self.data.get("steps", [])
+        hard_failures = [s for s in steps if s.get("status") == "failed" and not s.get("allow_failure")]
+        warnings = [s for s in steps if s.get("status") == "failed" and s.get("allow_failure")]
+        if hard_failures:
+            final_status = "failed"
+        elif warnings and status == "complete":
+            final_status = "complete_with_warnings"
+        else:
+            final_status = status
+        self.data["status"] = final_status
+        self.data["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        self.data["warning_count"] = len(warnings)
+        self.data["failure_count"] = len(hard_failures)
+        self.write()
+        self.write_csv()
+        print(
+            f"\n[summary] status={final_status} warnings={len(warnings)} "
+            f"failures={len(hard_failures)}"
+        )
+        print(f"[summary] json={self.last_path}")
+        print(f"[summary] csv={self.steps_csv}")
+
+    def write(self) -> None:
+        _safe_write_json(self.last_path, self.data)
+        _safe_write_json(self.run_path, self.data)
+
+    def write_csv(self) -> None:
+        self.steps_csv.parent.mkdir(parents=True, exist_ok=True)
+        columns = [
+            "step",
+            "status",
+            "attempt",
+            "allow_failure",
+            "exit_code",
+            "error_class",
+            "hint",
+            "log_path",
+            "duration_seconds",
+            "started_at",
+            "finished_at",
+        ]
+        with self.steps_csv.open("w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            for step in self.data.get("steps", []):
+                writer.writerow(step)
+
+
+RUN_RECORDER: Optional[RunRecorder] = None
+
+
+def record_skip(step_name: str, reason: str) -> None:
+    if RUN_RECORDER is not None:
+        RUN_RECORDER.record_skip(step_name, reason)
+
+
 def run(
     command: list[str],
     env: dict[str, str],
@@ -80,53 +283,131 @@ def run(
     step_name: str = "command",
     log_dir: Optional[Path] = None,
     allow_failure: bool = False,
+    retry_on_memory: bool = False,
 ) -> bool:
-    nice = " ".join(f'"{c}"' if " " in c else c for c in command)
-    print(f"\n[run] {nice}")
+    attempt = 1
+    current_command = list(command)
+    while True:
+        nice = " ".join(f'"{c}"' if " " in c else c for c in current_command)
+        print(f"\n[run] {nice}")
 
-    if log_dir is None:
-        result = subprocess.run(command, check=not allow_failure, cwd=str(cwd) if cwd else None, env=env)
-        return result.returncode == 0
+        if log_dir is None:
+            start = datetime.now()
+            result = subprocess.run(
+                current_command,
+                check=False,
+                cwd=str(cwd) if cwd else None,
+                env=env,
+            )
+            finished = datetime.now()
+            entry = {
+                "step": step_name,
+                "status": "ok" if result.returncode == 0 else "failed",
+                "attempt": attempt,
+                "allow_failure": allow_failure,
+                "exit_code": result.returncode,
+                "started_at": start.isoformat(timespec="seconds"),
+                "finished_at": finished.isoformat(timespec="seconds"),
+                "duration_seconds": round((finished - start).total_seconds(), 2),
+                "command": nice,
+            }
+            if result.returncode and RUN_RECORDER is not None:
+                entry.update(_classify_failure(f"exit code {result.returncode}"))
+            if RUN_RECORDER is not None:
+                RUN_RECORDER.record_step(entry)
+            if result.returncode and not allow_failure:
+                if RUN_RECORDER is not None:
+                    RUN_RECORDER.finish("failed")
+                raise SystemExit(f"Step failed: {step_name} (exit {result.returncode}).")
+            return result.returncode == 0
 
-    log_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    log_path = log_dir / f"{stamp}_{_safe_log_name(step_name)}.log"
-    print(f"[log] {log_path}")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        suffix = f"{_safe_log_name(step_name)}" if attempt == 1 else f"{_safe_log_name(step_name)}_retry{attempt}"
+        log_path = log_dir / f"{stamp}_{suffix}.log"
+        print(f"[log] {log_path}")
 
-    start = datetime.now()
-    with log_path.open("w", encoding="utf-8", errors="replace") as log:
-        log.write(f"step={step_name}\n")
-        log.write(f"cwd={cwd or Path.cwd()}\n")
-        log.write(f"command={nice}\n")
-        log.write(f"started_at={start.isoformat(timespec='seconds')}\n\n")
-        log.flush()
+        start = datetime.now()
+        with log_path.open("w", encoding="utf-8", errors="replace") as log:
+            log.write(f"step={step_name}\n")
+            log.write(f"attempt={attempt}\n")
+            log.write(f"allow_failure={allow_failure}\n")
+            log.write(f"cwd={cwd or Path.cwd()}\n")
+            log.write(f"command={nice}\n")
+            log.write(f"started_at={start.isoformat(timespec='seconds')}\n\n")
+            log.flush()
 
-        process = subprocess.Popen(
-            command,
-            cwd=str(cwd) if cwd else None,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        assert process.stdout is not None
-        for line in process.stdout:
-            _print_subprocess_line(line)
-            log.write(line)
-        return_code = process.wait()
-        finished = datetime.now()
-        log.write(f"\nfinished_at={finished.isoformat(timespec='seconds')}\n")
-        log.write(f"duration_seconds={(finished - start).total_seconds():.2f}\n")
-        log.write(f"exit_code={return_code}\n")
+            process = subprocess.Popen(
+                current_command,
+                cwd=str(cwd) if cwd else None,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                _print_subprocess_line(line)
+                log.write(line)
+            return_code = process.wait()
+            finished = datetime.now()
+            log.write(f"\nfinished_at={finished.isoformat(timespec='seconds')}\n")
+            log.write(f"duration_seconds={(finished - start).total_seconds():.2f}\n")
+            log.write(f"exit_code={return_code}\n")
 
-    if return_code:
-        if allow_failure:
-            print(f"[warn] Optional step failed: {step_name} (exit {return_code}). Log: {log_path}")
-            return False
-        raise SystemExit(f"Step failed: {step_name} (exit {return_code}). Log: {log_path}")
-    return True
+        entry = {
+            "step": step_name,
+            "attempt": attempt,
+            "allow_failure": allow_failure,
+            "status": "ok" if return_code == 0 else "failed",
+            "exit_code": return_code,
+            "started_at": start.isoformat(timespec="seconds"),
+            "finished_at": finished.isoformat(timespec="seconds"),
+            "duration_seconds": round((finished - start).total_seconds(), 2),
+            "command": nice,
+            "log_path": str(log_path),
+        }
+        if return_code:
+            tail = _tail_file(log_path)
+            entry.update(_classify_failure(tail))
+            entry["log_tail"] = tail
+            retry_command, retry_changes = _lower_parallelism(current_command)
+            if (
+                retry_on_memory
+                and attempt == 1
+                and entry.get("error_class") == "memory_or_temp_spill"
+                and retry_command is not None
+            ):
+                entry["status"] = "retrying"
+                entry["retry_reason"] = "memory_or_temp_spill"
+                entry["retry_changes"] = retry_changes
+                if RUN_RECORDER is not None:
+                    RUN_RECORDER.record_step(entry)
+                print(
+                    f"[retry] {step_name} hit memory/temp pressure. "
+                    f"Retrying once with: {', '.join(retry_changes)}"
+                )
+                current_command = retry_command
+                attempt += 1
+                continue
+
+        if RUN_RECORDER is not None:
+            RUN_RECORDER.record_step(entry)
+
+        if return_code:
+            if allow_failure:
+                print(
+                    f"[warn] Optional step failed: {step_name} (exit {return_code}). "
+                    f"Class={entry.get('error_class', 'unknown')}. Log: {log_path}"
+                )
+                print(f"[warn] Suggested action: {entry.get('hint', 'Open the step log.')}")
+                return False
+            if RUN_RECORDER is not None:
+                RUN_RECORDER.finish("failed")
+            raise SystemExit(f"Step failed: {step_name} (exit {return_code}). Log: {log_path}")
+        return True
 
 
 def _latest_lake_day(lake_root: Path) -> Optional[date]:
@@ -386,6 +667,14 @@ def main() -> None:
         help="Optional month filter for overview_report.xlsx regeneration (01-12).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Run dashboards in validation mode where supported.")
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help=(
+            "Continue after recoverable enrichment/dashboard failures and record them in "
+            "output/state/pipeline_last_run.json. Core raw/stage/lake/watch-profile steps remain strict."
+        ),
+    )
 
     # UA decode cache controls
     parser.add_argument(
@@ -410,7 +699,7 @@ def main() -> None:
         "--device-decode-window-days",
         type=int,
         default=None,
-        help="Rolling lake window for UA model-code device decode. Defaults to 7 days.",
+        help="Rolling lake window for UA model-code device decode. Daily ETL uses --etl1-daily-date when omitted.",
     )
     parser.add_argument("--device-decode-start", default=None, help="Device decode IST start date YYYY-MM-DD.")
     parser.add_argument("--device-decode-end", default=None, help="Device decode IST end date YYYY-MM-DD.")
@@ -480,6 +769,8 @@ def main() -> None:
     lake_root = base_root / "lake"
     output_root.mkdir(parents=True, exist_ok=True)
     log_dir = output_root / "logs"
+    global RUN_RECORDER
+    RUN_RECORDER = RunRecorder(output_root, args, base_root, lake_root)
 
     src_root = workspace / "src"
     pipeline_dir = src_root / "pipeline"
@@ -777,7 +1068,14 @@ def main() -> None:
                 "--end",
                 end_dt,
             ]
-            run(profile_cmd, cwd=etl_root, env=env, step_name="watch_hours_profile_delta", log_dir=log_dir)
+            run(
+                profile_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="watch_hours_profile_delta",
+                log_dir=log_dir,
+                retry_on_memory=True,
+            )
 
             merge_cmd = [
                 python,
@@ -802,7 +1100,14 @@ def main() -> None:
             ]
             if start_dt and end_dt:
                 profile_cmd.extend(["--start", start_dt, "--end", end_dt])
-            run(profile_cmd, cwd=etl_root, env=env, step_name="watch_hours_profile", log_dir=log_dir)
+            run(
+                profile_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="watch_hours_profile",
+                log_dir=log_dir,
+                retry_on_memory=True,
+            )
     else:
         print("\n[skip] deep profile step skipped.")
 
@@ -822,6 +1127,8 @@ def main() -> None:
             env=env,
             step_name="overview_device_snapshot",
             log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+            retry_on_memory=True,
         )
     else:
         print("\n[skip] device snapshot step skipped.")
@@ -865,7 +1172,15 @@ def main() -> None:
             ua_cmd.extend(["--source", args.ua_profile_source])
         if args.dry_run:
             ua_cmd.append("--dry-run")
-        run(ua_cmd, cwd=etl_root, env=env, step_name="ua_distinct_profile_decode_cache", log_dir=log_dir)
+        run(
+            ua_cmd,
+            cwd=etl_root,
+            env=env,
+            step_name="ua_distinct_profile_decode_cache",
+            log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+            retry_on_memory=True,
+        )
     else:
         print("\n[skip] UA profile/cache step skipped.")
 
@@ -873,10 +1188,14 @@ def main() -> None:
         device_decode_start = args.device_decode_start
         device_decode_end = args.device_decode_end
         if not (device_decode_start and device_decode_end):
-            device_decode_start, device_decode_end = _build_profile_range(
-                lake_root,
-                args.device_decode_window_days or 7,
-            )
+            if args.etl1_daily_date and args.device_decode_window_days is None:
+                device_decode_start = args.etl1_daily_date
+                device_decode_end = args.etl1_daily_date
+            else:
+                device_decode_start, device_decode_end = _build_profile_range(
+                    lake_root,
+                    args.device_decode_window_days or 7,
+                )
 
         device_decode_cmd = [
             python,
@@ -905,12 +1224,13 @@ def main() -> None:
             step_name="ua_model_code_device_decode_profile",
             log_dir=log_dir,
             allow_failure=not args.strict_device_decode_profile,
+            retry_on_memory=True,
         )
     else:
         print("\n[skip] UA model-code device decode profile step skipped.")
 
     if not args.skip_overview:
-        run(
+        overview_report_ok = run(
             [
                 python,
                 str(overview_generator_script),
@@ -928,6 +1248,8 @@ def main() -> None:
             env=env,
             step_name="overview_report_xlsx",
             log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+            retry_on_memory=True,
         )
 
         overview_cmd = [
@@ -940,7 +1262,19 @@ def main() -> None:
         ]
         if args.dry_run:
             overview_cmd.append("--dry-run")
-        run(overview_cmd, cwd=overview_dashboard_dir, env=env, step_name="overview_dashboard_html", log_dir=log_dir)
+        if overview_report_ok:
+            run(
+                overview_cmd,
+                cwd=overview_dashboard_dir,
+                env=env,
+                step_name="overview_dashboard_html",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+            )
+        else:
+            reason = "overview_report_xlsx failed; skipped HTML refresh to avoid publishing stale overview data"
+            print(f"\n[skip] overview_dashboard_html: {reason}")
+            record_skip("overview_dashboard_html", reason)
     else:
         print("\n[skip] overview step skipped.")
 
@@ -983,7 +1317,15 @@ def main() -> None:
             ]
             if concurrency_start and concurrency_end:
                 concurrency_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
-            run(concurrency_cmd, cwd=etl_root, env=env, step_name="watch_hours_fast_concurrency", log_dir=log_dir)
+            concurrency_ok = run(
+                concurrency_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="watch_hours_fast_concurrency",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
 
             concurrency_html_cmd = [
                 python,
@@ -995,13 +1337,19 @@ def main() -> None:
                 "--title",
                 "Veto Concurrency",
             ]
-            run(
-                concurrency_html_cmd,
-                cwd=concurrency_dashboard_dir,
-                env=env,
-                step_name="concurrency_dashboard_html",
-                log_dir=log_dir,
-            )
+            if concurrency_ok:
+                run(
+                    concurrency_html_cmd,
+                    cwd=concurrency_dashboard_dir,
+                    env=env,
+                    step_name="concurrency_dashboard_html",
+                    log_dir=log_dir,
+                    allow_failure=args.continue_on_error,
+                )
+            else:
+                reason = "watch_hours_fast_concurrency failed; skipped concurrency HTML refresh to avoid stale data"
+                print(f"\n[skip] concurrency_dashboard_html: {reason}")
+                record_skip("concurrency_dashboard_html", reason)
     else:
         print("\n[skip] FAST concurrency step skipped.")
 
@@ -1048,7 +1396,15 @@ def main() -> None:
                 latency_cmd.extend(["--start", latency_start_date.isoformat(), "--end", latest_latency.isoformat()])
         if args.dry_run:
             latency_cmd.append("--dry-run")
-        run(latency_cmd, cwd=etl_root, env=env, step_name="latency_dashboard_html", log_dir=log_dir)
+        run(
+            latency_cmd,
+            cwd=etl_root,
+            env=env,
+            step_name="latency_dashboard_html",
+            log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+            retry_on_memory=True,
+        )
     else:
         print("\n[skip] latency dashboard skipped.")
 
@@ -1065,12 +1421,42 @@ def main() -> None:
         ]
         if args.dry_run:
             watch_cmd.append("--dry-run")
-        run(watch_cmd, cwd=watch_dir, env=env, step_name="watch_hours_dashboard_html", log_dir=log_dir)
+        run(
+            watch_cmd,
+            cwd=watch_dir,
+            env=env,
+            step_name="watch_hours_dashboard_html",
+            log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+        )
     else:
         print("\n[skip] watch-hours dashboard skipped.")
 
     print("\nPipeline complete.")
+    if RUN_RECORDER is not None:
+        RUN_RECORDER.finish("complete")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        if RUN_RECORDER is not None and RUN_RECORDER.data.get("status") == "running":
+            RUN_RECORDER.finish("failed")
+        raise
+    except Exception as exc:
+        if RUN_RECORDER is not None:
+            RUN_RECORDER.record_step(
+                {
+                    "step": "orchestrator",
+                    "status": "failed",
+                    "allow_failure": False,
+                    "started_at": datetime.now().isoformat(timespec="seconds"),
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                    "exit_code": 1,
+                    **_classify_failure(str(exc)),
+                    "log_tail": str(exc),
+                }
+            )
+            RUN_RECORDER.finish("failed")
+        raise

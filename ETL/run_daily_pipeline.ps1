@@ -21,6 +21,8 @@ param(
     [switch]$SkipPostVerifyDelay,
     [switch]$SkipWatch,
     [switch]$SkipOverview,
+    [switch]$RunDeviceDecode,
+    [switch]$StrictPipeline,
     [switch]$SingleSourceMode,
     [int]$Etl1Workers = 2,
     [ValidateSet("zstd", "snappy", "lz4", "gzip", "brotli", "none")]
@@ -294,6 +296,13 @@ try {
     $watchArgs = @()
     if ($SkipWatch) { $watchArgs += "--skip-watch" }
     if ($SkipOverview) { $watchArgs += "--skip-overview" }
+    if (-not $RunDeviceDecode) { $watchArgs += "--skip-device-decode-profile" }
+    if (-not $StrictPipeline) { $watchArgs += "--continue-on-error" }
+    if ($StrictPipeline) {
+        Write-Host "[$(Get-Date -Format o)] Strict pipeline mode enabled: recoverable step failures will fail the scheduled task."
+    } else {
+        Write-Host "[$(Get-Date -Format o)] Smart pipeline mode enabled: recoverable dashboard/enrichment failures continue and are written to output\state."
+    }
 
     $pipelineArgs = @("--base", $DefaultLocalRoot)
     if (-not $SingleSourceMode) {

@@ -22,6 +22,7 @@ ETL/data/raw/
 ETL/data/stage/
 ETL/data/lake/
 ETL/output/cache/
+ETL/output/state/
 ETL/output/**/_duckdb_tmp/
 
 # Optional: screenshots / design refs

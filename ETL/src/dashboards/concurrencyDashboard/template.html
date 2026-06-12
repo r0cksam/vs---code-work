@@ -7,55 +7,63 @@
 $CHARTJS_TAG
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0f1012;--panel:#1b1b1d;--panel2:#17191d;--line:#30343a;--soft:#98a2b3;--text:#eef4fb;--muted:#a7b0bd;--accent:#c77a32;--blue:#5794f2;--green:#73bf69;--red:#f2495c}
+:root{--bg:#f5f7fb;--panel:#ffffff;--panel2:#f8fafc;--line:#d8e0ea;--soft:#64748b;--text:#102033;--muted:#475569;--accent:#c76f2f;--blue:#2563eb;--green:#16803c;--red:#dc2626}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.topbar{padding:14px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#101214}
+.topbar{padding:14px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#fff;box-shadow:0 1px 0 rgba(16,32,51,.03)}
 .topbar h1{font-size:18px;font-weight:850}
 .topbar .sub{font-size:11px;color:var(--soft);text-align:right;line-height:1.35}
 .wrap{max-width:1900px;margin:0 auto;padding:14px 18px 24px}
-.sticky-controls{position:sticky;top:0;z-index:45;background:rgba(15,16,18,.96);backdrop-filter:blur(8px);padding:10px 0 2px;margin:-10px 0 12px}
+.sticky-controls{position:sticky;top:0;z-index:45;background:rgba(245,247,251,.96);backdrop-filter:blur(8px);padding:10px 0 2px;margin:-10px 0 12px}
 .sticky-controls .filter-bar,.sticky-controls .data-status{margin-bottom:8px}
-.filter-bar{border:1px solid var(--line);border-radius:7px;background:#111317;padding:10px 12px;margin-bottom:12px;display:flex;align-items:stretch;gap:10px;flex-wrap:wrap}
-.filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid #272c34;border-radius:7px;background:#15171b;min-width:min(100%,270px)}
+.filter-bar{border:1px solid var(--line);border-radius:7px;background:#fff;padding:10px 12px;margin-bottom:12px;display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;box-shadow:0 6px 18px rgba(16,32,51,.04)}
+.filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid #dfe6ef;border-radius:7px;background:#f8fafc;min-width:min(100%,270px)}
 .filter-group.date-group{flex:1 1 500px}.filter-group.content-group{flex:1 1 520px}.filter-group.chart-group{flex:1 1 460px}
 .filter-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
-.data-status{border:1px solid #343943;border-radius:7px;background:#15171b;color:#cbd5e1;margin-bottom:12px;padding:9px 11px;font-size:11px;font-weight:750;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.data-status b{color:#eef4fb}
+.data-status{border:1px solid #dfe6ef;border-radius:7px;background:#fff;color:#334155;margin-bottom:12px;padding:9px 11px;font-size:11px;font-weight:750;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.data-status b{color:#102033}
 .filter-title{font-size:10px;font-weight:850;text-transform:uppercase;color:var(--soft);letter-spacing:.04em}
 .filter-sep{width:1px;height:24px;background:var(--line)}
-input[type="date"],select{background:#171a1f;border:1px solid #39404a;color:var(--text);border-radius:5px;padding:6px 8px;font:inherit;font-size:11px;font-weight:750;min-width:150px;outline:none}
+input[type="date"],select{background:#fff;border:1px solid #cbd5e1;color:var(--text);border-radius:5px;padding:6px 8px;font:inherit;font-size:11px;font-weight:750;min-width:150px;outline:none}
 select.wide{min-width:260px}
 input[type="date"]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(199,122,50,.18)}
-.btn{background:#171a1f;border:1px solid #39404a;color:var(--text);border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer}
-.btn:hover{border-color:#667085}
+.btn{background:#fff;border:1px solid #cbd5e1;color:var(--text);border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer}
+.btn:hover{border-color:#94a3b8;background:#f8fafc}
 .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .range-text{margin-left:auto;color:var(--soft);font-size:11px;font-weight:750}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:10px}
-.mini{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 10px;min-width:0}
+.mini{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 10px;min-width:0;box-shadow:0 4px 14px rgba(16,32,51,.035)}
 .mini b{display:block;font-size:9px;text-transform:uppercase;color:var(--soft);margin-bottom:4px;line-height:1.15}
 .mini span{display:block;font-size:18px;font-weight:850;color:var(--text);line-height:1.1;overflow-wrap:anywhere}
-.metric-help{border:1px solid #334155;border-left:3px solid var(--accent);border-radius:7px;background:#14171c;color:#d7dee8;margin-bottom:12px;padding:9px 11px;font-size:11px;line-height:1.45;display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
-.metric-help b{color:#fff}.metric-help span{color:#aeb8c6}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:12px 14px;margin-bottom:12px}
+.metric-help{border:1px solid #d8e0ea;border-left:3px solid var(--accent);border-radius:7px;background:#fff;color:#334155;margin-bottom:12px;padding:9px 11px;font-size:11px;line-height:1.45;display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.metric-help b{color:#102033}.metric-help span{color:#475569}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:12px 14px;margin-bottom:12px;box-shadow:0 8px 22px rgba(16,32,51,.04)}
 .panel h2{font-size:13px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .chart-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
 .chart-heading h2{margin:0}.chart-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.chart-box{height:clamp(520px,68vh,820px);background:#1b1b1d;border:1px solid var(--line);border-radius:7px;padding:10px}
+.chart-box{height:clamp(520px,68vh,820px);background:#fff;border:1px solid var(--line);border-radius:7px;padding:10px}
 canvas{width:100%!important;height:100%!important}
 .chart-modal{position:fixed;inset:0;background:rgba(7,8,10,.9);z-index:100;display:none;padding:18px}
 .chart-modal.open{display:flex}
-.chart-modal-panel{width:100%;height:100%;min-height:0;display:flex;flex-direction:column;background:#111317;border:1px solid #3b414b;border-radius:7px;box-shadow:0 20px 70px rgba(0,0,0,.5)}
+.chart-modal-panel{width:100%;height:100%;min-height:0;display:flex;flex-direction:column;background:#fff;border:1px solid #cbd5e1;border-radius:7px;box-shadow:0 20px 70px rgba(0,0,0,.32)}
 .chart-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
 .chart-modal-title{font-size:14px;font-weight:850}.chart-modal-sub{font-size:11px;color:var(--soft);font-weight:750;margin-top:3px}
 .chart-box.expanded{height:auto;flex:1;min-height:0;border:0;border-radius:0}
 body.modal-open{overflow:hidden}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:12px}
-.table-wrap{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:7px;background:#15171b}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:12px}
+.table-wrap{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:7px;background:#fff}
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;min-width:920px}
-th{position:sticky;top:0;background:#202329;color:#cbd5e1;text-align:left;padding:8px;border-bottom:1px solid #343943;z-index:2;white-space:nowrap}
-td{padding:7px 8px;border-bottom:1px solid #272b32;color:#e6edf5;vertical-align:top}
-tr:hover td{background:#1f2329}
+th{position:sticky;top:0;background:#f1f5f9;color:#334155;text-align:left;padding:8px;border-bottom:1px solid #d8e0ea;z-index:2;white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid #edf2f7;color:#102033;vertical-align:top}
+tr:hover td{background:#f8fafc}
 .num{text-align:right;font-variant-numeric:tabular-nums}
+.heatmap{overflow:auto;border:1px solid var(--line);border-radius:7px;background:#fff;padding:10px}
+.heatmap-grid{display:grid;gap:3px;min-width:920px}
+.heatmap-cell{height:24px;border-radius:4px;background:#eef2f7;color:#102033;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;min-width:34px;position:relative}
+.heatmap-cell.head{background:#f1f5f9;color:#64748b;height:22px}
+.heatmap-cell.date{justify-content:flex-start;padding-left:6px;color:#334155;background:#f1f5f9;min-width:92px}
+.heatmap-cell.empty{background:#f8fafc;color:#94a3b8}
+.heatmap-cell:hover{outline:1px solid #c77a32;z-index:2}
 .footer{padding:12px 0 0;color:#7f8794;text-align:center;font-size:10px}
 @media(max-width:900px){.wrap{padding:12px}.sticky-controls{max-height:60vh;overflow:auto;margin:-6px 0 12px}.topbar .sub{text-align:left}.range-text{width:100%;margin-left:0}.filter-sep{display:none}.filter-group,.filter-group.date-group,.filter-group.content-group,.filter-group.chart-group{width:100%;flex-basis:100%}.filter-actions{width:100%;margin-left:0}.chart-box{height:470px}.chart-modal{padding:8px}select.wide,input[type="date"],select{min-width:100%;width:100%}}
 </style>
@@ -92,9 +100,15 @@ tr:hover td{background:#1f2329}
         <select id="metricSelect" onchange="setMetric(this.value)"></select>
         <span class="filter-title">Lines</span>
         <select id="lineModeSelect" onchange="setLineMode(this.value)"></select>
+        <span class="filter-title">Top</span>
+        <select id="topLimitSelect" onchange="setTopLimit(this.value)"></select>
+        <span class="filter-title">Compare</span>
+        <select id="compareSelect" onchange="setCompareMode(this.value)"></select>
       </div>
       <div class="filter-actions">
         <button class="btn" onclick="resetFilters()">Reset</button>
+        <button class="btn" onclick="downloadSelectedCsv()">Export CSV</button>
+        <button class="btn" onclick="copyParquetPath()">Copy Parquet Path</button>
         <span class="range-text" id="selectionText"></span>
       </div>
     </div>
@@ -111,6 +125,30 @@ tr:hover td{background:#1f2329}
   <div class="panel">
     <h2>HTTP Status Code Reference</h2>
     <div class="table-wrap" id="statusMeaningTable"></div>
+  </div>
+  <div class="grid-3">
+    <div class="panel">
+      <div class="chart-heading"><h2>Platform Mix</h2></div>
+      <div class="chart-box" style="height:340px"><canvas id="platformMixChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="chart-heading"><h2>Top Channels</h2></div>
+      <div class="chart-box" style="height:340px"><canvas id="channelRankChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="chart-heading"><h2>HTTP Status Mix</h2></div>
+      <div class="chart-box" style="height:340px"><canvas id="statusMixChart"></canvas></div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="panel">
+      <div class="chart-heading"><h2>Daily Peak & Average Trend</h2></div>
+      <div class="chart-box" style="height:360px"><canvas id="dailyTrendChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Hour Of Day Heatmap</h2>
+      <div class="heatmap" id="hourHeatmap"></div>
+    </div>
   </div>
   <div class="grid-2">
     <div class="panel"><h2>Concurrency Summary</h2><div class="table-wrap" id="summaryTable"></div></div>
@@ -133,19 +171,32 @@ tr:hover td{background:#1f2329}
 <script>
 const D = $DATA_BLOB;
 const COLORS=['#c77a32','#5794f2','#73bf69','#f2495c','#b877d9','#ffb357','#2ec7b8','#e0b400','#8ab8ff','#e24d42','#a352cc','#56a64b'];
+const FILLS=['rgba(199,122,50,.72)','rgba(37,99,235,.72)','rgba(22,128,60,.72)','rgba(220,38,38,.72)','rgba(168,85,247,.72)','rgba(245,158,11,.72)','rgba(20,184,166,.72)','rgba(14,165,233,.72)','rgba(236,72,153,.72)','rgba(100,116,139,.72)'];
+const UI={text:'#102033',muted:'#64748b',grid:'#e5e7eb',tooltipBg:'#ffffff',tooltipBorder:'#cbd5e1'};
 const VIEWER_IDENTITIES={
   cliip:{label:'IP address (cliIP)',short:'IP addresses',minuteKey:'unique_viewers',avgKey:'avg_unique_viewers',peakKey:'peak_unique_viewers',peakMinuteKey:'peak_unique_viewers_minute_ist'},
   ua:{label:'Device/App signature (User-Agent)',short:'UA signatures',minuteKey:'unique_ua_viewers',avgKey:'avg_unique_ua_viewers',peakKey:'peak_unique_ua_viewers',peakMinuteKey:'peak_unique_ua_minute_ist'}
 };
 const METRICS={
-  active_viewers:{label:'Distinct active IDs per minute',short:'Distinct Active IDs'},
-  segment_viewers_estimate:{label:'Estimated viewers from .ts requests - all HTTP statuses',short:'Estimated Viewers - All Statuses'},
-  status_200_segment_viewers_estimate:{label:'Estimated viewers from successful .ts requests - HTTP 200',short:'Estimated Viewers - HTTP 200'}
+  active_viewers:{label:'Active viewers per minute',short:'Active Viewers'},
+  segment_viewers_estimate:{label:'Estimated total viewers - all HTTP statuses',short:'Estimated Total Viewers'},
+  status_200_segment_viewers_estimate:{label:'Estimated successful viewers - HTTP 200',short:'Successful Viewers'}
 };
 const LINE_MODES={
   total:{label:'Total line',short:'Total'},
   platform:{label:'By platform',short:'By Platform'},
   channel:{label:'By channel',short:'By Channel'}
+};
+const TOP_LIMITS=[
+  {value:'5',label:'Top 5'},
+  {value:'10',label:'Top 10'},
+  {value:'20',label:'Top 20'},
+  {value:'all',label:'All'}
+];
+const COMPARE_MODES={
+  none:{label:'No compare',short:'No Compare'},
+  previous_period:{label:'Previous period',short:'Previous Period'},
+  same_weekday:{label:'Same weekday last week',short:'Same Weekday'}
 };
 let startDate='';
 let endDate='';
@@ -154,8 +205,14 @@ let channel='all';
 let identity='cliip';
 let metric='active_viewers';
 let lineMode='total';
+let topLimit='10';
+let compareMode='none';
 let chart=null;
 let expandedChart=null;
+let dailyTrendChart=null;
+let platformMixChart=null;
+let channelRankChart=null;
+let statusMixChart=null;
 
 const minute=(D.minute||[]).sort(function(a,b){return String(a.minute_ist||'').localeCompare(String(b.minute_ist||''));});
 const summary=D.summary||[];
@@ -182,6 +239,24 @@ function formatDateTime(value){
   const hour12=hour%12||12;
   return m[3]+'-'+m[2]+'-'+m[1].slice(2)+' '+pad2(hour12)+':'+m[5]+':'+m[6]+' '+suffix;
 }
+function dateToObj(value){
+  const p=String(value||'').split('-').map(Number);
+  return p.length===3?new Date(Date.UTC(p[0],p[1]-1,p[2])):null;
+}
+function dateFromObj(d){
+  return d?d.getUTCFullYear()+'-'+pad2(d.getUTCMonth()+1)+'-'+pad2(d.getUTCDate()):'';
+}
+function addDays(value,days){
+  const d=dateToObj(value);
+  if(!d)return '';
+  d.setUTCDate(d.getUTCDate()+Number(days||0));
+  return dateFromObj(d);
+}
+function dayDiff(a,b){
+  const da=dateToObj(a),db=dateToObj(b);
+  if(!da||!db)return 0;
+  return Math.round((db-da)/86400000);
+}
 
 function statusLookupKey(pair,minuteIst,code){return String(pair||'')+'\u001f'+String(minuteIst||'')+'\u001f'+String(code||'');}
 function pairKey(row){return String(row.pair_key||String(row.source||'fast')+'|'+String(row.platform_key||'')+'|'+String(row.candidate_id||'')+'|'+String(row.channel_name||''));}
@@ -195,14 +270,14 @@ function statusMetricCode(key){key=String(key||metric);return key.startsWith('st
 function isStatusMetric(key){return !!statusMetricCode(key);}
 function statusOption(code){return STATUS_OPTIONS.find(function(item){return String(item.code)===String(code);})||null;}
 function metricKey(key){key=key||metric;return key==='active_viewers'?activeIdentity().minuteKey:key;}
-function metricShort(key){const code=statusMetricCode(key);if(code)return 'HTTP '+code+' Estimated Viewers';key=key||metric;return key==='active_viewers'?'Distinct '+activeIdentity().short:(METRICS[key]?.short||'Value');}
-function metricLabel(key){const code=statusMetricCode(key);if(code)return 'Estimated viewers from HTTP '+code+' .ts requests';key=key||metric;return key==='active_viewers'?'Distinct active '+activeIdentity().label+' per minute':(METRICS[key]?.label||'Value');}
+function metricShort(key){const code=statusMetricCode(key);if(code==='200')return 'Successful Viewers';if(code)return 'HTTP '+code+' Viewers';key=key||metric;return key==='active_viewers'?'Active '+activeIdentity().short:(METRICS[key]?.short||'Value');}
+function metricLabel(key){const code=statusMetricCode(key);if(code==='200')return 'Estimated successful viewers - HTTP 200';if(code)return 'Estimated viewers from HTTP '+code+' .ts requests';key=key||metric;return key==='active_viewers'?'Active '+activeIdentity().label+' per minute':(METRICS[key]?.label||'Value');}
 function shortMeaning(text){return String(text||'').split(':')[0].replace(/\.$/,'');}
-function metricOptionLabel(key){const code=statusMetricCode(key);if(code)return 'HTTP '+code+' estimated viewers - '+shortMeaning(STATUS_MEANINGS[code]||'Observed in logs');return key==='active_viewers'?'Distinct active '+activeIdentity().label+' per minute':(METRICS[key]?.label||key);}
+function metricOptionLabel(key){const code=statusMetricCode(key);if(code==='200')return 'Successful viewers - HTTP 200';if(code)return 'HTTP '+code+' viewers - '+shortMeaning(STATUS_MEANINGS[code]||'Observed in logs');return key==='active_viewers'?'Active '+activeIdentity().label+' per minute':(METRICS[key]?.label||key);}
 function metricHelpText(){
   const code=statusMetricCode(metric);
   if(metric==='active_viewers'){
-    return '<div><b>Selected chart value:</b> Distinct active '+escapeHtml(activeIdentity().label)+' per minute.</div><span>This counts unique IDs seen in each minute. UA means unique device/app User-Agent signatures, not exact people.</span>';
+    return '<div><b>Selected chart value:</b> Active '+escapeHtml(activeIdentity().label)+' per minute.</div><span>This counts unique IDs seen in each minute. UA means unique device/app User-Agent signatures, not exact people.</span>';
   }
   if(code){
     return '<div><b>Selected chart value:</b> Estimated viewers from HTTP '+escapeHtml(code)+' .ts requests.</div><span>Formula: '+escapeHtml(code)+' .ts rows / 10 per minute. Meaning: '+escapeHtml(STATUS_MEANINGS[code]||'Observed in logs.')+'</span>';
@@ -245,10 +320,19 @@ function rowInRange(row){
   const d=String(row.log_date||'');
   return (!startDate||d>=startDate)&&(!endDate||d<=endDate);
 }
+function rowInCustomRange(row,start,end){
+  const d=String(row.log_date||'');
+  return (!start||d>=start)&&(!end||d<=end);
+}
 function rangeRows(){return minute.filter(rowInRange);}
 function filteredRows(){
-  return rangeRows().filter(function(r){
-    return (platform==='all'||platformKey(r)===platform)&&(channel==='all'||pairKey(r)===channel);
+  return filteredRowsForRange(startDate,endDate);
+}
+function filteredRowsForRange(start,end){
+  return minute.filter(function(r){
+    return rowInCustomRange(r,start,end)
+      && (platform==='all'||platformKey(r)===platform)
+      && (channel==='all'||pairKey(r)===channel);
   });
 }
 function setOptions(id,items,value){
@@ -280,6 +364,8 @@ function syncControls(){
   if(!metricItems.some(function(item){return item.value===metric;}))metric='active_viewers';
   setOptions('metricSelect',metricItems,metric);
   lineMode=setOptions('lineModeSelect',Object.keys(LINE_MODES).map(function(k){return {value:k,label:LINE_MODES[k].label};}),lineMode||'total');
+  topLimit=setOptions('topLimitSelect',TOP_LIMITS,topLimit||'10');
+  compareMode=setOptions('compareSelect',Object.keys(COMPARE_MODES).map(function(k){return {value:k,label:COMPARE_MODES[k].label};}),compareMode||'none');
   const rRows=rangeRows();
   const platforms=[{value:'all',label:'All Platforms'}].concat(Array.from(new Map(rRows.map(function(r){return [platformKey(r),{value:platformKey(r),label:String(r.platform_name||'Unknown FAST Platform')}];})).values()).sort(function(a,b){return a.label.localeCompare(b.label);}));
   platform=setOptions('platformSelect',platforms,platform||'all');
@@ -296,6 +382,8 @@ function setChannel(v){channel=v||'all';render();}
 function setIdentity(v){identity=v||'cliip';render();}
 function setMetric(v){metric=v||'active_viewers';render();}
 function setLineMode(v){lineMode=v||'total';render();}
+function setTopLimit(v){topLimit=v||'10';render();}
+function setCompareMode(v){compareMode=v||'none';render();}
 function resetFilters(){
   const days=selectedDates();
   if(days.length){
@@ -307,30 +395,72 @@ function resetFilters(){
   identity='cliip';
   metric='active_viewers';
   lineMode='total';
+  topLimit='10';
+  compareMode='none';
   render();
 }
 function lineGroups(rows){
   const maxMetric=function(items){return (items||[]).reduce(function(a,r){return Math.max(a,metricValue(r));},0);};
+  const limit=function(groups){
+    if(topLimit==='all')return groups;
+    return groups.slice(0,Math.max(1,Number(topLimit)||10));
+  };
   if(lineMode==='platform'){
     const buckets=new Map();
     (rows||[]).forEach(function(r){const key=platformKey(r);if(!buckets.has(key))buckets.set(key,{label:String(r.platform_name||'Unknown FAST Platform'),rows:[]});buckets.get(key).rows.push(r);});
-    return Array.from(buckets.values()).sort(function(a,b){return maxMetric(b.rows)-maxMetric(a.rows);});
+    return limit(Array.from(buckets.values()).sort(function(a,b){return maxMetric(b.rows)-maxMetric(a.rows);}));
   }
   if(lineMode!=='channel')return [{label:selectionLabel(),rows:rows||[]}];
   const buckets=new Map();
   (rows||[]).forEach(function(r){const key=pairKey(r);if(!buckets.has(key))buckets.set(key,{label:String(r.platform_name||'Unknown FAST Platform')+' - '+channelLabel(r,false),rows:[]});buckets.get(key).rows.push(r);});
-  return Array.from(buckets.values()).sort(function(a,b){return maxMetric(b.rows)-maxMetric(a.rows);});
+  return limit(Array.from(buckets.values()).sort(function(a,b){return maxMetric(b.rows)-maxMetric(a.rows);}));
 }
 function selectionLabel(){
   const p=document.getElementById('platformSelect').selectedOptions[0]?.textContent||'All Platforms';
   const c=document.getElementById('channelSelect').selectedOptions[0]?.textContent||'All Channels';
   return p+' / '+c;
 }
+function topLimitLabel(){return TOP_LIMITS.find(function(x){return x.value===topLimit;})?.label||'Top 10';}
+function compareRange(){
+  if(compareMode==='none'||!startDate||!endDate)return null;
+  const len=Math.max(1,dayDiff(startDate,endDate)+1);
+  if(compareMode==='same_weekday')return {start:addDays(startDate,-7),end:addDays(endDate,-7),label:'Same weekday last week'};
+  const prevEnd=addDays(startDate,-1);
+  return {start:addDays(prevEnd,-len+1),end:prevEnd,label:'Previous period'};
+}
+function timeKey(row){return String(row.minute_ist||'').slice(11,16);}
+function averageByTime(rows,label){
+  const buckets=new Map();
+  const dates=new Set();
+  (rows||[]).forEach(function(r){
+    const key=timeKey(r);
+    if(!key)return;
+    dates.add(String(r.log_date||''));
+    buckets.set(key,(buckets.get(key)||0)+metricValue(r));
+  });
+  const divisor=Math.max(1,dates.size||1);
+  return {label:label,dataMap:buckets,divisor:divisor};
+}
 function chartContextText(){
   const lineLabel=LINE_MODES[lineMode]?.label||'Total line';
-  return (startDate&&endDate?startDate+' to '+endDate:'No dates')+' | '+selectionLabel()+' | '+metricLabel()+' | '+lineLabel;
+  const compareLabel=COMPARE_MODES[compareMode]?.short||'No Compare';
+  return (startDate&&endDate?startDate+' to '+endDate:'No dates')+' | '+selectionLabel()+' | '+metricLabel()+' | '+lineLabel+' | '+topLimitLabel()+' | '+compareLabel;
 }
 function seriesFor(rows){
+  const cmp=compareRange();
+  if(cmp){
+    const selected=averageByTime(rows,'Selected: '+startDate+' to '+endDate);
+    const comparison=averageByTime(filteredRowsForRange(cmp.start,cmp.end),cmp.label+': '+cmp.start+' to '+cmp.end);
+    const minuteKeys=Array.from(new Set(Array.from(selected.dataMap.keys()).concat(Array.from(comparison.dataMap.keys())))).sort();
+    return {
+      minutes:minuteKeys,
+      labels:minuteKeys,
+      datasets:[
+        {label:selected.label,data:minuteKeys.map(function(k){return (selected.dataMap.get(k)||0)/selected.divisor;})},
+        {label:comparison.label,data:minuteKeys.map(function(k){return (comparison.dataMap.get(k)||0)/comparison.divisor;})}
+      ]
+    };
+  }
   const groups=lineGroups(rows);
   const minuteSet=new Set();
   groups.forEach(function(g){g.rows.forEach(function(r){minuteSet.add(String(r.minute_ist||''));});});
@@ -351,7 +481,7 @@ function makeLineChart(targetId,rows,expanded){
   const instance=new Chart(target,{
     type:'line',
     data:{labels:s.labels,datasets:s.datasets.map(function(ds,i){return {label:ds.label,data:ds.data,borderColor:COLORS[i%COLORS.length],backgroundColor:i===0&&s.datasets.length===1?'rgba(199,122,50,.12)':'transparent',fill:i===0&&s.datasets.length===1,tension:.18,pointRadius:0,pointHoverRadius:expanded?5:4,borderWidth:expanded?1.6:1.25,spanGaps:true};})},
-    options:{responsive:true,maintainAspectRatio:false,normalized:true,interaction:{mode:'nearest',axis:'xy',intersect:false},plugins:{legend:{display:s.datasets.length>1,position:'bottom',labels:{color:'#cbd5e1',usePointStyle:true,pointStyle:'line',boxWidth:14,font:{size:expanded?11:10}}},tooltip:{backgroundColor:'#2a2e33',borderColor:'#3a4048',borderWidth:1,titleColor:'#eef4fb',bodyColor:'#eef4fb',callbacks:{label:function(ctx){return ctx.dataset.label+': '+fmt(ctx.parsed.y,1);}}}},scales:{x:{title:{display:true,text:'Time',color:'#d0d7e2',font:{size:11,weight:'700'}},ticks:{color:'#7f8794',font:{size:expanded?11:10},maxTicksLimit:expanded?34:20,autoSkip:true},grid:{color:'#2a2d31'}},y:{title:{display:true,text:metricLabel(),color:'#d0d7e2',font:{size:11,weight:'700'}},ticks:{color:'#7f8794',font:{size:expanded?11:10},callback:function(v){return compact(v);}},grid:{color:'#2a2d31'},beginAtZero:true}}}
+    options:{responsive:true,maintainAspectRatio:false,normalized:true,interaction:{mode:'nearest',axis:'xy',intersect:false},plugins:{legend:{display:s.datasets.length>1,position:'bottom',labels:{color:UI.text,usePointStyle:true,pointStyle:'line',boxWidth:14,font:{size:expanded?11:10}}},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){return ctx.dataset.label+': '+fmt(ctx.parsed.y,1);}}}},scales:{x:{title:{display:true,text:'Time',color:UI.text,font:{size:11,weight:'700'}},ticks:{color:UI.muted,font:{size:expanded?11:10},maxTicksLimit:expanded?34:20,autoSkip:true},grid:{color:UI.grid}},y:{title:{display:true,text:metricLabel(),color:UI.text,font:{size:11,weight:'700'}},ticks:{color:UI.muted,font:{size:expanded?11:10},callback:function(v){return compact(v);}},grid:{color:UI.grid},beginAtZero:true}}}
   });
   return {chart:instance,lines:s.datasets.length};
 }
@@ -365,6 +495,139 @@ function drawChart(rows){
     expandedChart=makeLineChart('concurrencyChartExpanded',rows,true).chart;
     document.getElementById('modalContext').textContent=chartContextText();
   }
+}
+function dailyTrend(rows){
+  const minuteBuckets=new Map();
+  (rows||[]).forEach(function(r){
+    const key=String(r.log_date||'')+'\u001f'+String(r.minute_ist||'');
+    minuteBuckets.set(key,(minuteBuckets.get(key)||0)+metricValue(r));
+  });
+  const byDate=new Map();
+  minuteBuckets.forEach(function(value,key){
+    const date=key.split('\u001f')[0];
+    if(!byDate.has(date))byDate.set(date,[]);
+    byDate.get(date).push(value);
+  });
+  return Array.from(byDate.entries()).sort(function(a,b){return a[0].localeCompare(b[0]);}).map(function(item){
+    const values=item[1];
+    const total=values.reduce(function(a,v){return a+v;},0);
+    return {date:item[0],peak:values.length?Math.max.apply(null,values):0,avg:values.length?total/values.length:0,total:total};
+  });
+}
+function renderDailyTrend(rows){
+  const target=document.getElementById('dailyTrendChart');
+  if(!target||typeof Chart==='undefined')return;
+  if(dailyTrendChart){dailyTrendChart.destroy();dailyTrendChart=null;}
+  const data=dailyTrend(rows);
+  dailyTrendChart=new Chart(target,{
+    type:'line',
+    data:{labels:data.map(function(r){return formatDate(r.date);}),datasets:[
+      {label:'Daily peak '+metricShort(),data:data.map(function(r){return r.peak;}),borderColor:'#c77a32',backgroundColor:'rgba(199,122,50,.12)',fill:true,tension:.18,pointRadius:2,borderWidth:1.5},
+      {label:'Daily average '+metricShort(),data:data.map(function(r){return r.avg;}),borderColor:'#5794f2',backgroundColor:'transparent',fill:false,tension:.18,pointRadius:2,borderWidth:1.5}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,position:'bottom',labels:{color:UI.text,usePointStyle:true,pointStyle:'line',boxWidth:14,font:{size:10}}},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text}},scales:{x:{ticks:{color:UI.muted,maxTicksLimit:18},grid:{color:UI.grid}},y:{beginAtZero:true,ticks:{color:UI.muted,callback:function(v){return compact(v);}},grid:{color:UI.grid}}}}
+  });
+}
+function renderHeatmap(rows){
+  const box=document.getElementById('hourHeatmap');
+  if(!box)return;
+  const minuteBuckets=new Map();
+  (rows||[]).forEach(function(r){
+    const date=String(r.log_date||'');
+    const minute=String(r.minute_ist||'');
+    const hour=minute.slice(11,13);
+    if(!date||!hour)return;
+    const key=date+'\u001f'+hour+'\u001f'+minute;
+    minuteBuckets.set(key,(minuteBuckets.get(key)||0)+metricValue(r));
+  });
+  const hourPeaks=new Map();
+  let max=0;
+  minuteBuckets.forEach(function(value,key){
+    const parts=key.split('\u001f');
+    const hkey=parts[0]+'\u001f'+parts[1];
+    const next=Math.max(hourPeaks.get(hkey)||0,value);
+    hourPeaks.set(hkey,next);
+    max=Math.max(max,next);
+  });
+  const dates=Array.from(new Set((rows||[]).map(function(r){return String(r.log_date||'');}).filter(Boolean))).sort();
+  const hours=Array.from({length:24},function(_,i){return pad2(i);});
+  if(!dates.length){box.innerHTML='<div style="padding:14px;color:#98a2b3;font-size:12px">No rows available.</div>';return;}
+  let html='<div class="heatmap-grid" style="grid-template-columns:92px repeat(24, minmax(34px,1fr))">';
+  html+='<div class="heatmap-cell head">Date</div>'+hours.map(function(h){return '<div class="heatmap-cell head">'+h+'</div>';}).join('');
+  dates.forEach(function(d){
+    html+='<div class="heatmap-cell date">'+escapeHtml(formatDate(d))+'</div>';
+    hours.forEach(function(h){
+      const value=hourPeaks.get(d+'\u001f'+h)||0;
+      const pct=max?value/max:0;
+      const alpha=value?(.12+pct*.78):0;
+      const color=value?'rgba(199,122,50,'+alpha.toFixed(3)+')':'';
+      html+='<div class="heatmap-cell '+(value?'':'empty')+'" title="'+escapeHtml(formatDate(d)+' '+h+':00 peak '+metricShort()+': '+fmt(value,1))+'" style="'+(color?'background:'+color:'')+'">'+(value?compact(value):'')+'</div>';
+    });
+  });
+  html+='</div>';
+  box.innerHTML=html;
+}
+function groupedMetric(rows,keyFn,labelFn){
+  const buckets=new Map();
+  (rows||[]).forEach(function(r){
+    const key=keyFn(r);
+    if(!key)return;
+    if(!buckets.has(key))buckets.set(key,{key:key,label:labelFn(r),sum:0,peak:0,rows:0});
+    const item=buckets.get(key);
+    const value=metricValue(r);
+    item.sum+=value;
+    item.peak=Math.max(item.peak,value);
+    item.rows+=1;
+  });
+  return Array.from(buckets.values()).sort(function(a,b){return Number(b.sum||0)-Number(a.sum||0);});
+}
+function chartTooltip(labelSuffix){
+  return {backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){return ctx.label+': '+fmt(ctx.parsed.y==null?ctx.parsed:ctx.parsed.y,1)+(labelSuffix||'');}}};
+}
+function renderPlatformMix(rows){
+  const target=document.getElementById('platformMixChart');
+  if(!target||typeof Chart==='undefined')return;
+  if(platformMixChart){platformMixChart.destroy();platformMixChart=null;}
+  const data=groupedMetric(rows,platformKey,function(r){return String(r.platform_name||'Unknown FAST Platform');}).slice(0,10);
+  platformMixChart=new Chart(target,{
+    type:'doughnut',
+    data:{labels:data.map(function(r){return r.label;}),datasets:[{data:data.map(function(r){return r.sum;}),backgroundColor:FILLS,borderColor:'#ffffff',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom',labels:{color:UI.text,boxWidth:11,font:{size:10}}},tooltip:chartTooltip(' '+metricShort())}}
+  });
+}
+function renderChannelRank(rows){
+  const target=document.getElementById('channelRankChart');
+  if(!target||typeof Chart==='undefined')return;
+  if(channelRankChart){channelRankChart.destroy();channelRankChart=null;}
+  const data=groupedMetric(rows,pairKey,function(r){return channelLabel(r,platform==='all');}).slice(0,12).reverse();
+  channelRankChart=new Chart(target,{
+    type:'bar',
+    data:{labels:data.map(function(r){return r.label;}),datasets:[{label:'Sum '+metricShort(),data:data.map(function(r){return r.sum;}),backgroundColor:'rgba(37,99,235,.72)',borderColor:'#2563eb',borderWidth:1}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){return 'Sum '+metricShort()+': '+fmt(ctx.parsed.x,1);}}}},scales:{x:{beginAtZero:true,ticks:{color:UI.muted,callback:function(v){return compact(v);}},grid:{color:UI.grid}},y:{ticks:{color:UI.muted,font:{size:10},autoSkip:false},grid:{display:false}}}}
+  });
+}
+function statusRowsForChart(rows){
+  return STATUS_OPTIONS.map(function(item){
+    const code=String(item.code||'Unknown');
+    const total=(rows||[]).reduce(function(acc,row){return acc+Number(statusValues(row,code).rows||0);},0);
+    return {code:code,label:'HTTP '+code,value:total};
+  }).filter(function(r){return r.value>0;}).sort(function(a,b){return Number(b.value||0)-Number(a.value||0);});
+}
+function renderStatusMix(rows){
+  const target=document.getElementById('statusMixChart');
+  if(!target||typeof Chart==='undefined')return;
+  if(statusMixChart){statusMixChart.destroy();statusMixChart=null;}
+  const data=statusRowsForChart(rows).slice(0,10);
+  statusMixChart=new Chart(target,{
+    type:'doughnut',
+    data:{labels:data.map(function(r){return r.label;}),datasets:[{data:data.map(function(r){return r.value;}),backgroundColor:FILLS,borderColor:'#ffffff',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom',labels:{color:UI.text,boxWidth:11,font:{size:10}}},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){const total=ctx.dataset.data.reduce(function(a,v){return a+Number(v||0);},0);const pct=total?Number(ctx.parsed||0)*100/total:0;return ctx.label+': '+fmt(ctx.parsed)+' rows ('+fmt(pct,2)+'%)';}}}}}
+  });
+}
+function renderBreakdownCharts(rows){
+  renderPlatformMix(rows);
+  renderChannelRank(rows);
+  renderStatusMix(rows);
 }
 function openChartModal(){
   const modal=document.getElementById('chartModal');
@@ -383,7 +646,10 @@ function closeChartModal(){
   if(expandedChart){expandedChart.destroy();expandedChart=null;}
 }
 function stats(rows){
+  const previousCompareMode=compareMode;
+  compareMode='none';
   const s=seriesFor(rows);
+  compareMode=previousCompareMode;
   const values=s.datasets.flatMap(function(ds){return ds.data;});
   const peak=values.length?Math.max.apply(null,values):0;
   const avg=values.length?values.reduce(function(a,v){return a+v;},0)/values.length:0;
@@ -401,6 +667,8 @@ function renderMetrics(rows){
     mini('Platforms',platform==='all'?'All':escapeHtml(document.getElementById('platformSelect').selectedOptions[0]?.textContent||'-')),
     mini('Channels',channel==='all'?'All':escapeHtml(document.getElementById('channelSelect').selectedOptions[0]?.textContent||'-')),
     mini('Lines',escapeHtml(LINE_MODES[lineMode]?.short||'Total')),
+    mini('Top Lines',escapeHtml(topLimitLabel())),
+    mini('Compare',escapeHtml(COMPARE_MODES[compareMode]?.short||'No Compare')),
     mini('Viewer ID Basis',escapeHtml(activeIdentity().label)),
     mini('Peak '+metricShort(),fmt(st.peak,1)),
     mini('Average '+metricShort(),fmt(st.avg,1)),
@@ -511,10 +779,54 @@ function renderStatusMeaningTable(){
     {key:'status_code',label:'HTTP status code'},{key:'meaning',label:'Industry meaning'},{key:'status_ts_rows',label:'Selected .ts request rows'},{key:'status_segment_viewers_estimate',label:'Estimated viewers sum'}
   ],{status_ts_rows:num,status_segment_viewers_estimate:num1});
 }
+function csvEscape(value){
+  const text=String(value==null?'':value);
+  return /[\",\\n]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;
+}
+function downloadSelectedCsv(){
+  const rows=filteredRows();
+  const cols=[
+    ['minute_ist','Timestamp IST'],
+    ['platform_name','Platform'],
+    ['channel_name','Channel'],
+    ['candidate_id','Channel ID'],
+    ['reqHost','Host'],
+    ['unique_viewers','Active IP viewers'],
+    ['unique_ua_viewers','Active UA/device signatures'],
+    ['segment_viewers_estimate','Estimated total viewers'],
+    ['status_200_segment_viewers_estimate','Successful viewers HTTP 200'],
+    ['raw_ts_rows','All .ts request rows'],
+    ['status_200_ts_rows','HTTP 200 .ts rows']
+  ];
+  const lines=[cols.map(function(c){return csvEscape(c[1]);}).join(',')];
+  rows.forEach(function(row){
+    lines.push(cols.map(function(c){return csvEscape(row[c[0]]);}).join(','));
+  });
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='veto_concurrency_'+(startDate||'start')+'_to_'+(endDate||'end')+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function copyParquetPath(){
+  const text=D.files?.minute||'';
+  if(!text)return;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text);
+  }
+  document.getElementById('selectionText').textContent='Copied parquet path: '+text;
+}
 function render(){
   syncControls();
   const rows=filteredRows();
   drawChart(rows);
+  renderBreakdownCharts(rows);
+  renderDailyTrend(rows);
+  renderHeatmap(rows);
   renderMetrics(rows);
   renderTables(rows);
 }
@@ -522,7 +834,7 @@ document.getElementById('title').textContent=D.title||'Veto Concurrency';
 document.getElementById('rangeMeta').textContent='True data range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.last_date)+' | '+fmt(D.stats?.minute_rows||0)+' minute rows';
 document.getElementById('fullDateMeta').textContent='Full-day filter range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.latest_full_date||D.stats?.last_date)+' IST';
 document.getElementById('generatedMeta').textContent='Last updated '+formatDateTime(D.generated_at);
-document.getElementById('dataStatus').innerHTML='<span><b>Default range</b>: full completed dates only</span><span><b>Current IST date</b>: '+escapeHtml(formatDate(D.stats?.current_ist_date))+(D.stats?.current_date_hidden?' hidden from filters because it is still in progress':'')+'</span><span><b>Viewer ID Basis</b>: choose IP address or Device/App User-Agent signature.</span><span><b>Chart Value</b>: distinct active IDs, estimated viewers from all .ts requests, or estimated viewers from one HTTP status. Estimated viewers = .ts rows / 10 per minute.</span>';
+document.getElementById('dataStatus').innerHTML='<span><b>Default view</b>: latest completed day; presets exclude in-progress today</span><span><b>Current IST date</b>: '+escapeHtml(formatDate(D.stats?.current_ist_date))+(D.stats?.current_date_hidden?' hidden from filters because it is still in progress':'')+'</span><span><b>Integrity</b>: '+escapeHtml(D.stats?.integrity_status||'Check')+'</span><span><b>Viewer ID Basis</b>: choose IP address or Device/App User-Agent signature.</span><span><b>Chart Value</b>: distinct active IDs, estimated viewers from all .ts requests, or estimated viewers from one HTTP status. Estimated viewers = .ts rows / 10 per minute.</span>';
 document.getElementById('fileMeta').textContent='Source parquet: '+(D.files?.minute||'');
 document.getElementById('chartModal').addEventListener('click',function(ev){if(ev.target===this)closeChartModal();});
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape')closeChartModal();});

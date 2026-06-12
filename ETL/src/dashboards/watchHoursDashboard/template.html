@@ -147,6 +147,7 @@ tr:hover td{background:#f6f9ff}
       <button class="filter-btn active" id="presetAll" onclick="setDatePreset('all')">ALL</button>
       <button class="filter-btn" id="preset30" onclick="setDatePreset(30)">30D</button>
       <button class="filter-btn" id="preset7" onclick="setDatePreset(7)">7D</button>
+      <button class="filter-btn" id="presetYesterday" onclick="setDatePreset('yesterday')">Yesterday</button>
       <span class="filter-sep"></span>
       <input type="date" id="dateStart" onchange="handleCustomDate()"/>
       <span style="font-size:12px;color:#64748b;font-weight:700">to</span>
@@ -351,6 +352,7 @@ tr:hover td{background:#f6f9ff}
         <button class="filter-btn" id="modalAll" onclick="setModalPreset('all')">ALL</button>
         <button class="filter-btn" id="modal30" onclick="setModalPreset(30)">30D</button>
         <button class="filter-btn" id="modal7" onclick="setModalPreset(7)">7D</button>
+        <button class="filter-btn" id="modalYesterday" onclick="setModalPreset('yesterday')">Yesterday</button>
         <select class="channel-select" id="modalTrendFocus" onchange="setTrendFocus(this.value)"></select>
         <button class="filter-btn" id="modalTrendCompareBtn" onclick="setTrendFocus('compare')">Compare</button>
         <select class="channel-select compare-count" id="modalCompareCount" onchange="setCompareCount(this.value)"></select>
@@ -1299,7 +1301,7 @@ function selectedSummary() {
 }
 
 // ── Channel limit / trend controls ────────────────────────────────────────────
-function setActivePreset(id){['presetAll','preset30','preset7'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
+function setActivePreset(id){['presetAll','preset30','preset7','presetYesterday'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
 function setActiveChannelLimit(id){['channelTop10','channelTop15','channelAll'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
 function chartChannelsFrom(rows){return chartChannelLimit==='all'?rows:rows.slice(0,Number(chartChannelLimit));}
 function chartChannels(){return chartChannelsFrom(viewChannels||[]);}
@@ -1478,8 +1480,10 @@ function applyDateView(updateInputs=true){
 }
 
 function setDatePreset(mode){
-  viewDaily=mode==='all'?ALL_DAILY.slice():ALL_DAILY.slice(-Number(mode));
-  setActivePreset(mode==='all'?'presetAll':mode===30?'preset30':'preset7');
+  if(mode==='all')viewDaily=ALL_DAILY.slice();
+  else if(mode==='yesterday')viewDaily=ALL_DAILY.slice(-1);
+  else viewDaily=ALL_DAILY.slice(-Number(mode));
+  setActivePreset(mode==='all'?'presetAll':mode==='yesterday'?'presetYesterday':mode===30?'preset30':'preset7');
   applyDateView();
 }
 
@@ -1973,7 +1977,7 @@ function renderSingleChart(sourceId,targetId,expanded=false,dailyRows=null){
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
-function setActiveModalPreset(id){['modalDashboard','modalAll','modal30','modal7'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
+function setActiveModalPreset(id){['modalDashboard','modalAll','modal30','modal7','modalYesterday'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
 
 function openChartModal(id){
   if(typeof Chart==='undefined')return;
@@ -2073,6 +2077,7 @@ function setModalPreset(mode){
   if(!modalChartSourceId)return;
   if(mode==='dashboard'){modalDaily=(viewDaily||[]).slice();setActiveModalPreset('modalDashboard');}
   else if(mode==='all'){modalDaily=ALL_DAILY.slice();setActiveModalPreset('modalAll');}
+  else if(mode==='yesterday'){modalDaily=ALL_DAILY.slice(-1);setActiveModalPreset('modalYesterday');}
   else{modalDaily=ALL_DAILY.slice(-Number(mode));setActiveModalPreset(mode===30?'modal30':'modal7');}
   renderModalChart();
 }

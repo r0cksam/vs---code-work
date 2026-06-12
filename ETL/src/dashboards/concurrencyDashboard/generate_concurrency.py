@@ -260,6 +260,35 @@ def build_data(data_dir: Path, title: str) -> dict:
     if not summary.empty:
         summary = summary.sort_values(["log_date", "platform_name", "channel_name", "candidate_id"])
 
+    integrity_checks = []
+    if not minute.empty and not status_minute.empty:
+        minute_total = int(pd.to_numeric(minute.get("raw_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+        status_total = int(
+            pd.to_numeric(status_minute.get("status_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()
+        )
+        integrity_checks.append(
+            {
+                "name": "minute_vs_status_ts_rows",
+                "status": "ok" if minute_total == status_total else "mismatch",
+                "minute_total": minute_total,
+                "status_total": status_total,
+                "diff": minute_total - status_total,
+            }
+        )
+    if not minute.empty and not summary.empty:
+        minute_total = int(pd.to_numeric(minute.get("raw_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+        summary_total = int(pd.to_numeric(summary.get("raw_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+        integrity_checks.append(
+            {
+                "name": "minute_vs_summary_ts_rows",
+                "status": "ok" if minute_total == summary_total else "mismatch",
+                "minute_total": minute_total,
+                "summary_total": summary_total,
+                "diff": minute_total - summary_total,
+            }
+        )
+    integrity_status = "OK" if integrity_checks and all(item["status"] == "ok" for item in integrity_checks) else "Check"
+
     dates = (
         sorted(str(day) for day in minute["log_date"].dropna().unique())
         if not minute.empty and "log_date" in minute.columns
@@ -284,6 +313,8 @@ def build_data(data_dir: Path, title: str) -> dict:
         "pairs": int(minute[["platform_key", "candidate_id", "channel_name"]].drop_duplicates().shape[0])
         if not minute.empty and {"platform_key", "candidate_id", "channel_name"}.issubset(minute.columns)
         else 0,
+        "integrity_status": integrity_status,
+        "integrity_checks": integrity_checks,
         "peak_unique_viewers": int(pd.to_numeric(minute.get("unique_viewers", pd.Series(dtype=float)), errors="coerce").max() or 0)
         if not minute.empty
         else 0,
