@@ -17,6 +17,13 @@ __pycache__/
 *.gz
 *.log
 
+# ETL generated working data
+ETL/data/raw/
+ETL/data/stage/
+ETL/data/lake/
+ETL/output/cache/
+ETL/output/**/_duckdb_tmp/
+
 # Optional: screenshots / design refs
 SS/
 superset/
