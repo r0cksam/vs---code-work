@@ -54,6 +54,8 @@ input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 
 .tab-view.active{display:block}
 .insight-note{border:1px solid #dbe5ef;border-left:4px solid var(--gold);border-radius:8px;background:#fffdf6;color:#475569;padding:9px 11px;margin-bottom:12px;font-size:11px;line-height:1.45}
 .insight-note b{color:var(--brand)}
+.comparison-note{border:1px solid #dbe5ef;border-radius:8px;background:#f8fafc;color:#475569;padding:8px 10px;margin:0 0 8px;font-size:11px;line-height:1.35}
+.comparison-note b{color:var(--brand)}
 .insight-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px;margin-bottom:12px}
 .insight-grid{display:grid;grid-template-columns:1fr;gap:12px}
 .insight-card{background:#fff;border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
@@ -1302,10 +1304,11 @@ function compareEntityRowsToDailyAverage(currentRows,baselineDays,keyFn,labelFn,
     limit
   );
 }
-function movementTable(rows,labelName,valueHeader,previousLabel){
-  if(!rows.length)return '<div style="padding:14px;color:#98a2b3;font-size:12px">Not enough rows for this comparison.</div>';
+function movementTable(rows,labelName,valueHeader,previousLabel,comparisonText){
   valueHeader=valueHeader||'Current vs Previous';
   previousLabel=previousLabel||'Prev';
+  const comparison=comparisonText?'<div class="comparison-note"><b>Comparison:</b> '+escapeHtml(comparisonText)+'</div>':'';
+  if(!rows.length)return comparison+'<div style="padding:14px;color:#98a2b3;font-size:12px">Not enough rows for this comparison.</div>';
   const body=rows.map(function(r){
     const cls=r.delta>0?'movement-up':r.delta<0?'movement-down':'movement-flat';
     return '<tr>'+
@@ -1315,7 +1318,7 @@ function movementTable(rows,labelName,valueHeader,previousLabel){
       '<td><div class="'+cls+'">'+escapeHtml(insightChangeText(Number(r.delta||0),r.pct))+'</div></td>'+
     '</tr>';
   }).join('');
-  return '<table><thead><tr><th>#</th><th>'+escapeHtml(labelName)+'</th><th>'+escapeHtml(valueHeader)+'</th><th>Movement</th></tr></thead><tbody>'+body+'</tbody></table>';
+  return comparison+'<table><thead><tr><th>#</th><th>'+escapeHtml(labelName)+'</th><th>'+escapeHtml(valueHeader)+'</th><th>Movement</th></tr></thead><tbody>'+body+'</tbody></table>';
 }
 function nearestPreviousDay(day){
   const dates=selectedDates();
@@ -1353,9 +1356,9 @@ function renderInsights(rows){
   const weekPrevious=insightAggregate(prevWeekRows);
   const rangeCurrent=insightAggregate(rangeLastRows);
   const rangePrevious=insightDailyAverage(periods.rangeAll);
-  const dayText=periodLabel(periods.latestDay)+' vs '+periodLabel(periods.previousDay);
-  const weekText=periodLabel(periods.currentWeek)+' vs '+periodLabel(periods.previousWeek);
-  const rangeText='Latest '+periodLabel(periods.rangeLast)+' vs avg/day '+periodLabel(periods.rangeAll)+' ('+fmt(periods.rangeAll.length)+' days)';
+  const dayText='Current day '+periodLabel(periods.latestDay)+' vs previous day '+periodLabel(periods.previousDay);
+  const weekText='Current 7D '+periodLabel(periods.currentWeek)+' vs previous 7D '+periodLabel(periods.previousWeek);
+  const rangeText='Latest day '+periodLabel(periods.rangeLast)+' vs selected range avg/day '+periodLabel(periods.rangeAll)+' ('+fmt(periods.rangeAll.length)+' days)';
   const note=document.getElementById('insightNote');
   if(note){
     note.innerHTML='<b>Quick insights use the same filters:</b> '+escapeHtml(selectionLabel())+' | '+escapeHtml(metricShort())+' | '+escapeHtml(intervalLabel())+'. Values use '+escapeHtml(flashValueLabel())+'. Day and week cards compare period totals; selected-range cards compare the latest day against the selected range daily average.';
@@ -1407,12 +1410,12 @@ function renderInsights(rows){
     function(r){return String(r.channel_name||'Other');},
     20
   );
-  document.getElementById('insightDayChannel').innerHTML=movementTable(channelRows,'Channel');
-  document.getElementById('insightDayPlatform').innerHTML=movementTable(platformRows,'Platform');
-  document.getElementById('insightPlatformChannel').innerHTML=movementTable(platformChannelRows,platform==='all'?'Platform / Channel':'Channel');
-  document.getElementById('insightWeeklyChannel').innerHTML=movementTable(weeklyChannelRows,'Channel');
-  document.getElementById('insightWeeklyPlatform').innerHTML=movementTable(weeklyPlatformRows,'Platform');
-  document.getElementById('insightRangeChannel').innerHTML=movementTable(rangeAvgChannelRows,'Channel','Latest vs Range Avg','Avg/day');
+  document.getElementById('insightDayChannel').innerHTML=movementTable(channelRows,'Channel',null,null,dayText);
+  document.getElementById('insightDayPlatform').innerHTML=movementTable(platformRows,'Platform',null,null,dayText);
+  document.getElementById('insightPlatformChannel').innerHTML=movementTable(platformChannelRows,platform==='all'?'Platform / Channel':'Channel',null,null,dayText);
+  document.getElementById('insightWeeklyChannel').innerHTML=movementTable(weeklyChannelRows,'Channel',null,null,weekText);
+  document.getElementById('insightWeeklyPlatform').innerHTML=movementTable(weeklyPlatformRows,'Platform',null,null,weekText);
+  document.getElementById('insightRangeChannel').innerHTML=movementTable(rangeAvgChannelRows,'Channel','Latest vs Range Avg','Avg/day',rangeText);
 }
 function groupRows(rows,keys,sumKeys,maxKeys,firstKeys){
   const buckets=new Map();
