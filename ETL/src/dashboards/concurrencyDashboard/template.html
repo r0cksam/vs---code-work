@@ -330,6 +330,13 @@ function formatDateTime(value){
   const hour12=hour%12||12;
   return m[3]+'/'+m[2]+'/'+m[1].slice(2)+' '+pad2(hour12)+':'+m[5]+':'+(m[6]||'00')+' '+suffix;
 }
+function formatTimeOnly(value){
+  const m=String(value||'').match(/(?:^|\s)(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if(!m)return String(value||'-');
+  const hour=Number(m[1]);
+  const suffix=hour>=12?'PM':'AM';
+  return pad2(hour%12||12)+':'+m[2]+':'+(m[3]||'00')+' '+suffix;
+}
 function dateToObj(value){
   const p=String(value||'').split('-').map(Number);
   return p.length===3?new Date(Date.UTC(p[0],p[1]-1,p[2])):null;
@@ -942,11 +949,37 @@ function syncFlashRankLabel(totalChannels){
     label.textContent='Showing all '+fmt(total)+' channel'+(total===1?'':'s')+' ranked by '+flashValueLabel();
   }
 }
+function flashMetricBaseLabel(){
+  const code=statusMetricCode(metric);
+  if(metric==='active_viewers')return identity==='ua'?'UA':'cliIP';
+  if(code==='200')return 'Successful Viewer';
+  if(code)return 'HTTP '+code+' Viewer';
+  return 'Estimated Viewer';
+}
 function flashValueLabel(){
-  return 'Sum Count';
+  return 'Total '+flashMetricBaseLabel()+'-Minute Count';
+}
+function flashPeakLabel(){
+  return 'Peak '+flashMetricBaseLabel()+' / min';
 }
 function flashAverageLabel(){
-  return intervalMinutes()>1?'Avg Count / '+intervalLabel():'Avg Count / min';
+  return 'Avg '+flashMetricBaseLabel()+' / min';
+}
+function selectedWindowLabel(rows){
+  const minutes=Array.from(new Set((rows||[]).map(function(r){return String(r.minute_ist||'');}).filter(Boolean))).sort();
+  if(!minutes.length){
+    if(startDate&&endDate){
+      if(startDate===endDate)return formatDate(startDate)+', 12:00:00 AM to 11:59:59 PM IST';
+      return formatDateTime(startDate+' 00:00:00')+' to '+formatDateTime(endDate+' 23:59:59')+' IST';
+    }
+    return '-';
+  }
+  const first=minutes[0];
+  const last=minutes[minutes.length-1];
+  if(first.slice(0,10)===last.slice(0,10)){
+    return formatDate(first)+', '+formatTimeOnly(first)+' to '+formatTimeOnly(last)+' IST';
+  }
+  return formatDateTime(first)+' to '+formatDateTime(last)+' IST';
 }
 function flashGroupRows(rows,keyFn,labelFn,metaFn){
   const buckets=new Map();
@@ -972,11 +1005,11 @@ function flashCard(item,index){
   return '<article class="flash-card '+cls+'">'+
     '<div class="flash-rank">#'+(index+1)+'</div>'+
     '<div class="flash-title">'+escapeHtml(item.label||'-')+'</div>'+
-    '<div class="flash-value-label">Sum Count</div>'+
+    '<div class="flash-value-label">'+escapeHtml(flashValueLabel())+'</div>'+
     '<div class="flash-value">'+fmt(item.sum,1)+'</div>'+
     '<div class="flash-meta">'+
       '<div><b>'+escapeHtml(flashValueLabel())+'</b>'+fmt(item.sum,1)+'</div>'+
-      '<div><b>Peak Count</b>'+fmt(item.peak,1)+'</div>'+
+      '<div><b>'+escapeHtml(flashPeakLabel())+'</b>'+fmt(item.peak,1)+'</div>'+
       '<div><b>'+escapeHtml(flashAverageLabel())+'</b>'+fmt(item.avg,1)+'</div>'+
       '<div><b>Platforms</b>'+fmt(item.platform_count||0)+'</div>'+
     '</div>'+
@@ -990,10 +1023,12 @@ function renderFlashcards(rows){
   const dataDayCount=new Set((rows||[]).map(function(r){return String(r.log_date||'');}).filter(Boolean)).size;
   const platformText=document.getElementById('platformSelect').selectedOptions[0]?.textContent||'All Platforms';
   const channelText=document.getElementById('channelSelect').selectedOptions[0]?.textContent||'All Channels';
+  const windowLabel=selectedWindowLabel(rows);
   const context=document.getElementById('flashContext');
   if(context){
     context.innerHTML=[
       '<span><b>Date:</b> '+escapeHtml(startDate&&endDate?formatDate(startDate)+' to '+formatDate(endDate):'-')+'</span>',
+      '<span><b>Data Window:</b> '+escapeHtml(windowLabel)+'</span>',
       '<span><b>Days:</b> '+fmt(rangeDates.length)+(dataDayCount!==rangeDates.length?' selected, '+fmt(dataDayCount)+' with rows':'')+'</span>',
       '<span><b>Platform:</b> '+escapeHtml(platformText)+'</span>',
       '<span><b>Channel:</b> '+escapeHtml(channelText)+'</span>',
@@ -1003,7 +1038,7 @@ function renderFlashcards(rows){
   }
   const explain=document.getElementById('flashExplain');
   if(explain){
-    explain.innerHTML='<b>How to read these cards:</b> Values are concurrency counts for the selected Measure, not watch minutes or hours. Sum Count is the total of the selected metric across all minute rows in the chosen date range. Peak Count is the highest minute or interval value. '+escapeHtml(flashAverageLabel())+' is the average concurrency value per displayed time bucket.';
+    explain.innerHTML='<b>How to read these cards:</b> '+escapeHtml(flashValueLabel())+' adds every minute-level '+escapeHtml(flashMetricBaseLabel())+' count in the selected data window: '+escapeHtml(windowLabel)+'. It is not unique users, watch minutes, or watch hours. '+escapeHtml(flashPeakLabel())+' is the highest minute value; '+escapeHtml(flashAverageLabel())+' is the average minute-level concurrency.';
   }
   const allChannelsAll=flashGroupRows(
     rows,
