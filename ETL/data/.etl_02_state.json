@@ -486,5 +486,77 @@
     "rows": 11232913,
     "updated_at_utc": "2026-06-12T02:39:03.806884+00:00",
     "elapsed_sec": 14.61
+  },
+  "stream_2026_06_12": {
+    "status": "ok",
+    "signature": "0e0329b3510b094ea7406318f6a44953",
+    "source_id": "stream_2026_06_12",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=stream\\year=2026\\month=06\\day=12",
+    "output_file": "stream_2026_06_12_final_clean.parquet",
+    "dedupe_method": "bucketed_32_zstd",
+    "input_rows": 21168129,
+    "rows": 21166001,
+    "updated_at_utc": "2026-06-13T02:58:01.368596+00:00",
+    "elapsed_sec": 112.01
+  },
+  "fast_2026_06_12": {
+    "status": "ok",
+    "signature": "a9849e8c5033cb053fa0e6f0211668df",
+    "source_id": "fast_2026_06_12",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=fast\\year=2026\\month=06\\day=12",
+    "output_file": "fast_2026_06_12_final_clean.parquet",
+    "dedupe_method": "single_zstd",
+    "input_rows": 13382572,
+    "rows": 13381619,
+    "updated_at_utc": "2026-06-13T02:58:16.246464+00:00",
+    "elapsed_sec": 14.86
+  },
+  "stream_2026_06_13": {
+    "status": "ok",
+    "signature": "1670d3732a0ddb4898b376b16f21712b",
+    "source_id": "stream_2026_06_13",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=stream\\year=2026\\month=06\\day=13",
+    "output_file": "stream_2026_06_13_final_clean.parquet",
+    "dedupe_method": "bucketed_32_zstd",
+    "input_rows": 18663195,
+    "rows": 18662090,
+    "updated_at_utc": "2026-06-14T02:56:48.278452+00:00",
+    "elapsed_sec": 127.95
+  },
+  "fast_2026_06_13": {
+    "status": "ok",
+    "signature": "2fde00fc5f069e3468d1eddb298ce2be",
+    "source_id": "fast_2026_06_13",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=fast\\year=2026\\month=06\\day=13",
+    "output_file": "fast_2026_06_13_final_clean.parquet",
+    "dedupe_method": "single_zstd",
+    "input_rows": 11993016,
+    "rows": 11992657,
+    "updated_at_utc": "2026-06-14T02:57:02.366447+00:00",
+    "elapsed_sec": 14.08
+  },
+  "stream_2026_06_14": {
+    "status": "ok",
+    "signature": "f9d5ef363455e66bfa4beeff8673ef2b",
+    "source_id": "stream_2026_06_14",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=stream\\year=2026\\month=06\\day=14",
+    "output_file": "stream_2026_06_14_final_clean.parquet",
+    "dedupe_method": "bucketed_32_zstd",
+    "input_rows": 18568513,
+    "rows": 18567528,
+    "updated_at_utc": "2026-06-15T02:58:02.595672+00:00",
+    "elapsed_sec": 121.77
+  },
+  "fast_2026_06_14": {
+    "status": "ok",
+    "signature": "0f4330362a62dd2a7131f9084053191d",
+    "source_id": "fast_2026_06_14",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=fast\\year=2026\\month=06\\day=14",
+    "output_file": "fast_2026_06_14_final_clean.parquet",
+    "dedupe_method": "single_zstd",
+    "input_rows": 12182246,
+    "rows": 12181423,
+    "updated_at_utc": "2026-06-15T02:58:19.804522+00:00",
+    "elapsed_sec": 17.2
   }
 }

@@ -1137,17 +1137,128 @@
     },
     "fast|2026-06-12": {
       "date": "2026-06-12",
-      "duration_seconds": 1.784,
-      "processed_at": "2026-06-12T11:32:38",
+      "duration_seconds": 20.383,
+      "processed_at": "2026-06-13T08:40:14",
       "result": {
-        "base_rows": 641839,
+        "base_rows": 13396261,
         "rows": {
-          "cache_daily": 4,
-          "channel_daily": 8,
-          "daily": 2,
-          "geo_daily": 114,
+          "cache_daily": 5,
+          "channel_daily": 9,
+          "daily": 3,
+          "geo_daily": 155,
+          "host_daily": 11,
+          "hourly": 49,
+          "status_daily": 6,
+          "summary": 1
+        }
+      },
+      "signature": {
+        "file_count": 2,
+        "files": [
+          {
+            "bytes": 23021295,
+            "mtime_ns": 1781231952584813400,
+            "name": "part_fast_2026_06_11_0.parquet"
+          },
+          {
+            "bytes": 548499254,
+            "mtime_ns": 1781319506270188400,
+            "name": "part_fast_2026_06_12_0.parquet"
+          }
+        ],
+        "max_mtime_ns": 1781319506270188400,
+        "total_bytes": 571520549
+      },
+      "source": "fast",
+      "status": "done"
+    },
+    "fast|2026-06-13": {
+      "date": "2026-06-13",
+      "duration_seconds": 18.435,
+      "processed_at": "2026-06-14T08:38:57",
+      "result": {
+        "base_rows": 11963076,
+        "rows": {
+          "cache_daily": 12,
+          "channel_daily": 15,
+          "daily": 9,
+          "geo_daily": 155,
+          "host_daily": 18,
+          "hourly": 63,
+          "status_daily": 13,
+          "summary": 1
+        }
+      },
+      "signature": {
+        "file_count": 2,
+        "files": [
+          {
+            "bytes": 21937129,
+            "mtime_ns": 1781319506370118800,
+            "name": "part_fast_2026_06_12_0.parquet"
+          },
+          {
+            "bytes": 496972815,
+            "mtime_ns": 1781405830498352400,
+            "name": "part_fast_2026_06_13_0.parquet"
+          }
+        ],
+        "max_mtime_ns": 1781405830498352400,
+        "total_bytes": 518909944
+      },
+      "source": "fast",
+      "status": "done"
+    },
+    "fast|2026-06-14": {
+      "date": "2026-06-14",
+      "duration_seconds": 18.905,
+      "processed_at": "2026-06-15T08:40:11",
+      "result": {
+        "base_rows": 12230990,
+        "rows": {
+          "cache_daily": 6,
+          "channel_daily": 10,
+          "daily": 4,
+          "geo_daily": 155,
+          "host_daily": 14,
+          "hourly": 53,
+          "status_daily": 7,
+          "summary": 1
+        }
+      },
+      "signature": {
+        "file_count": 2,
+        "files": [
+          {
+            "bytes": 23899608,
+            "mtime_ns": 1781405830502866600,
+            "name": "part_fast_2026_06_13_0.parquet"
+          },
+          {
+            "bytes": 512608275,
+            "mtime_ns": 1781492307957698100,
+            "name": "part_fast_2026_06_14_0.parquet"
+          }
+        ],
+        "max_mtime_ns": 1781492307957698100,
+        "total_bytes": 536507883
+      },
+      "source": "fast",
+      "status": "done"
+    },
+    "fast|2026-06-15": {
+      "date": "2026-06-15",
+      "duration_seconds": 1.757,
+      "processed_at": "2026-06-15T08:40:12",
+      "result": {
+        "base_rows": 603870,
+        "rows": {
+          "cache_daily": 5,
+          "channel_daily": 9,
+          "daily": 3,
+          "geo_daily": 102,
           "host_daily": 9,
-          "hourly": 12,
+          "hourly": 13,
           "status_daily": 5,
           "summary": 1
         }
@@ -1156,13 +1267,13 @@
         "file_count": 1,
         "files": [
           {
-            "bytes": 23021295,
-            "mtime_ns": 1781231952584813400,
-            "name": "part_fast_2026_06_11_0.parquet"
+            "bytes": 21656002,
+            "mtime_ns": 1781492307975621000,
+            "name": "part_fast_2026_06_14_0.parquet"
           }
         ],
-        "max_mtime_ns": 1781231952584813400,
-        "total_bytes": 23021295
+        "max_mtime_ns": 1781492307975621000,
+        "total_bytes": 21656002
       },
       "source": "fast",
       "status": "done"
