@@ -187,7 +187,7 @@ function fmtDateTime12(value) {
   let hh = Number(m[4] || 0);
   const ap = hh >= 12 ? 'PM' : 'AM';
   hh = hh % 12 || 12;
-  return `${m[3]}-${m[2]}-${String(m[1]).slice(2)} ${String(hh).padStart(2,'0')}:${m[5] || '00'}:${m[6] || '00'} ${ap}`;
+  return `${m[3]}/${m[2]}/${String(m[1]).slice(2)} ${String(hh).padStart(2,'0')}:${m[5] || '00'}:${m[6] || '00'} ${ap} IST`;
 }
 
 function fmtDateRange12(value) {
@@ -235,7 +235,7 @@ function completeRowsForSource(src) {
 
 function usedDateRangeText() {
   return completeRows.length
-    ? `${fmtDateTime12(completeRows[0].date + ' 00:00:00')} to ${fmtDateTime12(completeRows[completeRows.length - 1].date + ' 23:59:59')} IST`
+    ? `${fmtDateTime12(completeRows[0].date + ' 00:00:00')} to ${fmtDateTime12(completeRows[completeRows.length - 1].date + ' 23:59:59')}`
     : '';
 }
 function dateStrToTs(date) {
@@ -247,7 +247,7 @@ function dateStrToTs(date) {
 function fmtDateShort(date) {
   const [y, m, d] = String(date || '').split('-').map(Number);
   if (!y || !m || !d) return String(date || '');
-  return `${String(d).padStart(2,'0')}-${String(m).padStart(2,'0')}-${String(y).slice(2)}`;
+  return `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${String(y).slice(2)}`;
 }
 
 function tsToDateStr(ts) {
@@ -480,7 +480,7 @@ function initCharts() {
 // Sync a chart's data without triggering individual updates
 function syncChartData(ch, rowsForChart, keys, update = true) {
   const len = rowsForChart.length || 1;
-  ch.data.labels = rowsForChart.map(r => r.date);
+  ch.data.labels = rowsForChart.map(r => fmtDateShort(r.date));
   keys.forEach((k, i) => {
     const total = rowsForChart.reduce((s, r) => s + Number(r[k] || 0), 0);
     ch.data.datasets[i * 2].data = rowsForChart.map(r => r[k]);
@@ -639,7 +639,7 @@ function renderTable() {
     `</tr></thead><tbody>`,
     ...viewRows.map(d => [
       `<tr>`,
-      `<td>${d.date}</td>`,
+      `<td>${fmtDateShort(d.date)}</td>`,
       dataCell(d,'bytes',   fmtData(d.bytes),  '',    scaleStats),
       dataCell(d,'rows',    fmt(d.rows),        '',    scaleStats),
       dataCell(d,'ip_rows', fmt(d.ip_rows),     '',    scaleStats),
@@ -849,7 +849,7 @@ function renderModalChart() {
   const def = chartDefs[modalChartId];
   syncChartData(modalChart, modalRows, def.keys, true);
   document.getElementById('modalRange').textContent = modalRows.length
-    ? `${modalRows[0].date} to ${modalRows[modalRows.length - 1].date} | ${modalRows.length} days`
+    ? `${fmtDateShort(modalRows[0].date)} to ${fmtDateShort(modalRows[modalRows.length - 1].date)} | ${modalRows.length} days`
     : 'No dates selected';
   const chips = [];
   def.keys.forEach(k => {

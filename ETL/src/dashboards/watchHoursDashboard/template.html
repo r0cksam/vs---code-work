@@ -49,6 +49,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .state-pill.ok{background:#ecfdf3;border-color:#bbf7d0;color:#166534}
 .state-pill.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
 .state-pill.zero{background:#f1f5f9;border-color:#d8e1ee;color:#475569}
+.state-pill.down{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.state-pill.up{background:#ecfdf3;border-color:#bbf7d0;color:#166534}
+.state-pill.flat{background:#f1f5f9;border-color:#d8e1ee;color:#475569}
 .sticky-controls{position:sticky;top:0;z-index:45;background:rgba(238,243,248,.96);backdrop-filter:blur(8px);padding:10px 0 2px;margin:-10px 0 16px}
 .sticky-controls .filter-bar{margin-bottom:8px}
 .tabs{display:flex;gap:6px;flex-wrap:nowrap;margin:0 0 8px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 1px 2px rgba(15,23,42,.05);overflow-x:auto}
@@ -177,6 +180,10 @@ tr:hover td{background:#f6f9ff}
     <div class="grid-2">
       <div class="panel"><h2>Daily Volume<span class="chart-actions"><span class="chart-sub">rows, .ts, .m3u8, errors</span><button class="expand-btn" onclick="openChartModal('dailyChart')">Expand</button></span></h2><div class="chart-box"><canvas id="dailyChart"></canvas></div></div>
       <div class="panel"><h2>Channel Trend<span class="chart-actions"><span class="chart-sub">watch hours by channel</span><button class="expand-btn" onclick="openChartModal('channelTrend')">Expand</button></span></h2><div class="chart-box channel-trend"><canvas id="channelTrend"></canvas></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><h2>Channel Row Movers<span class="chart-actions"><span class="chart-sub" id="channelRowMoverRange">selected vs previous period</span><button class="expand-btn" onclick="openChartModal('channelRowMoverChart')">Expand</button></span></h2><div class="chart-box tall channel-rank" id="channelRowMoverChartWrap"><canvas id="channelRowMoverChart"></canvas></div></div>
+      <div class="panel"><h2>Channel Row Movement<span class="count-chip" id="channelRowMoverCount"></span></h2><div class="table-wrap" id="channelRowMoverTable"></div></div>
     </div>
     <div class="grid-2">
       <div class="panel grid-span-all"><h2>All Channels<span class="chart-actions"><span class="chart-sub">long-tail watch hours</span><button class="expand-btn" onclick="openChartModal('channelBar')">Expand</button></span></h2><div class="chart-box tall channel-rank channel-rank-wide" id="channelBarWrap"><canvas id="channelBar"></canvas></div></div>
@@ -500,13 +507,30 @@ const longTailAxis = v => compactAxis(longTailRaw(v));
 const chartColor = (i,total=10) => `hsl(${Math.round(i*360/Math.max(total,1))},62%,38%)`;
 const escapeHtml = v => String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
-function fmtDateTime12(value) {
+function fmtDateOnly(value){
+  const m=String(value||'').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m?`${m[3]}/${m[2]}/${String(m[1]).slice(2)}`:String(value||'');
+}
+function fmtDateTime12(value,includeZone=true) {
   const m = String(value||'').trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
   if(!m) return String(value||'');
   let hh=Number(m[4]||0);
   const ap=hh>=12?'PM':'AM';
   hh=hh%12||12;
-  return `${m[3]}-${m[2]}-${String(m[1]).slice(2)} ${String(hh).padStart(2,'0')}:${m[5]||'00'}:${m[6]||'00'} ${ap}`;
+  const out=`${m[3]}/${m[2]}/${String(m[1]).slice(2)} ${String(hh).padStart(2,'0')}:${m[5]||'00'}:${m[6]||'00'} ${ap}`;
+  return includeZone?`${out} IST`:out;
+}
+function fmtDateRange(start,end){return start&&end?`${fmtDateOnly(start)} to ${fmtDateOnly(end)}`:'No data';}
+function fmtDateTimeRange(start,end){return start&&end?`${fmtDateTime12(start)} to ${fmtDateTime12(end)}`:'No data';}
+function fmtDisplayValue(key,value){
+  const text=String(value??'');
+  if(/^\d{4}-\d{2}-\d{2}$/.test(text))return fmtDateOnly(text);
+  if(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(text))return fmtDateTime12(text);
+  if(String(key||'').toLowerCase().includes('range')&&/^\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}$/.test(text)){
+    const parts=text.split(' to ');
+    return fmtDateRange(parts[0],parts[1]);
+  }
+  return text;
 }
 
 // ── Array helpers ─────────────────────────────────────────────────────────────
@@ -657,6 +681,82 @@ function aggregateChannels(dailyRows) {
 }
 
 // ── Per-table aggregators (all cached) ────────────────────────────────────────
+function compareDateWindows(dailyRows=viewDaily){
+  const selected=(dailyRows||[]).map(r=>String(r.log_date)).filter(Boolean).sort();
+  if(!selected.length)return {current:[],previous:[],label:'No selected date range'};
+  const all=(ALL_DAILY||[]).map(r=>String(r.log_date)).filter(Boolean).sort();
+  const first=selected[0];
+  const n=selected.length;
+  const firstIdx=all.indexOf(first);
+  let previous=firstIdx>0?all.slice(Math.max(0,firstIdx-n),firstIdx):[];
+  let current=selected;
+  let label='';
+  if(previous.length){
+    label=`Selected ${fmtDateRange(current[0],current[current.length-1])} vs previous ${fmtDateRange(previous[0],previous[previous.length-1])}`;
+  }else if(selected.length>=4){
+    const windowSize=Math.min(7,Math.floor(selected.length/2));
+    previous=selected.slice(selected.length-(windowSize*2),selected.length-windowSize);
+    current=selected.slice(-windowSize);
+    label=`Latest ${windowSize} days ${fmtDateRange(current[0],current[current.length-1])} vs previous ${windowSize} days ${fmtDateRange(previous[0],previous[previous.length-1])}`;
+  }else{
+    label='Previous comparison period is not available';
+  }
+  return {current,previous,label};
+}
+
+function channelTotalsForDates(dateList){
+  const dates=new Set(dateList||[]);
+  return groupRows(
+    sourceRows(ALL_CHANNEL_DAILY_RAW,sourceFilter).filter(r=>dates.has(String(r.log_date))),
+    ['channel_name'],
+    ['raw_ts_chunks','status_200_ts_chunks','raw_watch_hours','status_200_watch_hours','m3u8_rows'],
+    ['approx_unique_ips']
+  );
+}
+
+function channelRowMoversForDaily(dailyRows=viewDaily){
+  const cmp=compareDateWindows(dailyRows);
+  const currentDays=Math.max(cmp.current.length,1);
+  const previousDays=Math.max(cmp.previous.length,1);
+  if(!cmp.current.length||!cmp.previous.length)return {rows:[],label:cmp.label,currentDays:cmp.current.length,previousDays:cmp.previous.length};
+  const current=channelTotalsForDates(cmp.current);
+  const previous=channelTotalsForDates(cmp.previous);
+  const currentMap=new Map(current.map(r=>[String(r.channel_name||'Unknown'),r]));
+  const previousMap=new Map(previous.map(r=>[String(r.channel_name||'Unknown'),r]));
+  const names=[...new Set([...currentMap.keys(),...previousMap.keys()])].sort();
+  const currentTotal=sum(current,'raw_ts_chunks')/currentDays;
+  const previousTotal=sum(previous,'raw_ts_chunks')/previousDays;
+  const rows=names.map(name=>{
+    const cur=currentMap.get(name)||{};
+    const prev=previousMap.get(name)||{};
+    const currentAvg=Number(cur.raw_ts_chunks||0)/currentDays;
+    const previousAvg=Number(prev.raw_ts_chunks||0)/previousDays;
+    const delta=currentAvg-previousAvg;
+    const pct=previousAvg>0?delta/previousAvg*100:null;
+    return {
+      channel_name:name,
+      previous_avg_ts_rows:previousAvg,
+      selected_avg_ts_rows:currentAvg,
+      delta_avg_ts_rows:delta,
+      delta_watch_hours_day:delta*CHUNK_HOURS,
+      pct_change:pct,
+      previous_share_pct:percent(previousAvg,previousTotal),
+      selected_share_pct:percent(currentAvg,currentTotal),
+      previous_days:cmp.previous.length,
+      selected_days:cmp.current.length,
+      previous_range:cmp.previous.length?fmtDateRange(cmp.previous[0],cmp.previous[cmp.previous.length-1]):'',
+      selected_range:cmp.current.length?fmtDateRange(cmp.current[0],cmp.current[cmp.current.length-1]):'',
+      direction:delta<-0.5?'Drop':delta>0.5?'Gain':'Flat'
+    };
+  }).filter(r=>Number(r.previous_avg_ts_rows||0)>0||Number(r.selected_avg_ts_rows||0)>0);
+  rows.sort((a,b)=>Number(a.delta_avg_ts_rows)-Number(b.delta_avg_ts_rows)||a.channel_name.localeCompare(b.channel_name));
+  return {rows,label:cmp.label,currentDays:cmp.current.length,previousDays:cmp.previous.length};
+}
+
+function aggregateChannelRowMovers(){
+  return getAgg('channelRowMovers',()=>channelRowMoversForDaily(viewDaily));
+}
+
 function channelAudienceForDaily(dailyRows) {
   const dates = dailyRows || viewDaily;
   const sourceRows = rowsForDates(DAILY_TABLES.channel_audience_daily || [], dates);
@@ -822,7 +922,7 @@ function syncConcurrencyControls(dailyRows=viewDaily){
   if(compareBtn)compareBtn.classList.toggle('active',!!concurrencyCompare);
 
   const rangeText=document.getElementById('concurrencyRangeText');
-  if(rangeText)rangeText.textContent=dateRows.length?`${concurrencyStart} to ${concurrencyEnd} | ${fmt(dateRows.length)} minute rows | ${fmt(CONCURRENCY.total_minute_rows||base.length)} total aggregate rows`:'No FAST concurrency rows in selected range';
+  if(rangeText)rangeText.textContent=dateRows.length?`${fmtDateRange(concurrencyStart,concurrencyEnd)} | ${fmt(dateRows.length)} minute rows | ${fmt(CONCURRENCY.total_minute_rows||base.length)} total aggregate rows`:'No FAST concurrency rows in selected range';
 }
 
 function concurrencyFilteredRows(dailyRows=viewDaily){
@@ -1069,7 +1169,7 @@ function deviceDecodeMetricsForDaily(dailyRows=viewDaily){
 }
 function deviceProfileWindow(){
   const m=DEVICE_DECODE.manifest||{};
-  if(m.start&&m.end)return `${m.start} to ${m.end}`;
+  if(m.start&&m.end)return fmtDateRange(m.start,m.end);
   return DEVICE_DECODE.available?'Latest profile':'Not generated';
 }
 function aggregateMappingQuality(){ return getAgg('mqual',()=>topRows(groupRows(rowsForDates(DAILY_TABLES.mapping_quality_daily),['reqHost','candidate_id','channel_name','quality_bucket'],['rows','raw_ts_chunks','status_200_ts_chunks','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']),'raw_watch_hours',40)); }
@@ -1463,14 +1563,14 @@ function toggleConcurrencyCompare(){concurrencyCompare=!concurrencyCompare;rende
 function syncDateInputs(){
   document.getElementById('dateStart').value=viewDaily.length?viewDaily[0].log_date:'';
   document.getElementById('dateEnd').value=viewDaily.length?viewDaily[viewDaily.length-1].log_date:'';
-  document.getElementById('selectedRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${viewDaily[0].log_date} to ${viewDaily[viewDaily.length-1].log_date} | ${viewDaily.length} days`:`${sourceLabel(sourceFilter)} | No data in selected range`;
+  document.getElementById('selectedRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${fmtDateRange(viewDaily[0].log_date,viewDaily[viewDaily.length-1].log_date)} | ${viewDaily.length} days`:`${sourceLabel(sourceFilter)} | No data in selected range`;
 }
 
 function applyDateView(updateInputs=true){
   invalidateAggCache();
   viewChannels=aggregateChannels(viewDaily);
   if(updateInputs)syncDateInputs();
-  else document.getElementById('selectedRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${viewDaily[0].log_date} to ${viewDaily[viewDaily.length-1].log_date} | ${viewDaily.length} days`:`${sourceLabel(sourceFilter)} | No data in selected range`;
+  else document.getElementById('selectedRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${fmtDateRange(viewDaily[0].log_date,viewDaily[viewDaily.length-1].log_date)} | ${viewDaily.length} days`:`${sourceLabel(sourceFilter)} | No data in selected range`;
   renderTrendRegionOptions();
   renderTrendFocusOptions();
   renderCards(selectedSummary());
@@ -1552,6 +1652,7 @@ function focusDataset(chart,hoveredIndex,expanded=false){
 function makeLineChart(id,labels,datasets,expanded=false,longTail=false,nearestOnly=true){
   if(typeof Chart==='undefined'||!document.getElementById(id))return;
   resetChart(id);
+  const displayLabels=(labels||[]).map(v=>fmtDisplayValue('date',v));
   const baseDatasetCount=(datasets||[]).length;
   const lineDatasets=withAverageTrendLines(datasets);
   const chartSets=longTail?lineDatasets.map(ds=>{const raw=(ds.data||[]).map(v=>Number(v||0));return{...ds,originalData:raw,data:raw.map(longTailValue)};}):lineDatasets;
@@ -1564,7 +1665,7 @@ function makeLineChart(id,labels,datasets,expanded=false,longTail=false,nearestO
     ds._baseBorderWidth=ds.borderWidth;
   });
   chartInstances[id]=new Chart(document.getElementById(id),{
-    type:'line',data:{labels,datasets:chartSets},
+    type:'line',data:{labels:displayLabels,datasets:chartSets},
     options:{responsive:true,maintainAspectRatio:false,normalized:true,
       interaction:{mode:nearestOnly?'nearest':'index',axis:'xy',intersect:false},
       onHover:(e,active,chart)=>focusDataset(chart,active.length?active[0].datasetIndex:null,expanded),
@@ -1592,6 +1693,28 @@ function makeBarChart(id,labels,values,expanded=false,longTail=false,label='Raw 
     options:{indexAxis:axis,responsive:true,maintainAspectRatio:false,plugins,
       scales:horizontal?{x:valueScale,y:labelScale}:{x:labelScale,y:valueScale}}
   });
+}
+
+function makeDeltaBarChart(id,labels,values,expanded=false,label='Avg .ts row delta / day'){
+  if(typeof Chart==='undefined'||!document.getElementById(id))return;
+  resetChart(id);
+  const rawValues=values.map(v=>Number(v||0));
+  chartInstances[id]=new Chart(document.getElementById(id),{
+    type:'bar',
+    data:{labels,datasets:[{
+      label,
+      data:rawValues,
+      backgroundColor:rawValues.map(v=>v<0?'#b42318':v>0?'#0f766e':'#94a3b8'),
+      borderWidth:0
+    }]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${label}: ${fmt(ctx.parsed.x,0)} rows/day (${fmtH(Number(ctx.parsed.x||0)*CHUNK_HOURS)} hrs/day)`}}},
+      scales:{
+        x:{ticks:{callback:v=>compactAxis(v)},grid:{color:'#edf2f7'},beginAtZero:true},
+        y:{ticks:{autoSkip:false,font:{size:expanded?10:9}},grid:{display:false}}
+      }}
+  });
+  return chartInstances[id];
 }
 
 function makeGroupedBarChart(id,labels,datasets,expanded=false,unit=''){
@@ -1791,6 +1914,22 @@ function renderChannelBar(targetId='channelBar',expanded=false,channelRows=null)
   return makeBarChart(targetId,ch.map(r=>r.channel_name),ch.map(r=>r.raw_watch_hours),expanded,true,'Raw watch hours','x');
 }
 
+function channelRowMoverChartRows(moverRows,expanded=false){
+  const drops=(moverRows||[]).filter(r=>Number(r.delta_avg_ts_rows||0)<0).slice(0,expanded?30:14);
+  const gains=(moverRows||[])
+    .filter(r=>Number(r.delta_avg_ts_rows||0)>0)
+    .sort((a,b)=>Number(b.delta_avg_ts_rows||0)-Number(a.delta_avg_ts_rows||0))
+    .slice(0,expanded?30:14);
+  return drops.concat(gains);
+}
+
+function renderChannelRowMoverChart(targetId='channelRowMoverChart',expanded=false,dailyRows=null){
+  const data=dailyRows?channelRowMoversForDaily(dailyRows):aggregateChannelRowMovers();
+  const rows=channelRowMoverChartRows(data.rows,expanded);
+  if(targetId==='channelRowMoverChart')syncTallChartHeight('channelRowMoverChartWrap',rows.length,430,780);
+  return makeDeltaBarChart(targetId,rows.map(r=>r.channel_name),rows.map(r=>r.delta_avg_ts_rows),expanded,'Avg .ts rows/day change');
+}
+
 function renderChannelInsightHours(targetId='channelInsightHours',expanded=false,rows=null){
   const ch=rows||aggregateChannelAudience();
   if(targetId==='channelInsightHours')syncTallChartHeight('channelInsightHoursWrap',ch.length,430,760);
@@ -1932,6 +2071,7 @@ function renderChannelTrend(targetId='channelTrend',expanded=false,dailyRows=nul
 function renderCharts(){
   renderDailyVolume();
   renderChannelTrend();
+  renderChannelRowMoverChart();
   renderChannelBar();
   renderChannelInsightHours();
   renderChannelAverageCharts();
@@ -1958,6 +2098,7 @@ function renderSingleChart(sourceId,targetId,expanded=false,dailyRows=null){
     if(sourceId==='channelTrend')return renderChannelTrend(targetId,expanded,daily,channels);
     return renderChannelBar(targetId,expanded,channels);
   }
+  if(sourceId==='channelRowMoverChart')return renderChannelRowMoverChart(targetId,expanded,daily);
   if(sourceId==='channelInsightHours'||CHANNEL_AVG_CHARTS[sourceId]){
     const audience=channelAudienceForDaily(daily);
     if(sourceId==='channelInsightHours')return renderChannelInsightHours(targetId,expanded,audience);
@@ -1982,9 +2123,9 @@ function setActiveModalPreset(id){['modalDashboard','modalAll','modal30','modal7
 function openChartModal(id){
   if(typeof Chart==='undefined')return;
   modalChartSourceId=id;
-  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',channelGeoChart:'Selected Channel Geography',concurrencyChart:'Minute-Level Concurrency',deviceStatusChart:'Device Decode Coverage',knownDeviceChart:'Top Known Devices',unknownDeviceChart:'Top Unknown Device Codes',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split',reliabilityWatchHoursTrend:'Watch Hours By Status',reliabilityNon200Trend:'Non-200 Status Watch Hours',statusChart:'Status Codes'};
+  const titles={dailyChart:'Daily Volume',channelTrend:'Channel Trend',channelRowMoverChart:'Channel Row Movers',channelBar:'All Channels By Watch Hours',channelInsightHours:'Channel Watch Hours',channelAvgIp:'Average Minutes / IP',channelAvgSession:'Average Minutes / Session',channelAvgDevice:'Average Minutes / Device',fastPlatformChart:'FAST Platform Watch Hours',channelGeoChart:'Selected Channel Geography',concurrencyChart:'Minute-Level Concurrency',deviceStatusChart:'Device Decode Coverage',knownDeviceChart:'Top Known Devices',unknownDeviceChart:'Top Unknown Device Codes',regionInsightChart:'India State / Region Watch Hours',regionCountryChart:'Country Split',reliabilityWatchHoursTrend:'Watch Hours By Status',reliabilityNon200Trend:'Non-200 Status Watch Hours',statusChart:'Status Codes'};
   document.getElementById('modalTitle').textContent=titles[id]||'Chart';
-  const isRankModal=id==='channelBar'||id==='channelGeoChart'||id==='knownDeviceChart'||id==='unknownDeviceChart'||!!CHANNEL_AVG_CHARTS[id];
+  const isRankModal=id==='channelBar'||id==='channelRowMoverChart'||id==='channelGeoChart'||id==='knownDeviceChart'||id==='unknownDeviceChart'||!!CHANNEL_AVG_CHARTS[id];
   document.querySelector('#chartModal .chart-modal')?.classList.toggle('rank-modal',isRankModal);
   document.querySelector('#chartModal .modal-chart-wrap')?.classList.toggle('rank-modal-wrap',isRankModal);
   const isTrend=id==='channelTrend';
@@ -2021,7 +2162,7 @@ function syncModalInputs(){
   });
   document.getElementById('modalStart').value=modalDaily.length?modalDaily[0].log_date:'';
   document.getElementById('modalEnd').value=modalDaily.length?modalDaily[modalDaily.length-1].log_date:'';
-  document.getElementById('modalRange').textContent=modalDaily.length?`${modalDaily[0].log_date} to ${modalDaily[modalDaily.length-1].log_date} | ${modalDaily.length} days`:'No data in selected modal range';
+  document.getElementById('modalRange').textContent=modalDaily.length?`${fmtDateRange(modalDaily[0].log_date,modalDaily[modalDaily.length-1].log_date)} | ${modalDaily.length} days`:'No data in selected modal range';
 }
 
 function renderModalStats(){
@@ -2033,7 +2174,7 @@ function renderModalStats(){
       mini('Peak Viewers',fmt(m.peak,1)),
       mini('Average Viewers',fmt(m.avg,1)),
       mini('Minutes',fmt(m.minutes)),
-      mini('Peak Minute',escapeHtml(m.peak_minute||'-'))
+      mini('Peak Minute',escapeHtml(fmtDisplayValue('peak_minute',m.peak_minute||'-')))
     ].join('');
     return;
   }
@@ -2055,6 +2196,18 @@ function renderModalStats(){
       mini('Raw Watch Hours',fmtH(d.totalHours)),
       mini('Regions',fmt(d.regionRows.length)),
       mini('India Share',fmtPct(percent(indiaHours,d.totalHours)))
+    ].join('');
+    return;
+  }
+  if(modalChartSourceId==='channelRowMoverChart'){
+    const data=channelRowMoversForDaily(daily);
+    const biggestDrop=(data.rows||[]).find(r=>Number(r.delta_avg_ts_rows||0)<0)||{};
+    const biggestGain=(data.rows||[]).slice().sort((a,b)=>Number(b.delta_avg_ts_rows||0)-Number(a.delta_avg_ts_rows||0)).find(r=>Number(r.delta_avg_ts_rows||0)>0)||{};
+    document.getElementById('modalStats').innerHTML=[
+      mini('Comparison',escapeHtml(data.label||'-')),
+      mini('Biggest Drop',escapeHtml(biggestDrop.channel_name||'-')),
+      mini('Drop Rows / Day',fmt(biggestDrop.delta_avg_ts_rows||0)),
+      mini('Biggest Gain',escapeHtml(biggestGain.channel_name||'-'))
     ].join('');
     return;
   }
@@ -2304,7 +2457,7 @@ function renderChannelGeoPanel(channelAudienceRows=null){
   const otherHours=Math.max(0,Number(d.totalHours||0)-indiaHours);
   const unknownHours=sum(d.regionRows.filter(r=>isUnknownGeo(r.state_region)),'raw_watch_hours');
   document.getElementById('channelGeoTitle').textContent=`${selectedChannelGeo} Geography Distribution`;
-  document.getElementById('channelGeoRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${viewDaily[0].log_date} to ${viewDaily[viewDaily.length-1].log_date}`:`${sourceLabel(sourceFilter)} | No data`;
+  document.getElementById('channelGeoRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${fmtDateRange(viewDaily[0].log_date,viewDaily[viewDaily.length-1].log_date)}`:`${sourceLabel(sourceFilter)} | No data`;
   document.getElementById('channelGeoMetrics').innerHTML=[
     mini('Channel',escapeHtml(selectedChannelGeo)),
     mini('Raw Watch Hours',fmtH(d.totalHours)),
@@ -2388,7 +2541,7 @@ function setCount(id,rows,label='rows'){const el=document.getElementById(id);if(
 function table(rows,columns,formatters={}){
   if(!rows||!rows.length)return '<div style="padding:14px;color:#64748b;font-size:12px">No rows available.</div>';
   const head=`<thead><tr>${columns.map(c=>`<th${formatters[c.key]?.num?' class="num"':''}>${c.label}</th>`).join('')}</tr></thead>`;
-  const body=rows.map(r=>`<tr>${columns.map(c=>{const f=formatters[c.key];const v=r[c.key];const out=f&&f.fn?f.fn(v,r):escapeHtml(v);return `<td${f?.num?' class="num"':''}>${out}</td>`;}).join('')}</tr>`).join('');
+  const body=rows.map(r=>`<tr>${columns.map(c=>{const f=formatters[c.key];const v=r[c.key];const out=f&&f.fn?f.fn(v,r):escapeHtml(fmtDisplayValue(c.key,v));return `<td${f?.num?' class="num"':''}>${out}</td>`;}).join('')}</tr>`).join('');
   return `<table>${head}<tbody>${body}</tbody></table>`;
 }
 
@@ -2434,6 +2587,8 @@ function renderTables(){
   const cmcd=aggregateCmcd();
   const channelAudienceRows=aggregateChannelAudience();
   const fastPlatformRows=aggregateFastPlatforms();
+  const channelRowMoverData=aggregateChannelRowMovers();
+  const channelRowMoverRows=channelRowMoverData.rows||[];
   const hasConcurrencyPanel=!!document.getElementById('concurrencyMetrics');
   const concurrencySummaryTableRows=hasConcurrencyPanel?aggregateConcurrencySummary():[];
   const concurrencyMinuteRows=hasConcurrencyPanel?concurrencyFilteredRows():[];
@@ -2442,6 +2597,7 @@ function renderTables(){
   const wh={fn:v=>fmtH(v),num:true};const n={fn:v=>fmt(v),num:true};const p={fn:v=>fmtPct(v),num:true};const sample={fn:v=>clipText(v,150)};const gf={watch_hours:wh,share_pct:p,approx_unique_ips:n};
   const cnum={fn:v=>fmt(v,1),num:true};
   const statusMeaningRows=(statusRows||[]).map(r=>({statusCode:r.statusCode,meaning:r.meaning}));
+  const directionPill={fn:v=>`<span class="state-pill ${v==='Drop'?'down':v==='Gain'?'up':'flat'}">${escapeHtml(v||'Flat')}</span>`};
 
   document.getElementById('channelTable').innerHTML=table(
     viewChannels||[],
@@ -2464,6 +2620,34 @@ function renderTables(){
       ts_status:{fn:(v,row)=>channelTsStatePill(row)},
       share_pct:p,
       approx_unique_ips:n
+    }
+  );
+  const rowMoverRange=document.getElementById('channelRowMoverRange');
+  if(rowMoverRange)rowMoverRange.textContent=channelRowMoverData.label||'selected vs previous period';
+  setCount('channelRowMoverCount',channelRowMoverRows,'channels');
+  document.getElementById('channelRowMoverTable').innerHTML=table(
+    channelRowMoverRows,
+    [
+      {key:'direction',label:'Move'},
+      {key:'channel_name',label:'Channel'},
+      {key:'previous_avg_ts_rows',label:'Previous Avg .ts Rows / Day'},
+      {key:'selected_avg_ts_rows',label:'Selected Avg .ts Rows / Day'},
+      {key:'delta_avg_ts_rows',label:'Delta .ts Rows / Day'},
+      {key:'pct_change',label:'Change %'},
+      {key:'delta_watch_hours_day',label:'Watch Hour Impact / Day'},
+      {key:'previous_share_pct',label:'Previous .ts Share'},
+      {key:'selected_share_pct',label:'Selected .ts Share'}
+    ],
+    {
+      direction:directionPill,
+      channel_name:{fn:v=>channelGeoLink(v)},
+      previous_avg_ts_rows:n,
+      selected_avg_ts_rows:n,
+      delta_avg_ts_rows:{fn:v=>fmt(v),num:true},
+      pct_change:{fn:v=>v==null||isNaN(v)?'n/a':fmtPct(v),num:true},
+      delta_watch_hours_day:wh,
+      previous_share_pct:p,
+      selected_share_pct:p
     }
   );
   document.getElementById('fastPlatformTable').innerHTML=table(
@@ -2515,7 +2699,7 @@ function renderTables(){
   if(hasConcurrencyPanel){
     document.getElementById('concurrencyMetrics').innerHTML=[
       mini('Profile',CONCURRENCY.available?'Available':'Missing'),
-      mini('Date Range',escapeHtml(concurrencyStart&&concurrencyEnd?`${concurrencyStart} to ${concurrencyEnd}`:'-')),
+      mini('Date Range',escapeHtml(concurrencyStart&&concurrencyEnd?fmtDateRange(concurrencyStart,concurrencyEnd):'-')),
       mini('Platform',escapeHtml(concurrencyStat.platform_name||'-')),
       mini('Channel',escapeHtml(concurrencyStat.channel_name||'-')),
       mini('Peak Viewers',fmt(concurrencyStat.peak,1)),
@@ -2524,7 +2708,7 @@ function renderTables(){
       mini('Lines',fmt(concurrencyStat.lines||0)),
       mini('Raw TS Rows',fmt(concurrencyStat.raw_ts_rows)),
       mini('Status 200 TS Rows',fmt(concurrencyStat.status_200_ts_rows)),
-      mini('Peak Minute IST',escapeHtml(concurrencyStat.peak_minute||'-'))
+      mini('Peak Minute IST',escapeHtml(fmtDisplayValue('peak_minute',concurrencyStat.peak_minute||'-')))
     ].join('');
     document.getElementById('concurrencySummaryTable').innerHTML=table(
       concurrencySummaryTableRows,
@@ -2728,7 +2912,7 @@ function renderHeader(){
   const trueStart=sourceFilter==='all'?(D.true_data_range?.first||(allDates.length?`${allDates[0].log_date} 00:00:00`:'')):(allDates.length?`${allDates[0].log_date} 00:00:00`:'');
   const trueEnd=sourceFilter==='all'?(D.true_data_range?.last||(allDates.length?`${allDates[allDates.length-1].log_date} 23:59:59`:'')):(allDates.length?`${allDates[allDates.length-1].log_date} 23:59:59`:'');
   const usedStart=ALL_DAILY.length?fmtDateTime12(`${ALL_DAILY[0].log_date} 00:00:00`):'';
-  const usedEnd=ALL_DAILY.length?fmtDateTime12(ALL_DAILY[ALL_DAILY.length-1].log_date+' 23:59:59')+' IST':'';
+  const usedEnd=ALL_DAILY.length?fmtDateTime12(ALL_DAILY[ALL_DAILY.length-1].log_date+' 23:59:59'):'';
   document.getElementById('rangeText').textContent=trueStart&&trueEnd?`Source: ${sourceLabel(sourceFilter)} | True data range: ${fmtDateTime12(trueStart)} → ${fmtDateTime12(trueEnd)} | Used range: ${usedStart} to ${usedEnd}`:'Profile date range unavailable';
   document.getElementById('genText').textContent=`Last updated ${fmtDateTime12(D.generated_at)}`;
   document.getElementById('definitionNote').innerHTML=D.definitions.map(x=>`<div>${escapeHtml(x)}</div>`).join('');

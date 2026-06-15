@@ -180,6 +180,19 @@ function fmtMin(value){return fmtNum(value,1) + " min";}
 function fmtHoursFromMin(value){return fmtNum(n(value) / 60,1) + " hr";}
 function dateOf(value){return String(value || "").slice(0,10);}
 function timeOf(value){return String(value || "").replace("T"," ").slice(0,19);}
+function fmtDateOnly(value){
+  const m = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + "/" + m[2] + "/" + m[1].slice(2) : String(value || "");
+}
+function fmtDateRange(start,end){return start && end ? fmtDateOnly(start) + " to " + fmtDateOnly(end) : "-";}
+function fmtDateTime12(value){
+  const m = String(value || "").replace("T"," ").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if(!m) return String(value || "");
+  let hh = Number(m[4] || 0);
+  const ap = hh >= 12 ? "PM" : "AM";
+  hh = hh % 12 || 12;
+  return m[3] + "/" + m[2] + "/" + m[1].slice(2) + " " + String(hh).padStart(2,"0") + ":" + (m[5] || "00") + ":" + (m[6] || "00") + " " + ap + " IST";
+}
 function inDateRange(row, key){
   const d = dateOf(row[key || "log_date"]);
   return (!state.start || d >= state.start) && (!state.end || d <= state.end);
@@ -274,8 +287,8 @@ function barOptions(yLabel,horizontal){
 
 function initControls(){
   el("reportTitle").textContent = D.meta.title || "CLIIP Journey Dashboard";
-  el("rangeText").textContent = "True data range: " + (D.meta.min_date || "-") + " to " + (D.meta.max_date || "-") + " IST";
-  el("genText").textContent = "Last updated " + (D.meta.generated || "-");
+  el("rangeText").textContent = "True data range: " + fmtDateRange(D.meta.min_date,D.meta.max_date) + " IST";
+  el("genText").textContent = "Last updated " + fmtDateTime12(D.meta.generated || "-");
   el("dateStart").min = D.meta.min_date || "";
   el("dateStart").max = D.meta.max_date || "";
   el("dateStart").value = state.start;
@@ -290,7 +303,7 @@ function initControls(){
 
   const dates = Array.from(new Set(D.daily.map(function(row){return row.log_date;}))).sort();
   el("timelineDate").innerHTML = dates.map(function(date){
-    return "<option value=\"" + escapeHtml(date) + "\">" + escapeHtml(date) + "</option>";
+    return "<option value=\"" + escapeHtml(date) + "\">" + escapeHtml(fmtDateOnly(date)) + "</option>";
   }).join("");
   el("timelineDate").value = state.timelineDate;
 
@@ -317,7 +330,7 @@ function renderCards(rows){
     ["Rows", fmtInt(totalRows), "playlist " + fmtInt(sum(rows,"playlist_rows")) + " | ts " + fmtInt(sum(rows,"ts_rows")), "gold"],
     ["Non-200 Rows", fmtInt(sum(rows,"non_200_rows")), "status 200 rows " + fmtInt(sum(rows,"status_200_rows")), "red"],
     ["Channels", fmtInt(uniqueCount(rows,"channel_name")), state.channel === "all" ? "all selected" : state.channel, "violet"],
-    ["Days", fmtInt(uniqueCount(rows,"log_date")), state.start + " to " + state.end, ""],
+    ["Days", fmtInt(uniqueCount(rows,"log_date")), fmtDateRange(state.start,state.end), ""],
     ["Journey Segments", fmtInt(D.segment_stats.segment_count), "top list embedded " + fmtInt(D.meta.top_segments_limit), "teal"]
   ];
   el("summaryCards").innerHTML = cards.map(function(card){
@@ -331,7 +344,7 @@ function renderDailyChart(rows){
   makeChart("dailyChart",{
     type:"line",
     data:{
-      labels:labels,
+      labels:labels.map(fmtDateOnly),
       datasets:[
         {label:metricLabels[state.metric],data:labels.map(function(d){return sum(byDate[d] || [],state.metric);}),borderColor:palette[0],backgroundColor:"rgba(23,59,92,.12)",tension:.25,pointRadius:2,fill:true,yAxisID:"y"},
         {label:"Rows",data:labels.map(function(d){return sum(byDate[d] || [],"row_count");}),borderColor:palette[2],backgroundColor:"rgba(181,133,23,.12)",tension:.25,pointRadius:2,yAxisID:"y1"}
@@ -356,7 +369,7 @@ function renderDailySwitchChart(){
   const rows = D.daily_switches.filter(function(row){return inDateRange(row,"log_date");});
   makeChart("switchDailyChart",{
     type:"line",
-    data:{labels:rows.map(function(row){return row.log_date;}),datasets:[
+    data:{labels:rows.map(function(row){return fmtDateOnly(row.log_date);}),datasets:[
       {label:"Channel switches",data:rows.map(function(row){return n(row.channel_switches);}),borderColor:palette[3],backgroundColor:"rgba(91,85,163,.12)",tension:.25,pointRadius:2,fill:true},
       {label:"Segments",data:rows.map(function(row){return n(row.segment_count);}),borderColor:palette[4],backgroundColor:"rgba(180,35,24,.08)",tension:.25,pointRadius:2}
     ]},
@@ -412,7 +425,7 @@ function renderHeatmap(rows){
   for(let h=0; h<24; h++) html += "<th>" + String(h).padStart(2,"0") + "</th>";
   html += "</tr></thead><tbody>";
   dates.forEach(function(date){
-    html += "<tr><td class=\"row-head\">" + escapeHtml(date) + "</td>";
+    html += "<tr><td class=\"row-head\">" + escapeHtml(fmtDateOnly(date)) + "</td>";
     for(let h=0; h<24; h++){
       const value = matrix[date] && matrix[date][h] ? matrix[date][h] : 0;
       const intensity = maxVal ? Math.min(.92, value / maxVal) : 0;
@@ -480,14 +493,14 @@ function renderTables(rows){
   const detailRows = sortMetric(rows);
   el("dateChannelCount").textContent = fmtInt(detailRows.length) + " rows";
   table("dateChannelTable",detailRows,[
-    {label:"Date",value:function(r){return escapeHtml(r.log_date);}},
+    {label:"Date",value:function(r){return escapeHtml(fmtDateOnly(r.log_date));}},
     {label:"Channel",value:function(r){return escapeHtml(r.channel_name);}},
     {label:metricLabels[state.metric],num:true,value:function(r){return fmtNum(r[state.metric],2);}},
     {label:"Raw Min",num:true,value:function(r){return fmtNum(r.raw_watch_minutes,1);}},
     {label:"Status 200 Min",num:true,value:function(r){return fmtNum(r.status_200_watch_minutes,1);}},
     {label:"Rows",num:true,value:function(r){return fmtInt(r.row_count);}},
-    {label:"First Seen",value:function(r){return escapeHtml(timeOf(r.first_seen_ist));}},
-    {label:"Last Seen",value:function(r){return escapeHtml(timeOf(r.last_seen_ist));}},
+    {label:"First Seen",value:function(r){return escapeHtml(fmtDateTime12(r.first_seen_ist));}},
+    {label:"Last Seen",value:function(r){return escapeHtml(fmtDateTime12(r.last_seen_ist));}},
     {label:"Host",path:true,value:function(r){return escapeHtml(r.sample_reqHost);}},
     {label:"Path",path:true,value:function(r){return escapeHtml(r.sample_reqPath);}}
   ],1000);
@@ -519,8 +532,8 @@ function renderSegments(){
     " | max raw segment: " + fmtMin(stats.max_segment_raw_minutes) + ".";
   el("segmentCount").textContent = fmtInt(rows.length) + " embedded rows";
   table("segmentTable",rows,[
-    {label:"Start",value:function(r){return escapeHtml(timeOf(r.start_time_ist));}},
-    {label:"End",value:function(r){return escapeHtml(timeOf(r.end_time_ist));}},
+    {label:"Start",value:function(r){return escapeHtml(fmtDateTime12(r.start_time_ist));}},
+    {label:"End",value:function(r){return escapeHtml(fmtDateTime12(r.end_time_ist));}},
     {label:"Channel",value:function(r){return escapeHtml(r.channel_name);}},
     {label:"Raw Min",num:true,value:function(r){return fmtNum(r.raw_watch_minutes,2);}},
     {label:"Status 200 Min",num:true,value:function(r){return fmtNum(r.status_200_watch_minutes,2);}},
@@ -539,7 +552,7 @@ function renderFiles(){
   const inputRows = [
     {key:"Input folder",value:D.meta.input_dir || ""},
     {key:"Raw parquet",value:D.meta.input_raw_parquet || ""},
-    {key:"Date range",value:(D.meta.min_date || "") + " to " + (D.meta.max_date || "")},
+    {key:"Date range",value:fmtDateRange(D.meta.min_date,D.meta.max_date)},
     {key:"Gap seconds",value:D.meta.gap_seconds == null ? "" : String(D.meta.gap_seconds)},
     {key:"Bucket minutes",value:D.meta.bucket_minutes == null ? "" : String(D.meta.bucket_minutes)}
   ];
@@ -550,7 +563,7 @@ function renderFiles(){
   table("fileTable",D.files,[
     {label:"File",value:function(r){return "<a href=\"" + encodeURI(r.relative_path) + "\">" + escapeHtml(r.name) + "</a>";}},
     {label:"Size MB",num:true,value:function(r){return fmtNum(r.size_mb,3);}},
-    {label:"Updated",value:function(r){return escapeHtml(r.updated);}},
+    {label:"Updated",value:function(r){return escapeHtml(fmtDateTime12(r.updated));}},
     {label:"Full Path",path:true,value:function(r){return escapeHtml(r.path);}}
   ],100);
 }

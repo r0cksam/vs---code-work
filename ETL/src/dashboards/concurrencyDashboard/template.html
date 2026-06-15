@@ -78,6 +78,7 @@ input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 
 .chart-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
 .chart-heading h2{margin:0}.chart-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .chart-box{height:clamp(520px,68vh,820px);background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;position:relative;overflow:hidden}
+.rank-chart-box{height:clamp(360px,48vh,560px)}
 body.rendering .chart-box::after{content:'Updating chart...';position:absolute;inset:0;background:rgba(255,255,255,.82);color:var(--brand);font-size:12px;font-weight:850;display:flex;align-items:center;justify-content:center;z-index:5;backdrop-filter:blur(2px)}
 .render-overlay{position:fixed;right:18px;bottom:18px;z-index:120;background:var(--brand);color:#fff;border-bottom:3px solid var(--gold);border-radius:8px;padding:10px 12px;box-shadow:0 14px 40px rgba(15,23,42,.25);font-size:12px;font-weight:850;display:none;align-items:center;gap:9px}
 .render-overlay.active{display:flex}
@@ -109,6 +110,14 @@ body.rendering .chart-box::after{content:'Updating chart...';position:absolute;i
 .rank-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid #edf2f7;font-size:11px}
 .rank-row:last-child{border-bottom:0}
 .rank-row .name{font-weight:750;overflow-wrap:anywhere}.rank-row .value{font-weight:850;color:var(--brand);font-variant-numeric:tabular-nums}
+.chart-detail-list{border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:10px;overflow:auto;max-height:260px}
+.chart-detail-row{display:grid;grid-template-columns:28px minmax(0,1fr) minmax(92px,auto) minmax(74px,auto);gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #edf2f7;font-size:11px}
+.chart-detail-row:last-child{border-bottom:0}
+.chart-detail-row.header{position:sticky;top:0;z-index:2;background:#f8fafc;color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase}
+.chart-detail-name{font-weight:800;color:var(--ink);overflow-wrap:anywhere}
+.chart-detail-value,.chart-detail-share{text-align:right;font-weight:850;color:var(--brand);font-variant-numeric:tabular-nums}
+.chart-detail-share{color:#475569}
+.chart-swatch{width:11px;height:11px;border-radius:3px;border:1px solid rgba(15,23,42,.12)}
 canvas{width:100%!important;height:100%!important}
 .chart-modal{position:fixed;inset:0;background:rgba(7,8,10,.9);z-index:100;display:none;padding:18px}
 .chart-modal.open{display:flex}
@@ -133,8 +142,28 @@ tr:hover td{background:#f8fafc}
 .heatmap-cell.date{justify-content:flex-start;padding-left:6px;color:#334155;background:#f1f5f9;min-width:92px}
 .heatmap-cell.empty{background:#f8fafc;color:#94a3b8}
 .heatmap-cell:hover{outline:1px solid var(--gold);z-index:2}
+.heatmap.fit-panel{overflow:hidden}
+.heatmap.fit-panel .heatmap-grid{min-width:0}
+.heatmap.fit-panel .heatmap-cell{min-width:0;font-size:clamp(7px,.55vw,10px);padding:0 1px}
+.heatmap.fit-panel .heatmap-cell.date{min-width:0;font-size:clamp(8px,.62vw,10px);padding-left:4px}
+.fit-table-wrap{overflow-x:hidden;max-height:560px}
+.fit-table-wrap table{min-width:0;table-layout:fixed;font-size:10px}
+.fit-table-wrap th,.fit-table-wrap td{white-space:normal;overflow-wrap:anywhere;padding:6px 5px;line-height:1.2}
+.fit-table-wrap th{font-size:9px}
+.fit-table-wrap .num{font-size:10px}
+#summaryTable table th:nth-child(1),#summaryTable table td:nth-child(1){width:13%}
+#summaryTable table th:nth-child(2),#summaryTable table td:nth-child(2){width:17%}
+#summaryTable table th:nth-child(3),#summaryTable table td:nth-child(3),
+#summaryTable table th:nth-child(4),#summaryTable table td:nth-child(4),
+#summaryTable table th:nth-child(5),#summaryTable table td:nth-child(5){width:8%}
+#summaryTable table th:nth-child(n+6),#summaryTable table td:nth-child(n+6){width:7%}
+#summaryTable table th:nth-child(13),#summaryTable table td:nth-child(13){width:12%}
+#peakTable table th:nth-child(1),#peakTable table td:nth-child(1){width:20%}
+#peakTable table th:nth-child(2),#peakTable table td:nth-child(2),
+#peakTable table th:nth-child(3),#peakTable table td:nth-child(3){width:12%}
+#peakTable table th:nth-child(n+4),#peakTable table td:nth-child(n+4){width:9%}
 .footer{padding:12px 0 0;color:#7f8794;text-align:center;font-size:10px}
-@media(max-width:900px){.wrap{padding:12px}.sticky-controls{max-height:60vh;overflow:auto;margin:-6px 0 12px}.topbar .sub{text-align:left}.range-text{width:100%;margin-left:0}.filter-sep{display:none}.filter-group,.filter-group.unified-filter,.filter-group.compact{width:100%;flex-basis:100%}.filter-actions{width:100%;margin-left:0}.quick-buttons,.date-inputs,.segmented{width:100%}.seg-btn{flex:1 1 30%;min-width:0}.chart-box{height:470px}.chart-modal{padding:8px}select.wide,input[type="date"],select{min-width:100%;width:100%}}
+@media(max-width:900px){.wrap{padding:12px}.sticky-controls{max-height:60vh;overflow:auto;margin:-6px 0 12px}.topbar .sub{text-align:left}.range-text{width:100%;margin-left:0}.filter-sep{display:none}.filter-group,.filter-group.unified-filter,.filter-group.compact{width:100%;flex-basis:100%}.filter-actions{width:100%;margin-left:0}.quick-buttons,.date-inputs,.segmented{width:100%}.seg-btn{flex:1 1 30%;min-width:0}.chart-box{height:470px}.rank-chart-box{height:430px}.chart-modal{padding:8px}.fit-table-wrap table{font-size:9px}.fit-table-wrap th{font-size:8px}.fit-table-wrap th,.fit-table-wrap td{padding:5px 4px}select.wide,input[type="date"],select{min-width:100%;width:100%}}
 </style>
 </head>
 <body>
@@ -244,19 +273,27 @@ tr:hover td{background:#f8fafc}
     <h2>HTTP Status Code Reference</h2>
     <div class="table-wrap" id="statusMeaningTable"></div>
   </div>
-  <div class="grid-3">
+  <div class="grid-2">
     <div class="panel">
       <div class="chart-heading"><h2>Platform Mix</h2></div>
       <div class="chart-box" style="height:340px"><canvas id="platformMixChart"></canvas></div>
-    </div>
-    <div class="panel">
-      <div class="chart-heading"><h2>Channel Ranking</h2></div>
-      <div class="chart-box" style="height:340px"><canvas id="channelRankChart"></canvas></div>
+      <div class="chart-detail-list" id="platformMixDetails"></div>
     </div>
     <div class="panel">
       <div class="chart-heading"><h2>HTTP Status Mix</h2></div>
       <div class="chart-box" style="height:340px"><canvas id="statusMixChart"></canvas></div>
+      <div class="chart-detail-list" id="statusMixDetails"></div>
     </div>
+  </div>
+  <div class="panel">
+    <div class="chart-heading">
+      <h2>Channel Ranking</h2>
+      <div class="chart-actions">
+        <button class="btn" onclick="openChannelRankModal()">Expand</button>
+      </div>
+    </div>
+    <div class="chart-box rank-chart-box"><canvas id="channelRankChart"></canvas></div>
+    <div class="chart-detail-list" id="channelRankDetails"></div>
   </div>
   <div class="grid-2">
     <div class="panel">
@@ -265,12 +302,12 @@ tr:hover td{background:#f8fafc}
     </div>
     <div class="panel">
       <h2>Hour Of Day Heatmap</h2>
-      <div class="heatmap" id="hourHeatmap"></div>
+      <div class="heatmap fit-panel" id="hourHeatmap"></div>
     </div>
   </div>
   <div class="grid-2">
-    <div class="panel"><h2>Concurrency Summary</h2><div class="table-wrap" id="summaryTable"></div></div>
-    <div class="panel"><h2>Peak Minutes</h2><div class="table-wrap" id="peakTable"></div></div>
+    <div class="panel"><h2>Concurrency Summary</h2><div class="table-wrap fit-table-wrap" id="summaryTable"></div></div>
+    <div class="panel"><h2>Peak Minutes</h2><div class="table-wrap fit-table-wrap" id="peakTable"></div></div>
   </div>
   <div class="footer" id="fileMeta"></div>
   </div>
@@ -309,7 +346,29 @@ tr:hover td{background:#f8fafc}
 <script>
 const D = $DATA_BLOB;
 const COLORS=['#173b5c','#b58517','#0f766e','#5b55a3','#1f6f8b','#2f6b2f','#b42318','#64748b','#7c3aed','#c05600','#0e7490','#92400e'];
-const FILLS=['rgba(23,59,92,.76)','rgba(181,133,23,.76)','rgba(15,118,110,.76)','rgba(91,85,163,.76)','rgba(31,111,139,.76)','rgba(47,107,47,.76)','rgba(180,35,24,.76)','rgba(100,116,139,.76)','rgba(124,58,237,.70)','rgba(192,86,0,.70)'];
+const PLATFORM_FILLS=['#2563EB','#F59E0B','#10B981','#EF4444','#8B5CF6','#06B6D4','#84CC16','#F97316','#EC4899','#64748B','#14B8A6','#A16207'];
+const FILLS=PLATFORM_FILLS;
+const STATUS_CODE_FILLS={
+  '000':'#64748B',
+  '200':'#16A34A',
+  '206':'#0891B2',
+  '301':'#2563EB',
+  '302':'#7C3AED',
+  '304':'#475569',
+  '400':'#EAB308',
+  '401':'#DB2777',
+  '403':'#F97316',
+  '404':'#A16207',
+  '408':'#0F766E',
+  '429':'#9333EA',
+  '500':'#DC2626',
+  '501':'#1D4ED8',
+  '502':'#EC4899',
+  '503':'#65A30D',
+  '504':'#BE123C',
+  'Unknown':'#334155'
+};
+const STATUS_FALLBACK_FILLS=['#16A34A','#0891B2','#2563EB','#7C3AED','#EAB308','#DB2777','#F97316','#A16207','#0F766E','#9333EA','#DC2626','#1D4ED8','#EC4899','#65A30D','#BE123C','#64748B'];
 const UI={text:'#172033',muted:'#667085',grid:'#e6edf5',tooltipBg:'#ffffff',tooltipBorder:'#cbd5e1'};
 const VIEWER_IDENTITIES={
   cliip:{label:'IP address (cliIP)',short:'IP addresses',minuteKey:'unique_viewers',avgKey:'avg_unique_viewers',peakKey:'peak_unique_viewers',peakMinuteKey:'peak_unique_viewers_minute_ist'},
@@ -383,7 +442,7 @@ function formatDateTime(value){
   const hour=Number(m[4]);
   const suffix=hour>=12?'PM':'AM';
   const hour12=hour%12||12;
-  return m[3]+'/'+m[2]+'/'+m[1].slice(2)+' '+pad2(hour12)+':'+m[5]+':'+(m[6]||'00')+' '+suffix;
+  return m[3]+'/'+m[2]+'/'+m[1].slice(2)+' '+pad2(hour12)+':'+m[5]+':'+(m[6]||'00')+' '+suffix+' IST';
 }
 function formatTimeOnly(value){
   const m=String(value||'').match(/(?:^|\s)(\d{2}):(\d{2})(?::(\d{2}))?/);
@@ -391,6 +450,17 @@ function formatTimeOnly(value){
   const hour=Number(m[1]);
   const suffix=hour>=12?'PM':'AM';
   return pad2(hour%12||12)+':'+m[2]+':'+(m[3]||'00')+' '+suffix;
+}
+function formatDateRange(start,end){return start&&end?formatDate(start)+' to '+formatDate(end):'No dates';}
+function formatDisplayValue(key,value){
+  const text=String(value??'');
+  if(/^\d{4}-\d{2}-\d{2}$/.test(text))return formatDate(text);
+  if(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(text))return formatDateTime(text);
+  if(String(key||'').toLowerCase().includes('range')&&/^\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}$/.test(text)){
+    const parts=text.split(' to ');
+    return formatDateRange(parts[0],parts[1]);
+  }
+  return text;
 }
 function dateToObj(value){
   const p=String(value||'').split('-').map(Number);
@@ -460,6 +530,44 @@ function statusMetricCode(key){key=String(key||metric);return key.startsWith('st
 function metricKey(key){key=key||metric;return key==='active_viewers'?activeIdentity().minuteKey:key;}
 function metricShort(key){const code=statusMetricCode(key);if(code==='200')return 'Successful Viewers';if(code)return 'HTTP '+code+' Viewers';key=key||metric;return key==='active_viewers'?'Active '+activeIdentity().short:(METRICS[key]?.short||'Value');}
 function metricLabel(key){const code=statusMetricCode(key);if(code==='200')return 'Estimated successful viewers - HTTP 200';if(code)return 'Estimated viewers from HTTP '+code+' .ts requests';key=key||metric;return key==='active_viewers'?'Active '+activeIdentity().label+' per minute':(METRICS[key]?.label||'Value');}
+function colorToRgba(color,alpha){
+  const hex=String(color||'').replace('#','');
+  if(hex.length!==6)return color;
+  const r=parseInt(hex.slice(0,2),16);
+  const g=parseInt(hex.slice(2,4),16);
+  const b=parseInt(hex.slice(4,6),16);
+  if(!Number.isFinite(r)||!Number.isFinite(g)||!Number.isFinite(b))return color;
+  return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
+function trimAxisLabel(value,maxLen){
+  const text=String(value||'');
+  return text.length>maxLen?text.slice(0,maxLen-1)+'...':text;
+}
+function slimHorizontalBarDataset(label,data,color){
+  return {
+    label:label,
+    data:data,
+    backgroundColor:colorToRgba(color,.74),
+    borderColor:colorToRgba(color,.96),
+    borderWidth:1,
+    borderRadius:999,
+    borderSkipped:false,
+    barThickness:8,
+    maxBarThickness:10,
+    minBarLength:2,
+    hoverBackgroundColor:colorToRgba(color,.92)
+  };
+}
+function fitChartBoxHeight(id,count,opts){
+  const canvas=document.getElementById(id);
+  const box=canvas&&canvas.parentElement;
+  if(!box)return;
+  const row=opts&&opts.row?opts.row:18;
+  const min=opts&&opts.min?opts.min:210;
+  const max=opts&&opts.max?opts.max:340;
+  const chrome=opts&&opts.chrome?opts.chrome:72;
+  box.style.height=Math.round(Math.max(min,Math.min(max,chrome+(Math.max(count,1)*row))))+'px';
+}
 function shortMeaning(text){return String(text||'').split(':')[0].replace(/\.$/,'');}
 function metricOptionLabel(key){const code=statusMetricCode(key);if(code==='200')return 'Successful viewers - HTTP 200';if(code)return 'HTTP '+code+' viewers - '+shortMeaning(STATUS_MEANINGS[code]||'Observed in logs');return key==='active_viewers'?'Active '+activeIdentity().label+' per minute':(METRICS[key]?.label||key);}
 function metricOptions(){
@@ -590,7 +698,7 @@ function syncControls(){
   const selectedRows=filteredRowsForRange(startDate,endDate);
   const platformText=document.getElementById('platformSelect').selectedOptions[0]?.textContent||'All Platforms';
   const channelText=document.getElementById('channelSelect').selectedOptions[0]?.textContent||'All Channels';
-  document.getElementById('selectionText').textContent=(startDate&&endDate?formatDate(startDate)+' to '+formatDate(endDate):'No dates')+' | '+platformText+' | '+channelText+' | '+intervalLabel()+' interval | '+fmt(selectedRows.length)+' minute rows';
+  document.getElementById('selectionText').textContent=(startDate&&endDate?formatDateRange(startDate,endDate):'No dates')+' | '+platformText+' | '+channelText+' | '+intervalLabel()+' interval | '+fmt(selectedRows.length)+' minute rows';
 }
 function setDateRange(){startDate=document.getElementById('dateStart').value||startDate;endDate=document.getElementById('dateEnd').value||endDate;if(startDate>endDate){const t=startDate;startDate=endDate;endDate=t;}render();}
 function setPreset(mode){const days=selectedDates();if(!days.length)return;if(mode==='latest'){startDate=days[days.length-1];endDate=days[days.length-1];}else if(mode==='all'){startDate=days[0];endDate=days[days.length-1];}else{const selected=days.slice(-Number(mode));startDate=selected[0]||days[0];endDate=selected[selected.length-1]||days[days.length-1];}render();}
@@ -665,17 +773,17 @@ function averageByTime(rows,label){
 function chartContextText(){
   const lineLabel=LINE_MODES[lineMode]?.label||'Total line';
   const compareLabel=COMPARE_MODES[compareMode]?.short||'No Compare';
-  return (startDate&&endDate?formatDate(startDate)+' to '+formatDate(endDate):'No dates')+' | '+selectionLabel()+' | '+intervalMetricLabel()+' | '+lineLabel+' | '+compareLabel;
+  return (startDate&&endDate?formatDateRange(startDate,endDate):'No dates')+' | '+selectionLabel()+' | '+intervalMetricLabel()+' | '+lineLabel+' | '+compareLabel;
 }
 function platformChannelContextText(){
   const scale=PLATFORM_CHANNEL_SCALES[platformChannelScale]?.label||'Movement index';
-  return (startDate&&endDate?formatDate(startDate)+' to '+formatDate(endDate):'No dates')+' | '+selectionLabel()+' | '+intervalMetricLabel()+' | '+scale;
+  return (startDate&&endDate?formatDateRange(startDate,endDate):'No dates')+' | '+selectionLabel()+' | '+intervalMetricLabel()+' | '+scale;
 }
 function seriesFor(rows){
   const cmp=compareRange();
   if(cmp){
-    const selected=averageByTime(rows,'Selected: '+formatDate(startDate)+' to '+formatDate(endDate));
-    const comparison=averageByTime(filteredRowsForRange(cmp.start,cmp.end),cmp.label+': '+formatDate(cmp.start)+' to '+formatDate(cmp.end));
+    const selected=averageByTime(rows,'Selected: '+formatDateRange(startDate,endDate));
+    const comparison=averageByTime(filteredRowsForRange(cmp.start,cmp.end),cmp.label+': '+formatDateRange(cmp.start,cmp.end));
     const minuteKeys=Array.from(new Set(Array.from(selected.dataMap.keys()).concat(Array.from(comparison.dataMap.keys())))).sort();
     return {
       minutes:minuteKeys,
@@ -867,7 +975,7 @@ function renderHeatmap(rows){
   const dates=Array.from(new Set((rows||[]).map(function(r){return String(r.log_date||'');}).filter(Boolean))).sort();
   const hours=Array.from({length:24},function(_,i){return pad2(i);});
   if(!dates.length){box.innerHTML='<div style="padding:14px;color:#98a2b3;font-size:12px">No rows available.</div>';return;}
-  let html='<div class="heatmap-grid" style="grid-template-columns:92px repeat(24, minmax(34px,1fr))">';
+  let html='<div class="heatmap-grid" style="grid-template-columns:76px repeat(24, minmax(0,1fr))">';
   html+='<div class="heatmap-cell head">Date</div>'+hours.map(function(h){return '<div class="heatmap-cell head">'+h+'</div>';}).join('');
   dates.forEach(function(d){
     html+='<div class="heatmap-cell date">'+escapeHtml(formatDate(d))+'</div>';
@@ -899,27 +1007,144 @@ function groupedMetric(rows,keyFn,labelFn){
 function chartTooltip(labelSuffix){
   return {backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){return ctx.label+': '+fmt(ctx.parsed.y==null?ctx.parsed:ctx.parsed.y,1)+(labelSuffix||'');}}};
 }
+function fillColor(index){
+  return FILLS[index%FILLS.length]||colorToRgba(COLORS[index%COLORS.length],.76);
+}
+function platformFillColor(index){
+  return PLATFORM_FILLS[index%PLATFORM_FILLS.length]||fillColor(index);
+}
+function statusFillColor(code,index){
+  const key=String(code||'Unknown');
+  return STATUS_CODE_FILLS[key]||STATUS_FALLBACK_FILLS[index%STATUS_FALLBACK_FILLS.length];
+}
+function percentLabel(value,total){
+  if(!total)return '0.0%';
+  const pct=Number(value||0)*100/Number(total||0);
+  return (pct>0&&pct<0.1?'<0.1':fmt(pct,1))+'%';
+}
+function statusVisualValues(data){
+  const values=data.map(function(r){return Number(r.value||0);});
+  const total=values.reduce(function(a,v){return a+v;},0);
+  const positive=values.filter(function(v){return v>0;}).length;
+  if(!total||positive<2)return values;
+  const minShare=Math.min(0.025,Math.max(0.008,0.16/positive));
+  const minValue=total*minShare;
+  return values.map(function(v){return v>0&&v<minValue?minValue:v;});
+}
+function emptyDetail(message){
+  return '<div style="padding:12px;color:#667085;font-size:12px">'+escapeHtml(message||'No rows available.')+'</div>';
+}
+function renderStatusMixDetails(data){
+  const box=document.getElementById('statusMixDetails');
+  if(!box)return;
+  const total=data.reduce(function(a,r){return a+Number(r.value||0);},0);
+  if(!data.length){box.innerHTML=emptyDetail('No status values available for selected filters.');return;}
+  box.innerHTML='<div class="chart-detail-row header"><span></span><span>Status</span><span>Rows</span><span>Share</span></div>'+
+    data.map(function(r,i){
+      return '<div class="chart-detail-row">'+
+        '<span class="chart-swatch" style="background:'+statusFillColor(r.code,i)+'"></span>'+
+        '<span class="chart-detail-name">'+escapeHtml(r.label)+'</span>'+
+        '<span class="chart-detail-value">'+fmt(r.value)+'</span>'+
+        '<span class="chart-detail-share">'+escapeHtml(percentLabel(r.value,total))+'</span>'+
+      '</div>';
+    }).join('');
+}
+function renderPlatformMixDetails(data){
+  const box=document.getElementById('platformMixDetails');
+  if(!box)return;
+  const total=data.reduce(function(a,r){return a+Number(r.sum||0);},0);
+  if(!data.length){box.innerHTML=emptyDetail('No platform values available for selected filters.');return;}
+  box.innerHTML='<div class="chart-detail-row header"><span></span><span>Platform</span><span>Total</span><span>Share</span></div>'+
+    data.map(function(r,i){
+      return '<div class="chart-detail-row">'+
+        '<span class="chart-swatch" style="background:'+platformFillColor(i)+'"></span>'+
+        '<span class="chart-detail-name">'+escapeHtml(r.label)+'</span>'+
+        '<span class="chart-detail-value">'+fmt(r.sum,1)+'</span>'+
+        '<span class="chart-detail-share">'+escapeHtml(percentLabel(r.sum,total))+'</span>'+
+      '</div>';
+    }).join('');
+}
+function renderChannelRankDetails(data){
+  const box=document.getElementById('channelRankDetails');
+  if(!box)return;
+  if(!data.length){box.innerHTML=emptyDetail('No channel ranking values available for selected filters.');return;}
+  box.innerHTML='<div class="chart-detail-row header"><span>Rank</span><span>Channel</span><span>Total</span><span>Peak</span></div>'+
+    data.map(function(r,i){
+      return '<div class="chart-detail-row">'+
+        '<span class="chart-detail-share">#'+(i+1)+'</span>'+
+        '<span class="chart-detail-name">'+escapeHtml(r.label)+'</span>'+
+        '<span class="chart-detail-value">'+fmt(r.sum,1)+'</span>'+
+        '<span class="chart-detail-share">'+fmt(r.peak,1)+'</span>'+
+      '</div>';
+    }).join('');
+}
 function renderPlatformMix(rows){
   const target=document.getElementById('platformMixChart');
   if(!target||typeof Chart==='undefined')return;
   if(platformMixChart){platformMixChart.destroy();platformMixChart=null;}
-  const data=groupedMetric(rows,platformKey,function(r){return String(r.platform_name||'Unknown FAST Platform');}).slice(0,10);
+  const data=groupedMetric(rows,platformKey,function(r){return String(r.platform_name||'Unknown FAST Platform');});
+  renderPlatformMixDetails(data);
   platformMixChart=new Chart(target,{
     type:'doughnut',
-    data:{labels:data.map(function(r){return r.label;}),datasets:[{data:data.map(function(r){return r.sum;}),backgroundColor:FILLS,borderColor:'#ffffff',borderWidth:2}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom',labels:{color:UI.text,boxWidth:11,font:{size:10}}},tooltip:chartTooltip(' '+metricShort())}}
+    data:{labels:data.map(function(r){return r.label;}),datasets:[{data:data.map(function(r){return r.sum;}),backgroundColor:data.map(function(_,i){return platformFillColor(i);}),borderColor:'#ffffff',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{display:false},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){const total=ctx.dataset.data.reduce(function(a,v){return a+Number(v||0);},0);return ctx.label+': '+fmt(ctx.parsed,1)+' '+metricShort()+' ('+percentLabel(ctx.parsed,total)+')';}}}}}
+  });
+}
+function channelRankRows(rows,limit){
+  return groupedMetric(rows,pairKey,function(r){return channelLabel(r,platform==='all');}).slice(0,limit||12);
+}
+function makeChannelRankChart(targetId,rows,expanded){
+  const target=document.getElementById(targetId);
+  if(!target||typeof Chart==='undefined')return null;
+  const data=channelRankRows(rows,expanded?30:12);
+  if(!expanded)fitChartBoxHeight(targetId,data.length,{row:24,min:340,max:560,chrome:82});
+  return new Chart(target,{
+    type:'bar',
+    data:{
+      labels:data.map(function(r){return r.label;}),
+      datasets:[slimHorizontalBarDataset('Total '+metricShort(),data.map(function(r){return r.sum;}),COLORS[0])]
+    },
+    options:{
+      indexAxis:'y',
+      responsive:true,
+      maintainAspectRatio:false,
+      layout:{padding:{right:expanded?108:96,left:2}},
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:UI.tooltipBg,
+          borderColor:UI.tooltipBorder,
+          borderWidth:1,
+          titleColor:UI.text,
+          bodyColor:UI.text,
+          callbacks:{label:function(ctx){return 'Total '+metricShort()+': '+fmt(ctx.parsed.x,1);}}
+        }
+      },
+      scales:{
+        x:{
+          beginAtZero:true,
+          border:{display:false},
+          ticks:{color:UI.muted,maxTicksLimit:5,callback:function(v){return compact(v);}},
+          grid:{color:UI.grid,drawTicks:false}
+        },
+        y:{
+          border:{display:false},
+          ticks:{color:UI.text,font:{size:expanded?12:11,weight:'700'},autoSkip:false,callback:function(v){return trimAxisLabel(this.getLabelForValue(v),expanded?64:(platform==='all'?46:34));}},
+          grid:{display:false}
+        }
+      }
+    }
   });
 }
 function renderChannelRank(rows){
-  const target=document.getElementById('channelRankChart');
-  if(!target||typeof Chart==='undefined')return;
   if(channelRankChart){channelRankChart.destroy();channelRankChart=null;}
-  const data=groupedMetric(rows,pairKey,function(r){return channelLabel(r,platform==='all');}).slice(0,12).reverse();
-  channelRankChart=new Chart(target,{
-    type:'bar',
-    data:{labels:data.map(function(r){return r.label;}),datasets:[{label:'Sum '+metricShort(),data:data.map(function(r){return r.sum;}),backgroundColor:'rgba(23,59,92,.76)',borderColor:'#173b5c',borderWidth:1}]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){return 'Sum '+metricShort()+': '+fmt(ctx.parsed.x,1);}}}},scales:{x:{beginAtZero:true,ticks:{color:UI.muted,callback:function(v){return compact(v);}},grid:{color:UI.grid}},y:{ticks:{color:UI.muted,font:{size:10},autoSkip:false},grid:{display:false}}}}
-  });
+  renderChannelRankDetails(channelRankRows(rows,12));
+  channelRankChart=makeChannelRankChart('channelRankChart',rows,false);
+  if(document.getElementById('chartModal').classList.contains('open')&&modalMode==='channel_rank'){
+    if(expandedChart){expandedChart.destroy();expandedChart=null;}
+    expandedChart=makeChannelRankChart('concurrencyChartExpanded',rows,true);
+    document.getElementById('modalContext').textContent=chartContextText();
+  }
 }
 function statusRowsForChart(rows){
   return STATUS_OPTIONS.map(function(item){
@@ -932,11 +1157,25 @@ function renderStatusMix(rows){
   const target=document.getElementById('statusMixChart');
   if(!target||typeof Chart==='undefined')return;
   if(statusMixChart){statusMixChart.destroy();statusMixChart=null;}
-  const data=statusRowsForChart(rows).slice(0,10);
+  const data=statusRowsForChart(rows);
+  renderStatusMixDetails(data);
+  const actualValues=data.map(function(r){return Number(r.value||0);});
+  const visualValues=statusVisualValues(data);
   statusMixChart=new Chart(target,{
     type:'doughnut',
-    data:{labels:data.map(function(r){return r.label;}),datasets:[{data:data.map(function(r){return r.value;}),backgroundColor:FILLS,borderColor:'#ffffff',borderWidth:2}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom',labels:{color:UI.text,boxWidth:11,font:{size:10}}},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){const total=ctx.dataset.data.reduce(function(a,v){return a+Number(v||0);},0);const pct=total?Number(ctx.parsed||0)*100/total:0;return ctx.label+': '+fmt(ctx.parsed)+' rows ('+fmt(pct,2)+'%)';}}}}}
+    data:{
+      labels:data.map(function(r){return r.label;}),
+      datasets:[{
+        data:visualValues,
+        actualData:actualValues,
+        backgroundColor:data.map(function(r,i){return statusFillColor(r.code,i);}),
+        borderColor:'#ffffff',
+        borderWidth:1.5,
+        spacing:2,
+        hoverOffset:5
+      }]
+    },
+    options:{responsive:true,maintainAspectRatio:false,cutout:'72%',plugins:{legend:{display:false},tooltip:{backgroundColor:UI.tooltipBg,borderColor:UI.tooltipBorder,borderWidth:1,titleColor:UI.text,bodyColor:UI.text,callbacks:{label:function(ctx){const actual=ctx.dataset.actualData?Number(ctx.dataset.actualData[ctx.dataIndex]||0):Number(ctx.parsed||0);const total=ctx.dataset.actualData?ctx.dataset.actualData.reduce(function(a,v){return a+Number(v||0);},0):ctx.dataset.data.reduce(function(a,v){return a+Number(v||0);},0);const pctText=percentLabel(actual,total);return ctx.label+': '+fmt(actual)+' rows ('+pctText+')';}}}}}
   });
 }
 function renderBreakdownCharts(rows){
@@ -965,6 +1204,17 @@ function openPlatformChannelModal(){
   document.getElementById('modalContext').textContent=platformChannelContextText();
   if(expandedChart){expandedChart.destroy();expandedChart=null;}
   expandedChart=makePlatformChannelChart('concurrencyChartExpanded',filteredRows(),true).chart;
+}
+function openChannelRankModal(){
+  modalMode='channel_rank';
+  const modal=document.getElementById('chartModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+  document.body.classList.add('modal-open');
+  document.getElementById('modalTitle').textContent='Channel Ranking';
+  document.getElementById('modalContext').textContent=chartContextText();
+  if(expandedChart){expandedChart.destroy();expandedChart=null;}
+  expandedChart=makeChannelRankChart('concurrencyChartExpanded',filteredRows(),true);
 }
 function closeChartModal(){
   const modal=document.getElementById('chartModal');
@@ -1048,17 +1298,17 @@ function selectedWindowLabel(rows){
   const minutes=Array.from(new Set((rows||[]).map(function(r){return String(r.minute_ist||'');}).filter(Boolean))).sort();
   if(!minutes.length){
     if(startDate&&endDate){
-      if(startDate===endDate)return formatDate(startDate)+', 12:00:00 AM to 11:59:59 PM IST';
-      return formatDateTime(startDate+' 00:00:00')+' to '+formatDateTime(endDate+' 23:59:59')+' IST';
+      if(startDate===endDate)return formatDate(startDate)+', 12:00:00 AM IST to 11:59:59 PM IST';
+      return formatDateTime(startDate+' 00:00:00')+' to '+formatDateTime(endDate+' 23:59:59');
     }
     return '-';
   }
   const first=minutes[0];
   const last=minutes[minutes.length-1];
   if(first.slice(0,10)===last.slice(0,10)){
-    return formatDate(first)+', '+formatTimeOnly(first)+' to '+formatTimeOnly(last)+' IST';
+    return formatDate(first)+', '+formatTimeOnly(first)+' IST to '+formatTimeOnly(last)+' IST';
   }
-  return formatDateTime(first)+' to '+formatDateTime(last)+' IST';
+  return formatDateTime(first)+' to '+formatDateTime(last);
 }
 function flashGroupRows(rows,keyFn,labelFn,metaFn){
   const buckets=new Map();
@@ -1122,7 +1372,7 @@ function renderFlashcards(rows){
   const context=document.getElementById('flashContext');
   if(context){
     context.innerHTML=[
-      '<span><b>Date:</b> '+escapeHtml(startDate&&endDate?formatDate(startDate)+' to '+formatDate(endDate):'-')+'</span>',
+      '<span><b>Date:</b> '+escapeHtml(startDate&&endDate?formatDateRange(startDate,endDate):'-')+'</span>',
       '<span><b>Data Window:</b> '+escapeHtml(windowLabel)+'</span>',
       '<span><b>Days:</b> '+fmt(rangeDates.length)+(dataDayCount!==rangeDates.length?' selected, '+fmt(dataDayCount)+' with rows':'')+'</span>',
       '<span><b>Platform:</b> '+escapeHtml(platformText)+'</span>',
@@ -1193,7 +1443,7 @@ function periodLabel(days){
   days=(days||[]).filter(Boolean);
   if(!days.length)return 'Not available';
   if(days.length===1)return formatDate(days[0]);
-  return formatDate(days[0])+' to '+formatDate(days[days.length-1]);
+  return formatDateRange(days[0],days[days.length-1]);
 }
 function insightAggregate(rows){
   const item=flashGroupRows(rows,function(){return 'all';},function(){return 'All';})[0];
@@ -1477,7 +1727,7 @@ function peakRows(rows){
 function table(rows,cols,formatters){
   if(!rows.length)return '<div style="padding:14px;color:#98a2b3;font-size:12px">No rows available.</div>';
   const head='<thead><tr>'+cols.map(function(c){return '<th'+(formatters[c.key]?.num?' class="num"':'')+'>'+escapeHtml(c.label)+'</th>';}).join('')+'</tr></thead>';
-  const body=rows.map(function(r){return '<tr>'+cols.map(function(c){const f=formatters[c.key];const v=r[c.key];const out=f&&f.fn?f.fn(v,r):escapeHtml(v);return '<td'+(f?.num?' class="num"':'')+'>'+out+'</td>';}).join('')+'</tr>';}).join('');
+  const body=rows.map(function(r){return '<tr>'+cols.map(function(c){const f=formatters[c.key];const v=r[c.key];const out=f&&f.fn?f.fn(v,r):escapeHtml(formatDisplayValue(c.key,v));return '<td'+(f?.num?' class="num"':'')+'>'+out+'</td>';}).join('')+'</tr>';}).join('');
   return '<table>'+head+'<tbody>'+body+'</tbody></table>';
 }
 function renderTables(rows){
@@ -1587,7 +1837,7 @@ function render(){
 }
 document.getElementById('title').textContent=D.title||'Veto Concurrency';
 document.getElementById('rangeMeta').textContent='True data range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.last_date)+' | '+fmt(D.stats?.minute_rows||0)+' minute rows';
-document.getElementById('fullDateMeta').textContent='Full-day filter range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.latest_full_date||D.stats?.last_date)+' IST';
+document.getElementById('fullDateMeta').textContent='Full-day filter range: '+formatDateRange(D.stats?.first_date,D.stats?.latest_full_date||D.stats?.last_date)+' IST';
 document.getElementById('generatedMeta').textContent='Last updated '+formatDateTime(D.generated_at);
 document.getElementById('fileMeta').textContent='Source parquet: '+(D.files?.minute||'');
 document.getElementById('chartModal').addEventListener('click',function(ev){if(ev.target===this)closeChartModal();});
