@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Viewer Journey Menu</title>
+$CHARTJS_TAG
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--ink:#172033;--muted:#64748b;--line:#d8e1ee;--surface:#eef3f8;--panel:#fff;--brand:#173b5c;--teal:#0f766e;--gold:#b58517;--red:#b42318;--green:#2f6b2f;--violet:#5b55a3}
+html,body{max-width:100%;overflow-x:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--surface);color:var(--ink);min-height:100vh;-webkit-text-size-adjust:100%}
+.topbar{background:var(--brand);color:#fff;border-bottom:4px solid var(--gold);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.topbar h1{font-size:21px;font-weight:850;line-height:1.15}.topbar .sub{font-size:12px;color:#dbe7f2;display:flex;flex-direction:column;gap:3px;text-align:right;line-height:1.35;max-width:min(980px,72vw)}
+.wrap{width:100%;max-width:1760px;margin:0 auto;padding:22px 28px 34px;overflow-x:hidden}
+.sticky-controls{position:sticky;top:0;z-index:40;background:rgba(238,243,248,.96);backdrop-filter:blur(8px);padding:10px 0 2px;margin:-10px 0 16px}
+.filter-bar{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;box-shadow:0 1px 2px rgba(15,23,42,.05);min-width:0}
+.filter-title{font-size:11px;font-weight:850;text-transform:uppercase;color:#475569;letter-spacing:.04em;margin-right:2px}
+.filter-bar input,.filter-bar select{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:5px;padding:6px 8px;font-size:12px;font-weight:700;font-family:inherit;outline:none;min-height:31px;max-width:100%}
+.filter-bar select{min-width:150px;flex:1 1 150px}.filter-bar input[type="search"]{min-width:180px;flex:1 1 200px}
+.filter-bar input:focus,.filter-bar select:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(23,59,92,.12)}
+.filter-sep{width:1px;height:24px;background:#d8e1ee;flex:0 0 auto}
+.btn{border:1px solid #cbd5e1;background:#fff;color:var(--brand);border-radius:5px;padding:6px 10px;font-size:11px;font-weight:850;cursor:pointer}
+.btn:hover{background:#edf2f7}.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.preset-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:850;cursor:pointer;min-height:31px}
+.preset-btn:hover{background:#edf2f7}.preset-btn.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.cards{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:18px}
+.card{flex:0 1 calc((100% - 60px)/7);min-width:160px;background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:8px;padding:12px 14px;text-align:center;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.card.teal{border-top-color:var(--teal)}.card.gold{border-top-color:var(--gold)}.card.red{border-top-color:var(--red)}.card.green{border-top-color:var(--green)}.card.violet{border-top-color:var(--violet)}
+.label{font-size:10px;color:var(--muted);font-weight:850;text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px;line-height:1.15;min-height:23px;text-align:center}
+.value{font-size:24px;font-weight:850;line-height:1.05;color:#172033;overflow-wrap:anywhere}.small{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.3}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,500px),1fr));gap:16px;margin-bottom:16px}.grid-span-all{grid-column:1/-1}
+.panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05);min-width:0}
+.panel h2{font-size:14px;margin-bottom:11px;color:#24324a;display:flex;align-items:center;justify-content:space-between;gap:10px}.panel h2 span{font-size:11px;color:#94a3b8;font-weight:650}
+.chart-box{height:clamp(340px,46vh,620px)}canvas{width:100%!important;height:100%!important}
+.table-wrap{overflow-x:hidden;overflow-y:auto;max-height:680px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;max-width:100%}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:10px;min-width:0;table-layout:fixed}
+.compact-table{max-height:460px}.compact-table table{min-width:0}
+th{position:sticky;top:0;z-index:2;background:#f8fafc;color:#475569;font-size:10px;text-align:left;padding:8px;border-bottom:1px solid #dbe3ef;white-space:nowrap}
+th,td{overflow-wrap:anywhere;word-break:break-word}
+td{padding:7px 8px;border-bottom:1px solid #eef2f7;vertical-align:top;color:#1f2937;line-height:1.25}tr:hover td{background:#f6f9ff}.num{text-align:right;font-variant-numeric:tabular-nums}
+.mono{font-family:Consolas,"Courier New",monospace;font-size:10px;overflow-wrap:anywhere}.pill{display:inline-block;padding:2px 7px;border-radius:999px;border:1px solid #d8e1ee;background:#f8fafc;color:#475569;font-size:10px;font-weight:850;white-space:normal;line-height:1.2}
+.link-btn{border:0;background:transparent;color:var(--brand);font:inherit;font-weight:850;text-align:left;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}.link-btn:hover{color:var(--teal)}
+.command{white-space:pre-wrap;background:#101828;color:#eef4fb;border-radius:8px;border:1px solid #293549;padding:12px;font-family:Consolas,"Courier New",monospace;font-size:11px;line-height:1.45;overflow:auto;max-height:260px}
+.note{background:#fff;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:8px;padding:11px 14px;color:#475569;font-size:12px;line-height:1.5;margin-bottom:16px}
+.control-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px}
+.control-strip select{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:5px;padding:6px 8px;font-size:12px;font-weight:750;font-family:inherit;min-height:31px;min-width:150px;outline:none}
+.leader-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.leader-card{border:1px solid #dbe3ef;border-radius:8px;background:#fbfdff;padding:11px 12px;min-width:0;border-top:3px solid var(--brand)}
+.leader-card:nth-child(2){border-top-color:var(--teal)}.leader-card:nth-child(3){border-top-color:var(--gold)}.leader-card:nth-child(4){border-top-color:var(--green)}.leader-card:nth-child(5){border-top-color:var(--violet)}.leader-card:nth-child(6){border-top-color:var(--red)}
+.leader-label{font-size:10px;color:#64748b;font-weight:850;text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px}
+.leader-name{font-size:13px;color:#172033;font-weight:850;line-height:1.25;overflow-wrap:anywhere;min-height:34px}
+.leader-value{font-size:21px;font-weight:900;color:#173b5c;margin-top:7px;font-variant-numeric:tabular-nums}
+.leader-small{font-size:11px;color:#64748b;margin-top:5px;line-height:1.35}
+.mini-break{display:flex;flex-direction:column;gap:4px}.mini-break div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #e2e8f0;padding-bottom:3px}.mini-break span:first-child{overflow-wrap:anywhere}.mini-break span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:800;color:#173b5c}
+.unknown-panel{margin:10px 0 12px;border:1px solid #f1d4b7;border-left:4px solid var(--gold);border-radius:8px;background:#fffaf3;padding:11px 13px}
+.unknown-panel[hidden]{display:none}.unknown-title{font-size:11px;font-weight:900;color:#7c4a03;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+.unknown-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px}.unknown-kpi{background:#fff;border:1px solid #f4dfc7;border-radius:7px;padding:8px 9px}
+.unknown-kpi .k{font-size:10px;color:#7c4a03;font-weight:850;text-transform:uppercase;margin-bottom:4px}.unknown-kpi .v{font-size:16px;color:#172033;font-weight:900;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.unknown-note{font-size:11px;color:#7c4a03;margin-top:8px;line-height:1.35}
+.footer{font-size:11px;color:#94a3b8;text-align:center;padding:20px 0 4px}
+@media(max-width:1180px){
+  .card{flex-basis:calc((100% - 24px)/4)}.topbar .sub{max-width:100%;text-align:left}.wrap{padding:18px 20px 30px}
+  .responsive-table,.responsive-table thead,.responsive-table tbody,.responsive-table th,.responsive-table td,.responsive-table tr{display:block;width:100%}
+  .responsive-table thead{display:none}
+  .responsive-table tr{border-bottom:1px solid #dbe3ef;padding:10px 12px}
+  .responsive-table td{display:grid;grid-template-columns:minmax(120px,32%) minmax(0,1fr);gap:10px;border-bottom:0;padding:6px 0;text-align:left!important}
+  .responsive-table td::before{content:attr(data-label);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
+  .table-wrap{max-height:none;overflow:visible}
+}
+@media(max-width:900px){.sticky-controls{max-height:58vh;overflow:auto;margin:-8px 0 14px}.card{flex-basis:calc((100% - 16px)/3)}.grid-2{grid-template-columns:1fr}.filter-bar select,.filter-bar input[type="search"]{min-width:130px}.chart-box{height:430px}}
+@media(max-width:680px){.card{flex-basis:calc((100% - 8px)/2);min-width:0}.topbar{padding:16px 18px}.wrap{padding:14px}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1 id="reportTitle">Viewer Journey Menu</h1>
+  <div class="sub"><span id="rangeText"></span><span id="genText"></span></div>
+</div>
+<div class="wrap">
+  <div class="sticky-controls">
+    <div class="filter-bar">
+      <span class="filter-title">Date</span>
+      <input type="date" id="dateStart"/>
+      <span style="font-size:12px;color:#64748b;font-weight:750">to</span>
+      <input type="date" id="dateEnd"/>
+      <button class="preset-btn" data-preset="yesterday">Yesterday</button>
+      <button class="preset-btn" data-preset="7d">7D</button>
+      <button class="preset-btn" data-preset="15d">15D</button>
+      <button class="preset-btn" data-preset="30d">30D</button>
+      <button class="preset-btn" data-preset="all">All Range</button>
+      <span class="filter-sep"></span>
+      <span class="filter-title">Source</span><select id="sourceSelect"></select>
+      <span class="filter-title">Country</span><select id="countrySelect"></select>
+      <span class="filter-title">State</span><select id="stateSelect"></select>
+      <span class="filter-title">City</span><select id="citySelect"></select>
+      <span class="filter-title">Channel</span><select id="channelSelect"></select>
+    </div>
+    <div class="filter-bar">
+      <span class="filter-title">Sort</span><select id="sortSelect">
+        <option value="dedup_raw_watch_hours">Playback Hours</option>
+        <option value="dedup_status_200_watch_hours">Playback 200 Hours</option>
+        <option value="raw_watch_hours">Raw Watch Hours</option>
+        <option value="status_200_watch_hours">Status 200 Hours</option>
+        <option value="row_count">Rows</option>
+        <option value="last_seen_ist">Last Seen</option>
+        <option value="distinct_channels">Channels</option>
+      </select>
+      <span class="filter-title">Show</span><select id="limitSelect">
+        <option value="100">Top 100</option>
+        <option value="250">Top 250</option>
+        <option value="500">Top 500</option>
+        <option value="1000">Top 1000</option>
+      </select>
+      <span class="filter-title">cliIP</span><input type="search" id="searchInput" placeholder="cliIP contains..."/>
+      <span class="filter-title">Session ID</span><input type="search" id="sessionSearchInput" placeholder="session_id contains..."/>
+      <span class="filter-title">Device ID</span><input type="search" id="deviceSearchInput" placeholder="device_id contains..."/>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+
+  <div class="note" id="coverageNote"></div>
+  <div class="cards" id="summaryCards"></div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>Quick Leaders<span id="leadersCaption"></span></h2>
+      <div class="leader-grid" id="leaderCards"></div>
+    </div>
+    <div class="panel">
+      <h2>Ranking Explorer<span id="rankingCaption"></span></h2>
+      <div class="control-strip">
+        <span class="filter-title">Rank</span><select id="rankDimensionSelect">
+          <option value="cliIP">cliIP</option>
+          <option value="device_id">Device ID</option>
+          <option value="session_id">Session ID</option>
+          <option value="channel_name">Channel</option>
+          <option value="state">State / Region</option>
+          <option value="city">City</option>
+          <option value="country">Country</option>
+          <option value="source">Source</option>
+          <option value="statusCode">Status Code</option>
+        </select>
+        <span class="filter-title">By</span><select id="rankMetricSelect">
+          <option value="dedup_raw_watch_hours">Playback Hours</option>
+          <option value="dedup_status_200_watch_hours">Playback 200 Hours</option>
+          <option value="raw_watch_hours">Raw Watch Hours</option>
+          <option value="status_200_watch_hours">Status 200 Hours</option>
+          <option value="row_count">Rows</option>
+        </select>
+        <span class="filter-title">Show</span><select id="rankLimitSelect">
+          <option value="10">Top 10</option>
+          <option value="20" selected>Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+      </div>
+      <div class="chart-box"><canvas id="rankingChart"></canvas></div>
+      <div id="rankingUnknown" class="unknown-panel" hidden></div>
+      <div class="table-wrap compact-table" id="rankingTable"></div>
+    </div>
+  </div>
+
+  <div class="panel grid-span-all" style="margin-bottom:16px">
+    <h2>Cross Analysis<span id="pivotCaption"></span></h2>
+    <div class="control-strip">
+      <span class="filter-title">Primary</span><select id="pivotPrimarySelect">
+        <option value="channel_name">Channel</option>
+        <option value="state">State / Region</option>
+        <option value="city">City</option>
+        <option value="country">Country</option>
+        <option value="device_id">Device ID</option>
+        <option value="session_id">Session ID</option>
+        <option value="cliIP">cliIP</option>
+        <option value="source">Source</option>
+        <option value="statusCode">Status Code</option>
+      </select>
+      <span class="filter-title">Inside</span><select id="pivotSecondarySelect">
+        <option value="state">State / Region</option>
+        <option value="channel_name">Channel</option>
+        <option value="city">City</option>
+        <option value="country">Country</option>
+        <option value="device_id">Device ID</option>
+        <option value="session_id">Session ID</option>
+        <option value="cliIP">cliIP</option>
+        <option value="source">Source</option>
+        <option value="statusCode">Status Code</option>
+      </select>
+      <span class="filter-title">Metric</span><select id="pivotMetricSelect">
+        <option value="dedup_raw_watch_hours">Playback Hours</option>
+        <option value="dedup_status_200_watch_hours">Playback 200 Hours</option>
+        <option value="raw_watch_hours">Raw Watch Hours</option>
+        <option value="status_200_watch_hours">Status 200 Hours</option>
+        <option value="row_count">Rows</option>
+      </select>
+      <span class="filter-title">Show</span><select id="pivotLimitSelect">
+        <option value="15">Top 15</option>
+        <option value="25" selected>Top 25</option>
+        <option value="50">Top 50</option>
+      </select>
+    </div>
+    <div id="pivotUnknown" class="unknown-panel" hidden></div>
+    <div class="table-wrap compact-table" id="pivotTable"></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel"><h2>Top Viewers<span>selected filters</span></h2><div class="chart-box"><canvas id="viewerChart"></canvas></div></div>
+    <div class="panel"><h2>Selected Viewer<span id="selectedTitle"></span></h2><div id="selectedCards" class="cards"></div><div class="command" id="commandBlock"></div></div>
+  </div>
+  <div class="panel grid-span-all"><h2>Viewer List<span id="viewerCount"></span></h2><div class="table-wrap" id="viewerTable"></div></div>
+  <div class="footer">Generated by ETL Viewer Journey Menu dashboard</div>
+</div>
+
+<script>
+const D = $DATA_BLOB;
+const rows = D.rows || [];
+const charts = {};
+const palette = ["#173b5c","#0f766e","#b58517","#5b55a3","#b42318","#2f6b2f","#2563eb","#a855f7"];
+const state = {
+  start: D.stats?.min_date || "",
+  end: D.stats?.max_date || "",
+  preset: "yesterday",
+  source: "all",
+  country: "all",
+  region: "all",
+  city: "all",
+  channel: "all",
+  sort: "dedup_raw_watch_hours",
+  limit: 100,
+  rankDimension: "cliIP",
+  rankMetric: "dedup_raw_watch_hours",
+  rankLimit: 20,
+  pivotPrimary: "channel_name",
+  pivotSecondary: "state",
+  pivotMetric: "dedup_raw_watch_hours",
+  pivotLimit: 25,
+  search: "",
+  sessionSearch: "",
+  deviceSearch: "",
+  selectedCliip: ""
+};
+const DIMENSIONS = {
+  cliIP: "cliIP",
+  device_id: "Device ID",
+  session_id: "Session ID",
+  channel_name: "Channel",
+  state: "State / Region",
+  city: "City",
+  country: "Country",
+  source: "Source",
+  statusCode: "Status Code"
+};
+const METRICS = {
+  dedup_raw_watch_hours: {label:"Playback Hours", unit:"h"},
+  dedup_status_200_watch_hours: {label:"Playback 200 Hours", unit:"h"},
+  raw_watch_hours: {label:"Request Hours", unit:"h"},
+  status_200_watch_hours: {label:"Request 200 Hours", unit:"h"},
+  row_count: {label:"Rows", unit:"rows"}
+};
+
+function el(id){return document.getElementById(id);}
+function escapeHtml(value){return String(value == null ? "" : value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+function n(value){return Number(value || 0);}
+function fmt(value,digits){return n(value).toLocaleString("en-IN",{maximumFractionDigits:digits == null ? 1 : digits});}
+function fmtInt(value){return Math.round(n(value)).toLocaleString("en-IN");}
+function fmtH(value){return fmt(value,1);}
+function dateOf(value){return String(value || "").slice(0,10);}
+function pad2(value){return String(value).padStart(2,"0");}
+function fmtDateOnly(value){const m=String(value||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):String(value||"");}
+function fmtDateTime12(value){
+  const m=String(value||"").replace("T"," ").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if(!m)return String(value||"");
+  let hh=Number(m[4]||0);const ap=hh>=12?"PM":"AM";hh=hh%12||12;
+  return m[3]+"/"+m[2]+"/"+m[1].slice(2)+" "+pad2(hh)+":"+(m[5]||"00")+":"+(m[6]||"00")+" "+ap+" IST";
+}
+function metric(label,value,small,color){return '<div class="card '+(color||'')+'"><div class="label">'+escapeHtml(label)+'</div><div class="value">'+value+'</div><div class="small">'+escapeHtml(small||'')+'</div></div>';}
+function parseIsoDate(value){
+  const m=String(value||"").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m)return null;
+  return new Date(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3])));
+}
+function isoDate(date){
+  if(!date || Number.isNaN(date.getTime()))return "";
+  return date.getUTCFullYear()+"-"+pad2(date.getUTCMonth()+1)+"-"+pad2(date.getUTCDate());
+}
+function addDays(value,days){
+  const date=parseIsoDate(value);
+  if(!date)return "";
+  date.setUTCDate(date.getUTCDate()+days);
+  return isoDate(date);
+}
+function minDateValue(a,b){return !a?b:(!b?a:(a<b?a:b));}
+function maxDateValue(a,b){return !a?b:(!b?a:(a>b?a:b));}
+function simpleSlug(value){
+  const s=String(value||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,54);
+  return s || "cliip";
+}
+function dateRangeText(){return fmtDateOnly(state.start)+" to "+fmtDateOnly(state.end);}
+function currentScopeStats(){
+  if(state.source==="all")return D.stats||{};
+  const sourceRows=D.sources||[];
+  return sourceRows.find(function(row){return row.source===state.source;}) || D.stats || {};
+}
+function currentScopeLabel(){return state.source==="all"?"ALL SOURCES":sourceLabel(state.source);}
+function latestCompletedDate(stats){
+  const minDate=String(stats.min_date||D.stats?.min_date||"");
+  const maxDate=String(stats.max_date||D.stats?.max_date||"");
+  const generatedDay=String(D.meta?.generated||"").slice(0,10);
+  const yesterday=generatedDay?addDays(generatedDay,-1):maxDate;
+  let latest=minDateValue(maxDate,yesterday||maxDate);
+  latest=maxDateValue(latest,minDate);
+  return latest||maxDate||minDate;
+}
+function presetLabel(){
+  if(state.preset==="yesterday")return "Yesterday";
+  if(state.preset==="7d")return "Last 7D";
+  if(state.preset==="15d")return "Last 15D";
+  if(state.preset==="30d")return "Last 30D";
+  if(state.preset==="all")return "All Range";
+  return "Custom";
+}
+function updatePresetButtons(){
+  document.querySelectorAll("[data-preset]").forEach(function(btn){
+    btn.classList.toggle("active",btn.dataset.preset===state.preset);
+  });
+}
+function applyDatePreset(preset,shouldRender){
+  state.preset=preset||"yesterday";
+  const stats=currentScopeStats();
+  const minDate=String(stats.min_date||D.stats?.min_date||"");
+  const maxDate=String(stats.max_date||D.stats?.max_date||"");
+  const days={yesterday:1,"7d":7,"15d":15,"30d":30}[state.preset]||1;
+  if(state.preset==="all"){
+    state.start=minDate;
+    state.end=maxDate;
+  }else{
+    const end=latestCompletedDate(stats);
+    let start=addDays(end,-(days-1));
+    if(start<minDate)start=minDate;
+    state.start=start;
+    state.end=end;
+  }
+  if(el("dateStart"))el("dateStart").value=state.start;
+  if(el("dateEnd"))el("dateEnd").value=state.end;
+  updatePresetButtons();
+  if(shouldRender)render();
+}
+function setDateBoundsForSource(clamp){
+  const stats=currentScopeStats();
+  const minDate=String(stats.min_date||D.stats?.min_date||"");
+  const maxDate=String(stats.max_date||D.stats?.max_date||"");
+  const startEl=el("dateStart");
+  const endEl=el("dateEnd");
+  if(startEl){startEl.min=minDate;startEl.max=maxDate;}
+  if(endEl){endEl.min=minDate;endEl.max=maxDate;}
+  if(state.preset!=="custom"){
+    applyDatePreset(state.preset,false);
+  }else if(clamp && minDate && maxDate){
+    if(!state.start || state.start<minDate)state.start=minDate;
+    if(!state.end || state.end>maxDate)state.end=maxDate;
+    if(state.start>state.end){state.start=minDate;state.end=maxDate;}
+    if(startEl)startEl.value=state.start;
+    if(endEl)endEl.value=state.end;
+  }
+  updatePresetButtons();
+}
+function renderScopeMeta(filtered){
+  const stats=currentScopeStats();
+  const label=currentScopeLabel();
+  const raw=filtered.reduce((a,r)=>a+n(r.raw_watch_hours),0);
+  const s200=filtered.reduce((a,r)=>a+n(r.status_200_watch_hours),0);
+  el("rangeText").textContent=label+" processed range: "+fmtDateOnly(stats.min_date)+" to "+fmtDateOnly(stats.max_date)+" | "+fmtInt(stats.cliips)+" cliIPs | "+fmtInt(stats.index_rows)+" index rows | "+fmtH(stats.raw_watch_hours)+" raw hrs";
+  el("coverageNote").textContent="Date preset: "+presetLabel()+". Date inputs are source-aware. "+label+" available range is "+fmtDateOnly(stats.min_date)+" to "+fmtDateOnly(stats.max_date)+". Current filtered range "+dateRangeText()+" has "+fmtH(raw)+" raw hrs and "+fmtH(s200)+" status 200 hrs from the embedded viewer index.";
+}
+function sourceArg(){
+  return state.source==="all" ? "" : " --source "+state.source;
+}
+function outStem(cliip){
+  return "raw_cliip_"+simpleSlug(cliip)+"_"+(state.source==="all"?"all_sources":state.source)+"_"+state.start+"_to_"+state.end;
+}
+function commandFor(cliip){
+  const stem=outStem(cliip);
+  const raw='ETL\\\\output\\\\exports\\\\raw_parquet\\\\'+stem+'.parquet';
+  const outDir='ETL\\\\output\\\\exports\\\\cliip_journey\\\\'+stem;
+  return [
+    '.\\\\venv\\\\Scripts\\\\python.exe ETL\\\\src\\\\tools\\\\export_raw_cliip_parquet.py --start '+state.start+' --end '+state.end+sourceArg()+' --cliip "'+cliip+'" --row-kind all --sort --out "'+raw+'"',
+    '.\\\\venv\\\\Scripts\\\\python.exe ETL\\\\src\\\\tools\\\\analyze_cliip_journey.py --input "'+raw+'" --out-dir "'+outDir+'"',
+    '.\\\\venv\\\\Scripts\\\\python.exe ETL\\\\src\\\\dashboards\\\\cliipJourneyDashboard\\\\generate_cliip_journey_dashboard.py --input-dir "'+outDir+'"'
+  ].join("\n");
+}
+function statusHoursText(map){
+  const items=[];
+  (map||new Map()).forEach(function(hours,status){
+    if(n(hours)>0)items.push({status:String(status||"Unknown"),hours:n(hours)});
+  });
+  if(!items.length)return "-";
+  items.sort(function(a,b){return b.hours-a.hours || a.status.localeCompare(b.status);});
+  return items.map(function(item){return item.status+": "+fmtH(item.hours)+"h";}).join(" | ");
+}
+function dimLabel(key){return DIMENSIONS[key]||key;}
+function metricLabel(key){return (METRICS[key]||{}).label||key;}
+function isUnknownValue(value){
+  const text=String(value == null ? "" : value).trim().toLowerCase();
+  return !text || text==="unknown / na" || text==="unknown" || text==="na" || text==="n/a" || text==="-";
+}
+function dimensionValue(row,key){
+  const value=row[key];
+  const text=String(value == null || value === "" ? "Unknown / NA" : value);
+  return text;
+}
+function metricNumber(row,key){return n(row[key]);}
+function formatMetric(value,key){
+  if(key==="row_count")return fmtInt(value)+" rows";
+  return fmtH(value)+" h";
+}
+function th(label){return "<th>"+escapeHtml(label)+"</th>";}
+function td(label,value,cls){return '<td data-label="'+escapeHtml(label)+'"'+(cls?' class="'+cls+'"':'')+'>'+value+'</td>';}
+function sourceLabel(source){return String(source||"Unknown").toUpperCase();}
+function sourceTextFromMap(map,total){
+  const items=[];
+  (map||new Map()).forEach(function(value,source){
+    if(n(value)>0)items.push({source:sourceLabel(source),value:n(value)});
+  });
+  if(!items.length)return "Source: Unknown";
+  items.sort(function(a,b){return b.value-a.value || a.source.localeCompare(b.source);});
+  if(items.length===1)return "Source: "+items[0].source;
+  const denom=n(total)||items.reduce((a,b)=>a+n(b.value),0)||1;
+  return "Source: "+items.slice(0,3).map(function(item){return item.source+" "+fmt((item.value/denom)*100,1)+"%";}).join(" | ");
+}
+function unknownShareText(list,dimensionKey,metricKey){
+  const total=list.reduce((a,r)=>a+metricNumber(r,metricKey),0);
+  if(!total)return "";
+  const missing=list.reduce(function(a,r){return a+(isUnknownValue(dimensionValue(r,dimensionKey))?metricNumber(r,metricKey):0);},0);
+  return "Unknown / NA: "+fmt((missing/total)*100,1)+"% of "+metricLabel(metricKey).toLowerCase();
+}
+function unknownCoverageItem(items){
+  return (items||[]).find(function(item){return isUnknownValue(item.key);})||null;
+}
+function renderUnknownCoverage(id,item,filtered,dimensionKey,metricKey,note){
+  const panel=el(id);
+  if(!panel)return;
+  if(!item || n(item.value)<=0){
+    panel.hidden=true;
+    panel.innerHTML="";
+    return;
+  }
+  const total=filtered.reduce((a,r)=>a+metricNumber(r,metricKey),0);
+  const share=total?((n(item.value)/total)*100):0;
+  panel.hidden=false;
+  panel.innerHTML=
+    '<div class="unknown-title">Unknown / NA Coverage - '+escapeHtml(dimLabel(dimensionKey))+'</div>'+
+    '<div class="unknown-grid">'+
+      '<div class="unknown-kpi"><div class="k">'+escapeHtml(metricLabel(metricKey))+'</div><div class="v">'+formatMetric(item.value,metricKey)+'</div></div>'+
+      '<div class="unknown-kpi"><div class="k">Share</div><div class="v">'+fmt(share,1)+'%</div></div>'+
+      '<div class="unknown-kpi"><div class="k">Playback Hours</div><div class="v">'+formatMetric(item.dedup_raw_watch_hours,"dedup_raw_watch_hours")+'</div></div>'+
+      '<div class="unknown-kpi"><div class="k">Request Hours</div><div class="v">'+formatMetric(item.raw_watch_hours,"raw_watch_hours")+'</div></div>'+
+      '<div class="unknown-kpi"><div class="k">Rows</div><div class="v">'+fmtInt(item.row_count)+'</div></div>'+
+      '<div class="unknown-kpi"><div class="k">Source</div><div class="v">'+escapeHtml(item.source_text.replace(/^Source: /,""))+'</div></div>'+
+    '</div>'+
+    '<div class="unknown-note">'+escapeHtml(note||"Excluded from the visual ranking so known values remain readable.")+'</div>';
+}
+function aggregateDimension(list,dimensionKey,metricKey,options){
+  options=options||{};
+  const map=new Map();
+  list.forEach(function(row){
+    const key=dimensionValue(row,dimensionKey);
+    if(options.skipUnknown && isUnknownValue(key))return;
+    if(!map.has(key)){
+      map.set(key,{key:key,value:0,dedup_raw_watch_hours:0,dedup_status_200_watch_hours:0,raw_watch_hours:0,status_200_watch_hours:0,row_count:0,raw_ts_rows:0,status_200_ts_rows:0,dedup_ts_paths:0,dedup_status_200_ts_paths:0,cliips:new Set(),sessions:new Set(),devices:new Set(),channels:new Set(),regions:new Set(),cities:new Set(),sources:new Map(),first_seen_ist:"",last_seen_ist:""});
+    }
+    const item=map.get(key);
+    const metricValue=metricNumber(row,metricKey);
+    item.value+=metricValue;
+    item.raw_watch_hours+=n(row.raw_watch_hours);
+    item.status_200_watch_hours+=n(row.status_200_watch_hours);
+    item.dedup_raw_watch_hours+=n(row.dedup_raw_watch_hours);
+    item.dedup_status_200_watch_hours+=n(row.dedup_status_200_watch_hours);
+    item.row_count+=n(row.row_count);
+    item.raw_ts_rows+=n(row.raw_ts_rows);
+    item.status_200_ts_rows+=n(row.status_200_ts_rows);
+    item.dedup_ts_paths+=n(row.dedup_ts_paths);
+    item.dedup_status_200_ts_paths+=n(row.dedup_status_200_ts_paths);
+    item.sources.set(row.source||"Unknown",(item.sources.get(row.source||"Unknown")||0)+metricValue);
+    if(row.cliIP)item.cliips.add(row.cliIP);
+    if(row.session_id && row.session_id!=="Unknown / NA")item.sessions.add(row.session_id);
+    if(row.device_id && row.device_id!=="Unknown / NA")item.devices.add(row.device_id);
+    if(row.channel_name)item.channels.add(row.channel_name);
+    if(row.state)item.regions.add(row.state);
+    if(row.city)item.cities.add(row.city);
+    const first=String(row.first_seen_ist||"");
+    const last=String(row.last_seen_ist||"");
+    if(first && (!item.first_seen_ist || first<item.first_seen_ist))item.first_seen_ist=first;
+    if(last && (!item.last_seen_ist || last>item.last_seen_ist))item.last_seen_ist=last;
+  });
+  return Array.from(map.values()).map(function(item){
+    item.cliip_count=item.cliips.size;
+    item.session_count=item.sessions.size;
+    item.device_count=item.devices.size;
+    item.channel_count=item.channels.size;
+    item.region_count=item.regions.size;
+    item.city_count=item.cities.size;
+    item.source_text=sourceTextFromMap(item.sources,item.value);
+    return item;
+  }).sort(function(a,b){return n(b.value)-n(a.value) || n(b.dedup_raw_watch_hours)-n(a.dedup_raw_watch_hours) || n(b.raw_watch_hours)-n(a.raw_watch_hours) || String(a.key).localeCompare(String(b.key));});
+}
+function aggregatePivot(list,primaryKey,secondaryKey,metricKey){
+  const map=new Map();
+  list.forEach(function(row){
+    const primary=dimensionValue(row,primaryKey);
+    const secondary=dimensionValue(row,secondaryKey);
+    if(!map.has(primary)){
+      map.set(primary,{key:primary,value:0,dedup_raw_watch_hours:0,dedup_status_200_watch_hours:0,raw_watch_hours:0,status_200_watch_hours:0,row_count:0,cliips:new Set(),sessions:new Set(),devices:new Set(),sources:new Map(),secondary:new Map()});
+    }
+    const item=map.get(primary);
+    const value=metricNumber(row,metricKey);
+    item.value+=value;
+    item.raw_watch_hours+=n(row.raw_watch_hours);
+    item.status_200_watch_hours+=n(row.status_200_watch_hours);
+    item.dedup_raw_watch_hours+=n(row.dedup_raw_watch_hours);
+    item.dedup_status_200_watch_hours+=n(row.dedup_status_200_watch_hours);
+    item.row_count+=n(row.row_count);
+    item.sources.set(row.source||"Unknown",(item.sources.get(row.source||"Unknown")||0)+value);
+    if(row.cliIP)item.cliips.add(row.cliIP);
+    if(row.session_id && row.session_id!=="Unknown / NA")item.sessions.add(row.session_id);
+    if(row.device_id && row.device_id!=="Unknown / NA")item.devices.add(row.device_id);
+    if(!item.secondary.has(secondary))item.secondary.set(secondary,{key:secondary,value:0,dedup_raw_watch_hours:0,dedup_status_200_watch_hours:0,raw_watch_hours:0,status_200_watch_hours:0,row_count:0});
+    const sec=item.secondary.get(secondary);
+    sec.value+=value;
+    sec.raw_watch_hours+=n(row.raw_watch_hours);
+    sec.status_200_watch_hours+=n(row.status_200_watch_hours);
+    sec.dedup_raw_watch_hours+=n(row.dedup_raw_watch_hours);
+    sec.dedup_status_200_watch_hours+=n(row.dedup_status_200_watch_hours);
+    sec.row_count+=n(row.row_count);
+  });
+  return Array.from(map.values()).map(function(item){
+    item.cliip_count=item.cliips.size;
+    item.session_count=item.sessions.size;
+    item.device_count=item.devices.size;
+    item.source_text=sourceTextFromMap(item.sources,item.value);
+    item.secondary_items=Array.from(item.secondary.values()).sort(function(a,b){return n(b.value)-n(a.value) || String(a.key).localeCompare(String(b.key));});
+    return item;
+  }).sort(function(a,b){return n(b.value)-n(a.value) || n(b.dedup_raw_watch_hours)-n(a.dedup_raw_watch_hours) || String(a.key).localeCompare(String(b.key));});
+}
+function matches(row){
+  const d=String(row.log_date||"");
+  if(state.start && d<state.start)return false;
+  if(state.end && d>state.end)return false;
+  if(state.source!=="all" && row.source!==state.source)return false;
+  if(state.country!=="all" && row.country!==state.country)return false;
+  if(state.region!=="all" && row.state!==state.region)return false;
+  if(state.city!=="all" && row.city!==state.city)return false;
+  if(state.channel!=="all" && row.channel_name!==state.channel)return false;
+  if(state.search && !String(row.cliIP||"").toLowerCase().includes(state.search.toLowerCase()))return false;
+  if(state.sessionSearch && !String(row.session_id||"").toLowerCase().includes(state.sessionSearch.toLowerCase()))return false;
+  if(state.deviceSearch && !String(row.device_id||"").toLowerCase().includes(state.deviceSearch.toLowerCase()))return false;
+  return true;
+}
+function filteredRows(){return rows.filter(matches);}
+function groupViewers(list){
+  const map=new Map();
+  list.forEach(function(row){
+    const key=String(row.cliIP||"");
+    if(!key)return;
+    if(!map.has(key)){
+      map.set(key,{cliIP:key,cliip_slug:row.cliip_slug||"",dedup_raw_watch_hours:0,dedup_status_200_watch_hours:0,raw_watch_hours:0,status_200_watch_hours:0,row_count:0,raw_ts_rows:0,status_200_ts_rows:0,dedup_ts_paths:0,dedup_status_200_ts_paths:0,playlist_rows:0,session_ids:0,device_ids:0,ua_count:0,hosts:0,days:new Set(),channels:new Map(),countries:new Map(),regions:new Map(),cities:new Map(),sessions:new Map(),devices:new Map(),statuses:new Map(),sourceHours:new Map(),sessionSet:new Set(),deviceSet:new Set(),sources:new Set(),first_seen_ist:"",last_seen_ist:"",journey_dashboard:row.journey_dashboard||""});
+    }
+    const item=map.get(key);
+    item.raw_watch_hours+=n(row.raw_watch_hours);
+    item.status_200_watch_hours+=n(row.status_200_watch_hours);
+    item.dedup_raw_watch_hours+=n(row.dedup_raw_watch_hours);
+    item.dedup_status_200_watch_hours+=n(row.dedup_status_200_watch_hours);
+    item.row_count+=n(row.row_count);
+    item.raw_ts_rows+=n(row.raw_ts_rows);
+    item.status_200_ts_rows+=n(row.status_200_ts_rows);
+    item.dedup_ts_paths+=n(row.dedup_ts_paths);
+    item.dedup_status_200_ts_paths+=n(row.dedup_status_200_ts_paths);
+    item.playlist_rows+=n(row.playlist_rows);
+    item.session_ids+=n(row.distinct_session_id);
+    item.device_ids+=n(row.distinct_device_id);
+    item.ua_count+=n(row.distinct_ua);
+    item.hosts=Math.max(item.hosts,n(row.distinct_hosts));
+    if(row.log_date)item.days.add(row.log_date);
+    if(row.source)item.sources.add(row.source);
+    item.sourceHours.set(row.source||"Unknown",(item.sourceHours.get(row.source||"Unknown")||0)+n(row.dedup_raw_watch_hours));
+    function add(map,key,value){key=key||"Unknown / NA";map.set(key,(map.get(key)||0)+n(value));}
+    add(item.channels,row.channel_name,row.dedup_raw_watch_hours);
+    add(item.countries,row.country,row.dedup_raw_watch_hours);
+    add(item.regions,row.state,row.dedup_raw_watch_hours);
+    add(item.cities,row.city,row.dedup_raw_watch_hours);
+    add(item.sessions,row.session_id,row.dedup_raw_watch_hours);
+    add(item.devices,row.device_id,row.dedup_raw_watch_hours);
+    add(item.statuses,row.statusCode,row.raw_watch_hours);
+    if(row.session_id && row.session_id!=="Unknown / NA")item.sessionSet.add(row.session_id);
+    if(row.device_id && row.device_id!=="Unknown / NA")item.deviceSet.add(row.device_id);
+    const first=String(row.first_seen_ist||"");
+    const last=String(row.last_seen_ist||"");
+    if(first && (!item.first_seen_ist || first<item.first_seen_ist))item.first_seen_ist=first;
+    if(last && (!item.last_seen_ist || last>item.last_seen_ist))item.last_seen_ist=last;
+    if(row.journey_dashboard)item.journey_dashboard=row.journey_dashboard;
+  });
+  const pickTop=function(map){let best="-",val=-1;map.forEach(function(v,k){if(v>val){best=k;val=v;}});return best;};
+  const out=Array.from(map.values()).map(function(item){
+    item.day_count=item.days.size;
+    item.source_count=item.sources.size;
+    item.distinct_channels=item.channels.size;
+    item.top_channel=pickTop(item.channels);
+    item.top_country=pickTop(item.countries);
+    item.top_region=pickTop(item.regions);
+    item.top_city=pickTop(item.cities);
+    item.top_session_id=pickTop(item.sessions);
+    item.top_device_id=pickTop(item.devices);
+    item.status_hours_text=statusHoursText(item.statuses);
+    item.source_text=sourceTextFromMap(item.sourceHours,item.dedup_raw_watch_hours);
+    item.session_ids=item.sessionSet.size;
+    item.device_ids=item.deviceSet.size;
+    return item;
+  });
+  const sortKey=state.sort;
+  out.sort(function(a,b){
+    if(sortKey==="last_seen_ist")return String(b.last_seen_ist).localeCompare(String(a.last_seen_ist));
+    return n(b[sortKey])-n(a[sortKey]) || n(b.dedup_raw_watch_hours)-n(a.dedup_raw_watch_hours) || n(b.raw_watch_hours)-n(a.raw_watch_hours);
+  });
+  return out;
+}
+function optionHtml(value,label,selected){return '<option value="'+escapeHtml(value)+'"'+(selected?' selected':'')+'>'+escapeHtml(label||value)+'</option>';}
+function setOptions(id,values,current,allLabel){
+  const sel=el(id);
+  const existing=current||"all";
+  const unique=Array.from(new Set(values.filter(Boolean))).sort(function(a,b){return String(a).localeCompare(String(b));});
+  sel.innerHTML=optionHtml("all",allLabel||"All",existing==="all")+unique.map(function(v){return optionHtml(v,v,v===existing);}).join("");
+  if(existing!=="all" && !unique.includes(existing)){sel.value="all";return "all";}
+  sel.value=existing;
+  return sel.value;
+}
+function syncFilterOptions(){
+  const base=rows.filter(function(row){
+    const d=String(row.log_date||"");
+    if(state.start && d<state.start)return false;
+    if(state.end && d>state.end)return false;
+    if(state.source!=="all" && row.source!==state.source)return false;
+    return true;
+  });
+  state.source=setOptions("sourceSelect",rows.map(r=>r.source),state.source,"All Sources");
+  state.country=setOptions("countrySelect",base.map(r=>r.country),state.country,"All Countries");
+  const countryRows=state.country==="all"?base:base.filter(r=>r.country===state.country);
+  state.region=setOptions("stateSelect",countryRows.map(r=>r.state),state.region,"All States");
+  const regionRows=state.region==="all"?countryRows:countryRows.filter(r=>r.state===state.region);
+  state.city=setOptions("citySelect",regionRows.map(r=>r.city),state.city,"All Cities");
+  const cityRows=state.city==="all"?regionRows:regionRows.filter(r=>r.city===state.city);
+  state.channel=setOptions("channelSelect",cityRows.map(r=>r.channel_name),state.channel,"All Channels");
+}
+function renderChart(viewers){
+  if(typeof Chart==="undefined"||!el("viewerChart"))return;
+  if(charts.viewerChart)charts.viewerChart.destroy();
+  const top=viewers.slice(0,30);
+  charts.viewerChart=new Chart(el("viewerChart"),{
+    type:"bar",
+    data:{labels:top.map(r=>r.cliIP),datasets:[{label:"Raw Watch Hours",data:top.map(r=>r.raw_watch_hours),backgroundColor:top.map((_,i)=>palette[i%palette.length])}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return fmtH(ctx.raw)+" hrs";}}}},scales:{x:{beginAtZero:true,ticks:{callback:v=>fmt(v,0)}},y:{ticks:{font:{size:9},autoSkip:false}}}}
+  });
+}
+function renderLeaderCards(filtered){
+  const leaders=[
+    ["cliIP","Top cliIP",false],
+    ["device_id","Top Known Device ID",true],
+    ["session_id","Top Known Session ID",true],
+    ["channel_name","Top Channel",false],
+    ["state","Top State / Region",false],
+    ["city","Top City",false]
+  ];
+  el("leadersCaption").textContent=dateRangeText()+" | ranked by raw watch hours";
+  el("leaderCards").innerHTML=leaders.map(function(pair){
+    const top=aggregateDimension(filtered,pair[0],"raw_watch_hours",{skipUnknown:pair[2]})[0];
+    const unknownText=pair[2]?unknownShareText(filtered,pair[0],"raw_watch_hours"):"";
+    if(!top){
+      return '<div class="leader-card"><div class="leader-label">'+escapeHtml(pair[1])+'</div><div class="leader-name">No known value</div><div class="leader-value">0 h</div><div class="leader-small">'+escapeHtml(unknownText||"No data in selected filters")+'</div></div>';
+    }
+    return '<div class="leader-card">'+
+      '<div class="leader-label">'+escapeHtml(pair[1])+'</div>'+
+      '<div class="leader-name">'+escapeHtml(top.key)+'</div>'+
+      '<div class="leader-value">'+formatMetric(top.raw_watch_hours,"raw_watch_hours")+'</div>'+
+      '<div class="leader-small">'+escapeHtml(top.source_text)+'</div>'+
+      '<div class="leader-small">Status 200: '+formatMetric(top.status_200_watch_hours,"status_200_watch_hours")+' | Rows: '+fmtInt(top.row_count)+'</div>'+
+      '<div class="leader-small">cliIPs '+fmtInt(top.cliip_count)+' | Sessions '+fmtInt(top.session_count)+' | Devices '+fmtInt(top.device_count)+'</div>'+
+      (unknownText?'<div class="leader-small">'+escapeHtml(unknownText)+'</div>':'')+
+    '</div>';
+  }).join("");
+}
+function renderRanking(filtered){
+  const dimension=state.rankDimension;
+  const metric=state.rankMetric;
+  const limit=Number(state.rankLimit||20);
+  const allData=aggregateDimension(filtered,dimension,metric);
+  const unknown=unknownCoverageItem(allData);
+  const data=allData.filter(function(item){return !isUnknownValue(item.key);}).slice(0,limit);
+  el("rankingCaption").textContent=dimLabel(dimension)+" by "+metricLabel(metric)+" | known values charted";
+  renderUnknownCoverage(
+    "rankingUnknown",
+    unknown,
+    filtered,
+    dimension,
+    metric,
+    "Unknown / NA is excluded from this chart and table because it can dominate the scale. Use this block for the missing-value total."
+  );
+  if(typeof Chart!=="undefined"&&el("rankingChart")){
+    if(charts.rankingChart)charts.rankingChart.destroy();
+    charts.rankingChart=new Chart(el("rankingChart"),{
+      type:"bar",
+      data:{labels:data.map(r=>r.key),datasets:[{label:metricLabel(metric),data:data.map(r=>r.value),backgroundColor:data.map((_,i)=>palette[i%palette.length]),borderRadius:4,barThickness:"flex",maxBarThickness:18}]},
+      options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return formatMetric(ctx.raw,metric);}}}},scales:{x:{beginAtZero:true,ticks:{callback:function(v){return metric==="row_count"?fmtInt(v):fmt(v,0);}}},y:{ticks:{font:{size:10},autoSkip:false}}}}
+    });
+  }
+  if(!data.length){el("rankingTable").innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">No known '+escapeHtml(dimLabel(dimension))+' values for selected filters. Check the Unknown / NA Coverage block above.</div>';return;}
+  const rowsHtml=data.map(function(r,i){
+    return '<tr>'+
+      td("#",String(i+1),"num")+
+      td(dimLabel(dimension),escapeHtml(r.key))+
+      td(metricLabel(metric),formatMetric(r.value,metric),"num")+
+      td("Raw Hours",formatMetric(r.raw_watch_hours,"raw_watch_hours"),"num")+
+      td("Status 200 Hours",formatMetric(r.status_200_watch_hours,"status_200_watch_hours"),"num")+
+      td("Rows",fmtInt(r.row_count),"num")+
+      td("Source",escapeHtml(r.source_text))+
+      td("cliIPs",fmtInt(r.cliip_count),"num")+
+      td("Sessions",fmtInt(r.session_count),"num")+
+      td("Devices",fmtInt(r.device_count),"num")+
+    '</tr>';
+  }).join("");
+  el("rankingTable").innerHTML='<table class="responsive-table ranking-table"><thead><tr>'+["#",dimLabel(dimension),metricLabel(metric),"Raw Hours","Status 200 Hours","Rows","Source","cliIPs","Sessions","Devices"].map(th).join("")+'</tr></thead><tbody>'+rowsHtml+'</tbody></table>';
+}
+function renderPivot(filtered){
+  const primary=state.pivotPrimary;
+  const secondary=state.pivotSecondary;
+  const metric=state.pivotMetric;
+  const limit=Number(state.pivotLimit||25);
+  const allData=aggregatePivot(filtered,primary,secondary,metric);
+  const unknown=unknownCoverageItem(allData);
+  const data=allData.filter(function(item){return !isUnknownValue(item.key);}).slice(0,limit);
+  el("pivotCaption").textContent=dimLabel(primary)+" -> "+dimLabel(secondary)+" | "+metricLabel(metric)+" | known primary values";
+  renderUnknownCoverage(
+    "pivotUnknown",
+    unknown,
+    filtered,
+    primary,
+    metric,
+    "Unknown / NA primary values are separated from the cross-analysis table so known combinations stay readable."
+  );
+  if(!data.length){el("pivotTable").innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">No known '+escapeHtml(dimLabel(primary))+' values for selected filters. Check the Unknown / NA Coverage block above.</div>';return;}
+  const rowsHtml=data.map(function(r,i){
+    const secondaryKnown=r.secondary_items.filter(function(s){return !isUnknownValue(s.key);});
+    const breakdown=secondaryKnown.slice(0,6).map(function(s){
+      const pct=r.value?((n(s.value)/n(r.value))*100):0;
+      return '<div><span>'+escapeHtml(s.key)+'</span><span>'+formatMetric(s.value,metric)+' · '+fmt(pct,1)+'%</span></div>';
+    }).join("");
+    return '<tr>'+
+      td("#",String(i+1),"num")+
+      td(dimLabel(primary),escapeHtml(r.key))+
+      td(metricLabel(metric),formatMetric(r.value,metric),"num")+
+      td("Raw Hours",formatMetric(r.raw_watch_hours,"raw_watch_hours"),"num")+
+      td("Status 200 Hours",formatMetric(r.status_200_watch_hours,"status_200_watch_hours"),"num")+
+      td("Rows",fmtInt(r.row_count),"num")+
+      td("Source",escapeHtml(r.source_text))+
+      td("cliIPs",fmtInt(r.cliip_count),"num")+
+      td("Sessions",fmtInt(r.session_count),"num")+
+      td("Devices",fmtInt(r.device_count),"num")+
+      td("Top "+dimLabel(secondary),'<div class="mini-break">'+(breakdown||'<div><span>No known '+escapeHtml(dimLabel(secondary))+'</span><span>-</span></div>')+'</div>')+
+    '</tr>';
+  }).join("");
+  el("pivotTable").innerHTML='<table class="responsive-table pivot-table"><thead><tr>'+["#",dimLabel(primary),metricLabel(metric),"Raw Hours","Status 200 Hours","Rows","Source","cliIPs","Sessions","Devices","Top "+dimLabel(secondary)].map(th).join("")+'</tr></thead><tbody>'+rowsHtml+'</tbody></table>';
+}
+function renderTable(viewers){
+  const limit=Math.min(Number(state.limit||100),viewers.length);
+  const data=viewers.slice(0,limit);
+  el("viewerCount").textContent=fmtInt(data.length)+" shown of "+fmtInt(viewers.length)+" viewers";
+  if(!data.length){el("viewerTable").innerHTML='<div style="padding:14px;color:#64748b;font-size:12px">No viewers for selected filters.</div>';return;}
+  const labels=["cliIP","Source","Raw Hours","Status 200 Hours","All Status Hours","Rows","Days","Sessions","Devices","Top Channel","Country","State","City","Top Session ID","Top Device ID","First Seen","Last Seen","Journey"];
+  const head=labels.map(th).join("");
+  const body=data.map(function(r){
+    const open=r.journey_dashboard?'<a class="link-btn" href="'+escapeHtml(r.journey_dashboard)+'">Open</a>':'<span class="pill">Not built</span>';
+    const encodedCliip=encodeURIComponent(String(r.cliIP||""));
+    return "<tr>"+
+      td("cliIP",'<button class="link-btn mono" data-cliip="'+escapeHtml(encodedCliip)+'">'+escapeHtml(r.cliIP)+'</button>')+
+      td("Source",escapeHtml(r.source_text))+
+      td("Raw Hours",fmtH(r.raw_watch_hours),"num")+
+      td("Status 200 Hours",fmtH(r.status_200_watch_hours),"num")+
+      td("All Status Hours",escapeHtml(r.status_hours_text),"mono")+
+      td("Rows",fmtInt(r.row_count),"num")+
+      td("Days",fmtInt(r.day_count),"num")+
+      td("Sessions",fmtInt(r.session_ids),"num")+
+      td("Devices",fmtInt(r.device_ids),"num")+
+      td("Top Channel",escapeHtml(r.top_channel))+
+      td("Country",escapeHtml(r.top_country))+
+      td("State",escapeHtml(r.top_region))+
+      td("City",escapeHtml(r.top_city))+
+      td("Top Session ID",escapeHtml(r.top_session_id),"mono")+
+      td("Top Device ID",escapeHtml(r.top_device_id),"mono")+
+      td("First Seen",escapeHtml(fmtDateTime12(r.first_seen_ist)))+
+      td("Last Seen",escapeHtml(fmtDateTime12(r.last_seen_ist)))+
+      td("Journey",open)+
+    "</tr>";
+  }).join("");
+  el("viewerTable").innerHTML='<table class="responsive-table viewer-table"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>';
+  document.querySelectorAll("#viewerTable [data-cliip]").forEach(function(btn){
+    btn.addEventListener("click",function(){selectViewer(decodeURIComponent(this.dataset.cliip||""));});
+  });
+}
+function renderSelected(viewers){
+  let selected=viewers.find(r=>r.cliIP===state.selectedCliip)||viewers[0];
+  if(!selected){el("selectedTitle").textContent="";el("selectedCards").innerHTML="";el("commandBlock").textContent="Select a viewer.";return;}
+  state.selectedCliip=selected.cliIP;
+  el("selectedTitle").textContent=selected.cliIP;
+  el("selectedCards").innerHTML=[
+    metric("Raw Hours",fmtH(selected.raw_watch_hours),selected.top_channel,"teal"),
+    metric("Status 200 Hours",fmtH(selected.status_200_watch_hours),dateRangeText(),"green"),
+    metric("Rows",fmtInt(selected.row_count),selected.top_country+" / "+selected.top_region,"gold"),
+    metric("Sessions",fmtInt(selected.session_ids),selected.top_session_id,"violet"),
+    metric("Devices",fmtInt(selected.device_ids),selected.top_device_id,"red"),
+    metric("Source",escapeHtml(selected.source_text.replace(/^Source: /,"")),dateRangeText(),"teal")
+  ].join("");
+  const existing=selected.journey_dashboard?("Existing dashboard: "+selected.journey_dashboard+"\\n\\n"):"";
+  el("commandBlock").textContent=existing+commandFor(selected.cliIP);
+}
+function selectViewer(cliip){state.selectedCliip=cliip;render();}
+function renderCards(viewers,filtered){
+  const stats=currentScopeStats();
+  const raw=filtered.reduce((a,r)=>a+n(r.raw_watch_hours),0);
+  const s200=filtered.reduce((a,r)=>a+n(r.status_200_watch_hours),0);
+  const rawRows=filtered.reduce((a,r)=>a+n(r.row_count),0);
+  el("summaryCards").innerHTML=[
+    metric("Source Scope",escapeHtml(currentScopeLabel()),fmtDateOnly(stats.min_date)+" to "+fmtDateOnly(stats.max_date),"teal"),
+    metric("Date Preset",escapeHtml(presetLabel()),dateRangeText(),""),
+    metric("Viewers",fmtInt(viewers.length),"distinct cliIP in selected filters","teal"),
+    metric("Raw Watch Hours",fmtH(raw),"selected embedded index rows","gold"),
+    metric("Status 200 Hours",fmtH(s200),"successful .ts rows only","green"),
+    metric("Raw Rows",fmtInt(rawRows),"media rows in selection","violet"),
+    metric("Date Range",fmtDateOnly(state.start),fmtDateOnly(state.end),""),
+    metric("Processed Scope",fmtH(stats.raw_watch_hours),fmtInt(stats.index_rows)+" index rows | "+fmtInt(stats.cliips)+" cliIPs","red")
+  ].join("");
+}
+function render(){
+  setDateBoundsForSource(true);
+  syncFilterOptions();
+  const filtered=filteredRows();
+  const viewers=groupViewers(filtered);
+  renderScopeMeta(filtered);
+  renderCards(viewers,filtered);
+  renderLeaderCards(filtered);
+  renderRanking(filtered);
+  renderPivot(filtered);
+  renderChart(viewers);
+  renderTable(viewers);
+  renderSelected(viewers);
+}
+function bind(){
+  el("reportTitle").textContent=D.meta.title||"Viewer Journey Menu";
+  el("genText").textContent="Last updated "+fmtDateTime12(D.meta.generated);
+  el("dateStart").value=state.start;el("dateEnd").value=state.end;
+  document.querySelectorAll("[data-preset]").forEach(function(btn){
+    btn.addEventListener("click",function(){applyDatePreset(this.dataset.preset,true);});
+  });
+  ["dateStart","dateEnd"].forEach(function(id){el(id).addEventListener("change",function(){state.preset="custom";state[id==="dateStart"?"start":"end"]=this.value;updatePresetButtons();render();});});
+  [["sourceSelect","source"],["countrySelect","country"],["stateSelect","region"],["citySelect","city"],["channelSelect","channel"],["sortSelect","sort"],["limitSelect","limit"]].forEach(function(pair){el(pair[0]).addEventListener("change",function(){state[pair[1]]=pair[1]==="limit"?Number(this.value):this.value;render();});});
+  [["rankDimensionSelect","rankDimension"],["rankMetricSelect","rankMetric"],["rankLimitSelect","rankLimit"],["pivotPrimarySelect","pivotPrimary"],["pivotSecondarySelect","pivotSecondary"],["pivotMetricSelect","pivotMetric"],["pivotLimitSelect","pivotLimit"]].forEach(function(pair){el(pair[0]).addEventListener("change",function(){state[pair[1]]=pair[1].includes("Limit")?Number(this.value):this.value;render();});});
+  el("searchInput").addEventListener("input",function(){state.search=this.value;render();});
+  el("sessionSearchInput").addEventListener("input",function(){state.sessionSearch=this.value;render();});
+  el("deviceSearchInput").addEventListener("input",function(){state.deviceSearch=this.value;render();});
+  el("resetBtn").addEventListener("click",function(){state.source=state.country=state.region=state.city=state.channel="all";state.sort="raw_watch_hours";state.limit=100;state.rankDimension="cliIP";state.rankMetric="raw_watch_hours";state.rankLimit=20;state.pivotPrimary="channel_name";state.pivotSecondary="state";state.pivotMetric="raw_watch_hours";state.pivotLimit=25;state.preset="yesterday";state.search="";state.sessionSearch="";state.deviceSearch="";el("searchInput").value="";el("sessionSearchInput").value="";el("deviceSearchInput").value="";el("sortSelect").value=state.sort;el("limitSelect").value=state.limit;el("rankDimensionSelect").value=state.rankDimension;el("rankMetricSelect").value=state.rankMetric;el("rankLimitSelect").value=state.rankLimit;el("pivotPrimarySelect").value=state.pivotPrimary;el("pivotSecondarySelect").value=state.pivotSecondary;el("pivotMetricSelect").value=state.pivotMetric;el("pivotLimitSelect").value=state.pivotLimit;applyDatePreset("yesterday",false);render();});
+  render();
+}
+bind();
+</script>
+</body>
+</html>

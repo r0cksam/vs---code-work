@@ -284,6 +284,9 @@ tr:hover td{background:#f6f9ff}
       <div class="panel"><h2>QueryStr Mismatches<span class="count-chip" id="queryNonOkCount"></span></h2><div class="table-wrap" id="queryNonOkTable"></div></div>
     </div>
     <div class="grid-2">
+      <div class="panel grid-span-all"><h2>Video Quality Detection Coverage<span class="count-chip" id="qualityCoverageCount"></span></h2><div class="metric-strip" id="qualityCoverageMetrics"></div><div class="table-wrap" id="qualityCoverageTable"></div></div>
+    </div>
+    <div class="grid-2">
       <div class="panel"><h2>QueryStr Parameters By Source<span class="count-chip" id="queryParamKeysCount"></span></h2><div class="table-wrap" id="queryParamKeysTable"></div></div>
       <div class="panel"><h2>m Parameter Channel Evidence<span class="count-chip" id="queryMChannelCount"></span></h2><div class="table-wrap" id="queryMChannelTable"></div></div>
     </div>
@@ -1320,6 +1323,23 @@ function deviceProfileWindow(){
 }
 function aggregateMappingQuality(){ return getAgg('mqual',()=>topRows(groupRows(rowsForDates(DAILY_TABLES.mapping_quality_daily),['reqHost','candidate_id','channel_name','quality_bucket'],['rows','raw_ts_chunks','status_200_ts_chunks','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']),'raw_watch_hours',40)); }
 function aggregateUnmapped() { return getAgg('unmapped', ()=>topRows(groupRows(rowsForDates(DAILY_TABLES.unmapped_candidates_daily),['reqHost','candidate_id'],['rows','raw_ts_chunks','status_200_ts_chunks','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips'],['sample_reqPath']),'raw_ts_chunks',50)); }
+function aggregateQualityCoverage(){
+  return getAgg('qualityCoverage',()=>{
+    const rows=groupRows(rowsForDates(DAILY_TABLES.mapping_quality_daily),['source','quality_bucket'],['rows','raw_ts_chunks','status_200_ts_chunks','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips']);
+    const totalHours=sum(rows,'raw_watch_hours');
+    rows.forEach(r=>{
+      r.source=sourceLabel(sourceOf(r));
+      r.quality_bucket=String(r.quality_bucket||'unknown').trim()||'unknown';
+      r.quality_status=r.quality_bucket.toLowerCase()==='unknown'?'Quality not detected':'Detected';
+      r.share_pct=percent(r.raw_watch_hours,totalHours);
+    });
+    return rows.sort((a,b)=>{
+      const au=String(a.quality_bucket).toLowerCase()==='unknown'?0:1;
+      const bu=String(b.quality_bucket).toLowerCase()==='unknown'?0:1;
+      return au-bu||Number(b.raw_watch_hours||0)-Number(a.raw_watch_hours||0);
+    });
+  });
+}
 function aggregateQueryParams(){ return getAgg('qparams', ()=>oneDailyRow(DAILY_TABLES.query_params_daily,['rows_with_querystr','channel_rows','channel_name_rows','session_rows','device_id_rows','platform_rows','device_rows','content_title_rows','category_name_rows','m_rows','cmcd_query_rows','hdnts_rows','token_rows'],['sample_queryStr'])); }
 function aggregateQueryParamKeys(){ return getAgg('qkeys',()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.query_param_keys_daily),['source','param_key'],['rows'],['approx_values'],['sample_value']); rows.forEach(r=>{r.source=sourceLabel(sourceOf(r));r.purpose=queryParamPurpose(r.param_key);}); return topRows(rows,'rows',40); }); }
 function aggregateQueryMChannel(){ return getAgg('qmchannel',()=>{ const rows=groupRows(rowsForDates(DAILY_TABLES.query_m_channel_daily),['source','m_value','candidate_id','channel_name'],['raw_ts_rows','status_200_ts_rows','raw_watch_hours','status_200_watch_hours'],['approx_unique_ips']); rows.forEach(r=>{r.source=sourceLabel(sourceOf(r));}); return topRows(rows,'raw_watch_hours',40); }); }
@@ -2459,6 +2479,11 @@ function usageDropChannelLink(value){
   const channel=String(value||'Unknown');
   return `<button type="button" class="drill-link" onclick="setUsageDropChannel('${encodeURIComponent(channel)}')">${escapeHtml(channel)}</button>`;
 }
+function qualityBucketPill(value){
+  const text=String(value||'unknown');
+  const cls=text.toLowerCase()==='unknown'?'warn':'ok';
+  return `<span class="state-pill ${cls}">${escapeHtml(text)}</span>`;
+}
 function renderChannelInsightCards(rows){
   return (rows||[]).map(r=>{
     const channel=r.channel_name || 'Unknown';
@@ -2848,6 +2873,7 @@ function renderTables(){
   const s=selectedSummary();
   const unmappedRows=aggregateUnmapped();
   const mqRows=aggregateMappingQuality();
+  const qualityCoverageRows=aggregateQualityCoverage();
   const geo=buildGeoBreakdown();
   const deviceRows=aggregateDevice();
   const asnRows=aggregateAsn();
@@ -3001,6 +3027,35 @@ function renderTables(){
   document.getElementById('mappingMetrics').innerHTML=[mini('Unmapped Candidates',fmt(s.unmapped_candidates)),mini('Mapped Coverage',fmtPct(s.mapped_coverage_pct)),mini('Rows With QueryStr',fmt(qp.rows_with_querystr||0)),mini('Rows With CMCD',fmt(cmcd.rows_with_cmcd||0))].join('');
   document.getElementById('querySummaryTable').innerHTML=table(D.query_summary,[{key:'review_status',label:'Status'},{key:'rows',label:'Rows'},{key:'requests',label:'Requests'},{key:'sessions',label:'Sessions'},{key:'devices',label:'Devices'}],{rows:n,requests:n,sessions:n,devices:n});
   document.getElementById('queryNonOkTable').innerHTML=table(D.query_non_ok,[{key:'review_status',label:'Status'},{key:'pure_channel',label:'Pure Channel'},{key:'mapped_channel',label:'Mapped Channel'},{key:'reqHost',label:'Host'},{key:'candidate_id',label:'Candidate'},{key:'requests',label:'Requests'},{key:'sample_reqPath',label:'Sample Path'}],{requests:n});
+  const unknownQualityRows=qualityCoverageRows.filter(r=>String(r.quality_bucket||'').toLowerCase()==='unknown');
+  const totalQualityHours=sum(qualityCoverageRows,'raw_watch_hours');
+  const unknownQualityHours=sum(unknownQualityRows,'raw_watch_hours');
+  const detectedQualityHours=totalQualityHours-unknownQualityHours;
+  document.getElementById('qualityCoverageMetrics').innerHTML=[
+    mini('Unknown Quality Share',fmtPct(percent(unknownQualityHours,totalQualityHours))),
+    mini('Unknown Quality Hours',fmtH(unknownQualityHours)),
+    mini('Detected Quality Hours',fmtH(detectedQualityHours)),
+    mini('Quality Buckets',fmt(new Set(qualityCoverageRows.map(r=>String(r.quality_bucket||''))).size))
+  ].join('');
+  document.getElementById('qualityCoverageTable').innerHTML=table(
+    qualityCoverageRows,
+    [
+      {key:'source',label:'Source'},
+      {key:'quality_bucket',label:'Quality'},
+      {key:'quality_status',label:'Status'},
+      {key:'raw_watch_hours',label:'Raw Hours'},
+      {key:'share_pct',label:'Share'},
+      {key:'raw_ts_chunks',label:'Raw TS Chunks'},
+      {key:'approx_unique_ips',label:'Approx IPs'}
+    ],
+    {
+      quality_bucket:{fn:v=>qualityBucketPill(v)},
+      raw_watch_hours:wh,
+      share_pct:p,
+      raw_ts_chunks:n,
+      approx_unique_ips:n
+    }
+  );
   document.getElementById('queryParamKeysTable').innerHTML=table(qkeyRows,[{key:'source',label:'Source'},{key:'param_key',label:'Parameter'},{key:'purpose',label:'Purpose'},{key:'rows',label:'Rows'},{key:'approx_values',label:'Approx Values'},{key:'sample_value',label:'Sample Value'}],{rows:n,approx_values:n});
   document.getElementById('queryMChannelTable').innerHTML=table(qmRows,[{key:'source',label:'Source'},{key:'m_value',label:'m Value'},{key:'candidate_id',label:'Candidate'},{key:'channel_name',label:'Mapped Channel'},{key:'raw_watch_hours',label:'Raw Hours'},{key:'status_200_watch_hours',label:'Status 200 Hours'},{key:'raw_ts_rows',label:'.ts Rows'},{key:'approx_unique_ips',label:'Approx IPs'}],{raw_watch_hours:wh,status_200_watch_hours:wh,raw_ts_rows:n,approx_unique_ips:n});
   document.getElementById('unmappedTable').innerHTML=table(unmappedRows,[{key:'reqHost',label:'Host'},{key:'candidate_id',label:'Candidate'},{key:'raw_watch_hours',label:'Raw Hours'},{key:'status_200_watch_hours',label:'Status 200 Hours'},{key:'sample_reqPath',label:'Sample Path'}],{raw_watch_hours:wh,status_200_watch_hours:wh});
@@ -3119,7 +3174,7 @@ function renderTables(){
   document.getElementById('queryParamTable').innerHTML=oneRowTable(qp,{rows_with_querystr:'Rows with queryStr',channel_rows:'channel rows',channel_name_rows:'channel_name rows',content_title_rows:'content_title rows',category_name_rows:'category_name rows',session_rows:'session rows',device_id_rows:'device_id rows',platform_rows:'platform rows',device_rows:'device rows',m_rows:'m rows',cmcd_query_rows:'queryStr cmcd rows',hdnts_rows:'hdnts rows',token_rows:'token rows'});
   document.getElementById('cmcdTable').innerHTML=oneRowTable(cmcd,{rows_with_cmcd:'Rows with CMCD',br_rows:'Bitrate rows',duration_rows:'Duration rows',measured_throughput_rows:'Measured throughput rows',session_id_rows:'Session ID rows'});
 
-  setCount('channelCount',viewChannels);setCount('channelCardsCount',channelAudienceRows,'channels');setCount('channelInsightCount',channelAudienceRows,'channels');setCount('fastPlatformCount',fastPlatformRows,'rows');setCount('regionCardsCount',geo.india_regions,'regions');setCount('regionInsightCount',geo.india_regions,'regions');setCount('regionCountryCount',geo.country_split,'groups');setCount('querySummaryCount',D.query_summary);setCount('queryNonOkCount',D.query_non_ok);setCount('queryParamKeysCount',qkeyRows);setCount('queryMChannelCount',qmRows);setCount('unmappedCount',unmappedRows);setCount('mappingQualityCount',mqRows);
+  setCount('channelCount',viewChannels);setCount('channelCardsCount',channelAudienceRows,'channels');setCount('channelInsightCount',channelAudienceRows,'channels');setCount('fastPlatformCount',fastPlatformRows,'rows');setCount('regionCardsCount',geo.india_regions,'regions');setCount('regionInsightCount',geo.india_regions,'regions');setCount('regionCountryCount',geo.country_split,'groups');setCount('querySummaryCount',D.query_summary);setCount('queryNonOkCount',D.query_non_ok);setCount('qualityCoverageCount',qualityCoverageRows,'buckets');setCount('queryParamKeysCount',qkeyRows);setCount('queryMChannelCount',qmRows);setCount('unmappedCount',unmappedRows);setCount('mappingQualityCount',mqRows);
   setCount('concurrencySummaryCount',concurrencySummaryTableRows,'pairs');setCount('concurrencyPeakCount',concurrencyPeakRows,'minutes');
   setCount('geoCountryCount',geo.country_split);setCount('deviceCount',deviceRows);setCount('geoIndiaRegionCount',geo.india_regions);setCount('geoIndiaCityCount',geo.india_cities);
   setCount('geoOtherRegionCount',geo.other_regions);setCount('geoOtherCityCount',geo.other_cities);setCount('asnCount',asnRows);setCount('uaCount',uaRows);
