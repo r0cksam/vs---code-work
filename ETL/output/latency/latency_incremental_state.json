@@ -1248,18 +1248,55 @@
     },
     "fast|2026-06-15": {
       "date": "2026-06-15",
-      "duration_seconds": 1.757,
-      "processed_at": "2026-06-15T08:40:12",
+      "duration_seconds": 21.126,
+      "processed_at": "2026-06-16T08:47:45",
       "result": {
-        "base_rows": 603870,
+        "base_rows": 13749941,
         "rows": {
           "cache_daily": 5,
           "channel_daily": 9,
           "daily": 3,
-          "geo_daily": 102,
-          "host_daily": 9,
+          "geo_daily": 165,
+          "host_daily": 14,
+          "hourly": 52,
+          "status_daily": 6,
+          "summary": 1
+        }
+      },
+      "signature": {
+        "file_count": 2,
+        "files": [
+          {
+            "bytes": 21656002,
+            "mtime_ns": 1781492307975621000,
+            "name": "part_fast_2026_06_14_0.parquet"
+          },
+          {
+            "bytes": 572984625,
+            "mtime_ns": 1781579138200341100,
+            "name": "part_fast_2026_06_15_0.parquet"
+          }
+        ],
+        "max_mtime_ns": 1781579138200341100,
+        "total_bytes": 594640627
+      },
+      "source": "fast",
+      "status": "done"
+    },
+    "fast|2026-06-16": {
+      "date": "2026-06-16",
+      "duration_seconds": 1.662,
+      "processed_at": "2026-06-16T08:47:47",
+      "result": {
+        "base_rows": 674445,
+        "rows": {
+          "cache_daily": 5,
+          "channel_daily": 9,
+          "daily": 3,
+          "geo_daily": 113,
+          "host_daily": 10,
           "hourly": 13,
-          "status_daily": 5,
+          "status_daily": 6,
           "summary": 1
         }
       },
@@ -1267,13 +1304,13 @@
         "file_count": 1,
         "files": [
           {
-            "bytes": 21656002,
-            "mtime_ns": 1781492307975621000,
-            "name": "part_fast_2026_06_14_0.parquet"
+            "bytes": 23900344,
+            "mtime_ns": 1781579138321597800,
+            "name": "part_fast_2026_06_15_0.parquet"
           }
         ],
-        "max_mtime_ns": 1781492307975621000,
-        "total_bytes": 21656002
+        "max_mtime_ns": 1781579138321597800,
+        "total_bytes": 23900344
       },
       "source": "fast",
       "status": "done"
