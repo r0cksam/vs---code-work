@@ -5,33 +5,62 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging  # FIX-11
 import os
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Callable  # FIX-7
+from zoneinfo import ZoneInfo  # FIX-4
 
 import duckdb
 import pandas as pd
+
+logger = logging.getLogger(__name__)  # FIX-11
 
 
 HERE = Path(__file__).resolve().parent
 SRC_ROOT = HERE.parents[1]
 ETL_ROOT = SRC_ROOT.parent
 PROFILE_ROOT = SRC_ROOT / "profile"
-for path in [ETL_ROOT, SRC_ROOT, PROFILE_ROOT]:
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+# Expected package layout: ETL/src/common and ETL/src/profile must be importable beside ETL/src/dashboards. # FIX-2
+# Preferred execution is package mode; direct script execution uses importlib without mutating sys.path. # FIX-2
+if __package__:  # FIX-2
+    from ...common.chartjs import load_chartjs  # type: ignore[import-not-found] # FIX-2
+    from ...common.render import json_blob, render_template  # type: ignore[import-not-found] # FIX-2
+    from ...common.source_ranges import true_source_ranges_from_lake  # type: ignore[import-not-found] # FIX-2
+    from ...profile.vglive_core import (  # type: ignore[import-not-found] # FIX-2
+        DEFAULT_LAKE_FOLDER,  # FIX-2
+        HOST_MAP,  # FIX-2
+        PATH_MAP,  # FIX-2
+        build_partition_filter,  # FIX-2
+        channel_candidate_sql,  # FIX-2
+    )  # FIX-2
+else:  # FIX-2
+    import importlib.util  # FIX-2
 
-from common.chartjs import load_chartjs  # noqa: E402
-from common.render import json_blob, render_template  # noqa: E402
-from common.source_ranges import true_source_ranges_from_lake  # noqa: E402
-from vglive_core import (  # noqa: E402
-    DEFAULT_LAKE_FOLDER,
-    HOST_MAP,
-    PATH_MAP,
-    build_partition_filter,
-    channel_candidate_sql,
-)
+    def _load_module(module_name: str, path: Path):  # FIX-2
+        spec = importlib.util.spec_from_file_location(module_name, path)  # FIX-2
+        if spec is None or spec.loader is None:  # FIX-2
+            raise ImportError(f"Could not load {module_name} from {path}")  # FIX-2
+        module = importlib.util.module_from_spec(spec)  # FIX-2
+        sys.modules[module_name] = module  # FIX-2
+        spec.loader.exec_module(module)  # FIX-2
+        return module  # FIX-2
+
+    _chartjs_module = _load_module("veto_common_chartjs_latency", SRC_ROOT / "common" / "chartjs.py")  # FIX-2
+    _render_module = _load_module("veto_common_render_latency", SRC_ROOT / "common" / "render.py")  # FIX-2
+    _source_ranges_module = _load_module("veto_common_source_ranges_latency", SRC_ROOT / "common" / "source_ranges.py")  # FIX-2
+    _core_module = _load_module("veto_profile_vglive_core_latency", PROFILE_ROOT / "vglive_core.py")  # FIX-2
+    load_chartjs = _chartjs_module.load_chartjs  # FIX-2
+    json_blob = _render_module.json_blob  # FIX-2
+    render_template = _render_module.render_template  # FIX-2
+    true_source_ranges_from_lake = _source_ranges_module.true_source_ranges_from_lake  # FIX-2
+    DEFAULT_LAKE_FOLDER = _core_module.DEFAULT_LAKE_FOLDER  # FIX-2
+    HOST_MAP = _core_module.HOST_MAP  # FIX-2
+    PATH_MAP = _core_module.PATH_MAP  # FIX-2
+    build_partition_filter = _core_module.build_partition_filter  # FIX-2
+    channel_candidate_sql = _core_module.channel_candidate_sql  # FIX-2
 
 
 DEFAULT_OUT = Path(
@@ -47,7 +76,21 @@ DEFAULT_PROFILE_OUT = Path(
     )
 )
 CHARTJS_CACHE = ETL_ROOT / "output" / "cache" / "chartjs" / "chart.umd.min.js"
-IST_OFFSET_SECONDS = 19_800
+EXPORT_FLOAT_PRECISION = 6  # 6dp is sufficient for ms-level latency values # FIX-8
+IST_ZONE = ZoneInfo("Asia/Kolkata")  # FIX-4
+# IST is used because all log timestamps are stored in Indian Standard Time. # FIX-4
+SAFE_SOURCE_VALUES = {"all", "fast", "stream"}  # FIX-1
+SAFE_SQL_COLUMNS = {  # FIX-1
+    "reqPath",  # FIX-1
+    "reqTimeSec",  # FIX-1
+    "source",  # FIX-1
+    "r.source",  # FIX-1
+    "reqHost",  # FIX-1
+    "r.reqHost",  # FIX-1
+    "country",  # FIX-1
+    "state",  # FIX-1
+    "city",  # FIX-1
+}  # FIX-1
 STATUS_CODE_MEANINGS = {
     "000": "No HTTP response code logged; often an aborted or incomplete request.",
     "200": "OK: request succeeded.",
@@ -76,6 +119,42 @@ def sql_text(value: str | Path) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def assert_safe_source(source: str) -> str:  # FIX-1
+    if source not in SAFE_SOURCE_VALUES:  # FIX-1
+        raise ValueError(f"Unsafe source value for SQL: {source!r}")  # FIX-1
+    return source  # FIX-1
+
+
+def assert_safe_sql_column(column: str) -> str:  # FIX-1
+    if column not in SAFE_SQL_COLUMNS:  # FIX-1
+        raise ValueError(f"Unsafe SQL column expression: {column!r}")  # FIX-1
+    return column  # FIX-1
+
+
+def ist_offset_seconds() -> int:  # FIX-4
+    offset = datetime.now(IST_ZONE).utcoffset()  # FIX-4
+    if offset is None:  # FIX-4
+        raise RuntimeError("Asia/Kolkata UTC offset is unavailable.")  # FIX-4
+    return int(offset.total_seconds())  # FIX-4
+
+
+def execute_or_dryrun(dry_run_msg: str, write_fn: Callable[[], None], dry_run: bool):  # FIX-N2
+    if dry_run:  # FIX-7
+        logger.warning(dry_run_msg)  # FIX-N2
+        return False  # FIX-7
+    write_fn()  # FIX-7
+    return True  # FIX-7
+
+
+def validate_lake_path(lake: Path) -> None:  # FIX-3
+    # VG_LAKE_BASE_ROOT can allow lake paths outside the default ETL tree. # FIX-N4
+    expected_base = Path(os.getenv("VG_LAKE_BASE_ROOT", str(ETL_ROOT))).expanduser().resolve()  # FIX-N4
+    if not lake.exists() or not lake.is_dir():  # FIX-3
+        raise ValueError(f"Lake folder not found or not a directory: {lake}")  # FIX-3
+    if not lake.is_relative_to(expected_base):  # FIX-3
+        raise ValueError(f"Lake folder escapes expected ETL root {expected_base}: {lake}")  # FIX-3
+
+
 def parse_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -101,9 +180,9 @@ def checked_dates(args: argparse.Namespace) -> tuple[date | None, date | None]:
     start = parse_date(args.start)
     end = parse_date(args.end)
     if (start is None) != (end is None):
-        raise SystemExit("Use both --start and --end, or neither.")
+        raise ValueError("Use both --start and --end, or neither.")  # FIX-10
     if start and end and start > end:
-        raise SystemExit("--start cannot be after --end.")
+        raise ValueError("--start cannot be after --end.")  # FIX-10
     if not start and not end and args.window_days and args.window_days > 0:
         latest = latest_lake_day(args.lake)
         if latest:
@@ -113,12 +192,14 @@ def checked_dates(args: argparse.Namespace) -> tuple[date | None, date | None]:
 
 
 def source_filter_sql(source: str) -> str:
+    source = assert_safe_source(source)  # FIX-1
     if source == "all":
         return "1=1"
     return f"lower(COALESCE(CAST(source AS VARCHAR), 'stream')) = {sql_text(source)}"
 
 
 def extension_sql(path_col: str = "reqPath") -> str:
+    path_col = assert_safe_sql_column(path_col)  # FIX-1
     return f"""
 CASE
     WHEN {path_col} IS NULL OR trim({path_col}) = '' THEN '<empty>'
@@ -129,9 +210,11 @@ END
 
 
 def ist_timestamp_expr(epoch_expr: str = "reqTimeSec") -> str:
+    epoch_expr = assert_safe_sql_column(epoch_expr)  # FIX-1
+    offset_seconds = ist_offset_seconds()  # FIX-4
     return (
         "epoch_ms(CAST(FLOOR(("
-        f"TRY_CAST({epoch_expr} AS DOUBLE) + {IST_OFFSET_SECONDS}"
+        f"TRY_CAST({epoch_expr} AS DOUBLE) + {offset_seconds}"  # FIX-4
         ") * 1000) AS BIGINT))"
     )
 
@@ -140,6 +223,9 @@ def clean_text_sql(column_expr: str) -> str:
     return f"NULLIF(trim(COALESCE(CAST({column_expr} AS VARCHAR), '')), '')"
 
 
+# FIX-9: DuckDB try() intentionally suppresses URL decode errors here.
+# FIX-9: The fallback chain url_decoded -> raw string -> 'Unknown / NA' is deliberate.
+# FIX-9: Malformed encodings should not crash the pipeline; data quality issues surface as 'Unknown / NA'.
 def decoded_text_sql(column_expr: str) -> str:
     return (
         f"COALESCE(NULLIF(trim(try(url_decode(CAST({column_expr} AS VARCHAR)))), ''), "
@@ -148,6 +234,8 @@ def decoded_text_sql(column_expr: str) -> str:
 
 
 def platform_name_sql(source_expr: str = "source", host_expr: str = "reqHost") -> str:
+    source_expr = assert_safe_sql_column(source_expr)  # FIX-1
+    host_expr = assert_safe_sql_column(host_expr)  # FIX-1
     host = f"lower(COALESCE({host_expr}, ''))"
     src = f"lower(COALESCE({source_expr}, 'stream'))"
     return f"""
@@ -213,19 +301,25 @@ def metric_sql() -> str:
 
 
 def write_frame(df: pd.DataFrame, path: Path, dry_run: bool) -> None:
-    if dry_run:
-        print(f"[dry-run] would write {len(df):,} rows -> {path}")
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"tmp_{path.stem}_{os.getpid()}{path.suffix}")
-    tmp.unlink(missing_ok=True)
-    df.to_parquet(tmp, index=False, compression="zstd")
-    tmp.replace(path)
-    print(f"wrote {path} ({len(df):,} rows)")
+    def _write(df=df, path=path) -> None:  # FIX-M1
+        path.parent.mkdir(parents=True, exist_ok=True)  # FIX-7
+        tmp = path.with_name(f"tmp_{path.stem}_{os.getpid()}{path.suffix}")  # FIX-7
+        tmp.unlink(missing_ok=True)  # FIX-7
+        df.to_parquet(tmp, index=False, compression="zstd")  # FIX-7
+        tmp.replace(path)  # FIX-7
+        logger.info(f"wrote {path} ({len(df):,} rows)")  # FIX-11
+
+    execute_or_dryrun(f"[dry-run] would write {len(df):,} rows -> {path}", _write, dry_run)  # FIX-7
 
 
 def fetch_df(con: duckdb.DuckDBPyConnection, sql: str) -> pd.DataFrame:
-    return con.execute(sql).fetchdf()
+    try:  # FIX-5
+        return con.execute(sql).fetchdf()  # FIX-5
+    except duckdb.Error as exc:  # FIX-5
+        safe_sql = sql[:200].replace("\n", " ")  # FIX-5
+        safe_description = f"{type(exc).__name__}: {safe_sql}"  # FIX-5
+        logger.error("DuckDB fetch_df failed: %s", safe_description)  # FIX-5
+        raise RuntimeError(f"fetch_df failed: {safe_description}") from exc  # FIX-5
 
 
 def build_tables(args: argparse.Namespace) -> dict[str, pd.DataFrame]:
@@ -233,11 +327,15 @@ def build_tables(args: argparse.Namespace) -> dict[str, pd.DataFrame]:
     glob = q(args.lake / "**" / "*.parquet")
     partition_filter = build_partition_filter(start, end) if start and end else "1=1"
     source_filter = source_filter_sql(args.source)
-    candidate_expr = channel_candidate_sql("reqPath")
+    candidate_expr = channel_candidate_sql(assert_safe_sql_column("reqPath"))  # FIX-1
+    country_expr = decoded_text_sql(assert_safe_sql_column("country"))  # FIX-1
+    state_expr = decoded_text_sql(assert_safe_sql_column("state"))  # FIX-1
+    city_expr = decoded_text_sql(assert_safe_sql_column("city"))  # FIX-1
 
-    con = connect(args)
+    con = None  # FIX-6
     try:
-        print("Creating latency base table...")
+        con = connect(args)  # FIX-6
+        logger.info("Creating latency base table...")  # FIX-11
         con.execute(
             f"""
             CREATE OR REPLACE TEMP TABLE latency_base AS
@@ -250,9 +348,9 @@ def build_tables(args: argparse.Namespace) -> dict[str, pd.DataFrame]:
                     {candidate_expr} AS candidate_id,
                     COALESCE(NULLIF(regexp_replace(CAST(statusCode AS VARCHAR), '\\.0$', ''), ''), '000') AS status_code,
                     {extension_sql("reqPath")} AS extension,
-                    {decoded_text_sql("country")} AS country,
-                    {decoded_text_sql("state")} AS state,
-                    {decoded_text_sql("city")} AS city,
+                    {country_expr} AS country,
+                    {state_expr} AS state,
+                    {city_expr} AS city,
                     COALESCE(NULLIF(CAST(cacheStatus AS VARCHAR), ''), 'Unknown') AS cacheStatus,
                     COALESCE(NULLIF(CAST(cacheable AS VARCHAR), ''), 'Unknown') AS cacheable,
                     NULLIF(CAST(cliIP AS VARCHAR), '') AS cliIP,
@@ -380,13 +478,14 @@ def build_tables(args: argparse.Namespace) -> dict[str, pd.DataFrame]:
         )
         return tables
     finally:
-        con.close()
+        if con is not None:  # FIX-6
+            con.close()  # FIX-6
 
 
 def read_profile_table(profile_dir: Path, name: str) -> pd.DataFrame:
     path = profile_dir / f"{name}.parquet"
     if not path.exists():
-        raise SystemExit(f"Latency profile table not found: {path}")
+        raise FileNotFoundError(f"Latency profile table not found: {path}")  # FIX-N3
     return pd.read_parquet(path)
 
 
@@ -405,30 +504,10 @@ def load_tables_from_profile(profile_dir: Path) -> dict[str, pd.DataFrame]:
     if summary_path.exists():
         tables["summary"] = pd.read_parquet(summary_path)
     else:
-        daily = tables["daily"]
-        rows = int(daily["rows"].sum()) if "rows" in daily else 0
-        tables["summary"] = pd.DataFrame(
-            [
-                {
-                    "first_date": str(daily["log_date"].min()) if not daily.empty else "",
-                    "last_date": str(daily["log_date"].max()) if not daily.empty else "",
-                    "rows": rows,
-                    "ts_rows": int(daily.loc[daily["extension"].astype(str).str.lower() == "ts", "rows"].sum())
-                    if "extension" in daily and "rows" in daily
-                    else 0,
-                    "playlist_rows": int(daily.loc[daily["extension"].astype(str).str.lower() == "m3u8", "rows"].sum())
-                    if "extension" in daily and "rows" in daily
-                    else 0,
-                    "sources": int(daily["source"].nunique()) if "source" in daily else 0,
-                    "channels": int(tables["channel_daily"]["channel_name"].nunique())
-                    if "channel_name" in tables["channel_daily"]
-                    else 0,
-                    "hosts": int(tables["host_daily"]["reqHost"].nunique())
-                    if "reqHost" in tables["host_daily"]
-                    else 0,
-                }
-            ]
-        )
+        raise FileNotFoundError(  # FIX-12
+            f"summary.parquet not found in profile dir: {profile_dir}. "  # FIX-12
+            "Re-run without --from-profile to regenerate all profile tables."  # FIX-12
+        )  # FIX-12
     return tables
 
 
@@ -440,7 +519,7 @@ def clean_records(df: pd.DataFrame, columns: list[str] | None = None) -> list[di
         out = out[[col for col in columns if col in out.columns]]
     for col in out.columns:
         if pd.api.types.is_float_dtype(out[col]):
-            out[col] = out[col].round(6)
+            out[col] = out[col].round(EXPORT_FLOAT_PRECISION)  # FIX-8
         elif pd.api.types.is_integer_dtype(out[col]):
             continue
         else:
@@ -480,6 +559,11 @@ def build_payload(tables: dict[str, pd.DataFrame], args: argparse.Namespace) -> 
 
 
 def main() -> None:
+    logging.basicConfig(  # FIX-11
+        level=logging.INFO,  # FIX-11
+        format="%(asctime)s %(levelname)s %(message)s",  # FIX-11
+        datefmt="%Y-%m-%d %H:%M:%S",  # FIX-11
+    )  # FIX-11
     parser = argparse.ArgumentParser(description="Generate Veto Latency HTML dashboard.")
     parser.add_argument("--lake", type=Path, default=Path(os.getenv("VG_ETL_LAKE_ROOT", str(DEFAULT_LAKE_FOLDER))))
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -500,20 +584,29 @@ def main() -> None:
     args.lake = args.lake.expanduser().resolve()
     args.out = args.out.expanduser().resolve()
     args.profile_out = args.profile_out.expanduser().resolve()
-    if not args.from_profile and not args.lake.exists():
-        raise SystemExit(f"Lake folder not found: {args.lake}")
+    args.source = assert_safe_source(args.source)  # FIX-1
+    try:  # FIX-3
+        validate_lake_path(args.lake)  # FIX-3
+    except ValueError as exc:  # FIX-3
+        raise SystemExit(str(exc)) from exc  # FIX-3
 
     if args.from_profile:
-        print(f"Rendering latency dashboard from profile: {args.profile_out}")
-        tables = load_tables_from_profile(args.profile_out)
+        logger.info(f"Rendering latency dashboard from profile: {args.profile_out}")  # FIX-11
+        try:  # FIX-N3
+            tables = load_tables_from_profile(args.profile_out)  # FIX-N3
+        except FileNotFoundError as e:  # FIX-N3
+            raise SystemExit(str(e)) from e  # FIX-N3
     else:
-        print(f"Building latency dashboard from: {args.lake}")
-        start, end = checked_dates(args)
+        logger.info(f"Building latency dashboard from: {args.lake}")  # FIX-11
+        try:  # FIX-10
+            start, end = checked_dates(args)  # FIX-10
+        except ValueError as e:  # FIX-10
+            raise SystemExit(str(e)) from e  # FIX-10
         if start and end:
-            print(f"Date scope: {start.isoformat()} -> {end.isoformat()}")
+            logger.info(f"Date scope: {start.isoformat()} -> {end.isoformat()}")  # FIX-11
         else:
-            print("Date scope: all available lake partitions")
-        print(f"Source scope: {args.source}")
+            logger.info("Date scope: all available lake partitions")  # FIX-11
+        logger.info(f"Source scope: {args.source}")  # FIX-11
         tables = build_tables(args)
         for name, frame in tables.items():
             write_frame(frame, args.profile_out / f"{name}.parquet", args.dry_run)
@@ -526,12 +619,14 @@ def main() -> None:
             "source": args.source,
             "rows": {name: int(len(frame)) for name, frame in tables.items()},
         }
-        if not args.dry_run:
-            args.profile_out.mkdir(parents=True, exist_ok=True)
-            (args.profile_out / "latency_manifest.json").write_text(
-                json.dumps(manifest, indent=2),
-                encoding="utf-8",
-            )
+        manifest_path = args.profile_out / "latency_manifest.json"  # FIX-M2
+
+        def _write_manifest() -> None:  # FIX-7
+            manifest_path = args.profile_out / "latency_manifest.json"  # FIX-M2
+            args.profile_out.mkdir(parents=True, exist_ok=True)  # FIX-7
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")  # FIX-7
+
+        execute_or_dryrun(f"[dry-run] would write: {manifest_path}", _write_manifest, args.dry_run)  # FIX-7
 
     payload = build_payload(tables, args)
     chartjs = load_chartjs(CHARTJS_CACHE, fallback="window.Chart=null;")
@@ -540,15 +635,14 @@ def main() -> None:
         DATA_BLOB=json_blob(payload),
         CHARTJS=chartjs or "window.Chart=null;",
     )
-    if args.dry_run:
-        print(f"[dry-run] HTML chars: {len(html):,}")
-        print(f"[dry-run] would write: {args.out}")
-        return
+    def _write_html() -> None:  # FIX-7
+        args.out.parent.mkdir(parents=True, exist_ok=True)  # FIX-7
+        args.out.write_text(html, encoding="utf-8")  # FIX-7
+        logger.info(f"Dashboard written: {args.out}")  # FIX-11
+        logger.info(f"Size: {args.out.stat().st_size / 1024:.1f} KB")  # FIX-11
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(html, encoding="utf-8")
-    print(f"Dashboard written: {args.out}")
-    print(f"Size: {args.out.stat().st_size / 1024:.1f} KB")
+    if not execute_or_dryrun(f"[dry-run] HTML chars: {len(html):,} — would write: {args.out}", _write_html, args.dry_run):  # FIX-N1
+        return
 
 
 if __name__ == "__main__":
