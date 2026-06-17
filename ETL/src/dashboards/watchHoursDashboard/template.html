@@ -146,14 +146,14 @@ tr:hover td{background:#f6f9ff}
   <div class="sticky-controls">
     <div class="filter-bar date-filter">
       <span class="filter-title">Source</span>
-      <button class="filter-btn active" id="sourceAll" onclick="setSourceFilter('all')">ALL</button>
-      <button class="filter-btn" id="sourceStream" onclick="setSourceFilter('stream')">STREAM</button>
+      <button class="filter-btn" id="sourceAll" onclick="setSourceFilter('all')">ALL</button>
+      <button class="filter-btn active" id="sourceStream" onclick="setSourceFilter('stream')">STREAM</button>
       <button class="filter-btn" id="sourceFast" onclick="setSourceFilter('fast')">FAST</button>
       <span class="filter-sep"></span>
       <span class="filter-title">Date Range</span>
-      <button class="filter-btn active" id="presetAll" onclick="setDatePreset('all')">ALL</button>
+      <button class="filter-btn" id="presetAll" onclick="setDatePreset('all')">ALL</button>
       <button class="filter-btn" id="preset30" onclick="setDatePreset(30)">30D</button>
-      <button class="filter-btn" id="preset7" onclick="setDatePreset(7)">7D</button>
+      <button class="filter-btn active" id="preset7" onclick="setDatePreset(7)">7D</button>
       <button class="filter-btn" id="presetYesterday" onclick="setDatePreset('yesterday')">Yesterday</button>
       <span class="filter-sep"></span>
       <input type="date" id="dateStart" onchange="handleCustomDate()"/>
@@ -403,7 +403,7 @@ const CONCURRENCY_COLORS = ['#c77a32','#5794f2','#73bf69','#f2495c','#b877d9','#
 const DAILY_TABLES_RAW = D.daily_tables || {};
 const sourceOf = r => String(r?.source || 'stream').trim().toLowerCase() || 'stream';
 const sourceLabel = s => s === 'fast' ? 'FAST' : s === 'stream' ? 'STREAM' : 'ALL';
-let sourceFilter = 'all';
+let sourceFilter = 'stream';
 let ALL_DAILY_RAW = [];
 let ALL_DAILY = [];
 let USABLE_DATES = new Set();
@@ -1674,12 +1674,64 @@ function setActiveSource(){
   });
 }
 
+function syncDateInputBounds(){
+  const first=ALL_DAILY[0]?.log_date||'';
+  const last=ALL_DAILY[ALL_DAILY.length-1]?.log_date||'';
+  ['dateStart','dateEnd'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.min=first;el.max=last;}
+  });
+}
+
+function clampDateValue(value,first,last){
+  if(!value||!first||!last)return value||'';
+  if(value<first)return first;
+  if(value>last)return last;
+  return value;
+}
+
+function syncPresetFromDateInputs(){
+  const start=document.getElementById('dateStart')?.value||'';
+  const end=document.getElementById('dateEnd')?.value||'';
+  const first=ALL_DAILY[0]?.log_date||'';
+  const last=ALL_DAILY[ALL_DAILY.length-1]?.log_date||'';
+  if(start===first&&end===last){setActivePreset('presetAll');return;}
+  const last7=ALL_DAILY.slice(-7);
+  const last30=ALL_DAILY.slice(-30);
+  if(last7.length&&start===last7[0].log_date&&end===last7[last7.length-1].log_date){setActivePreset('preset7');return;}
+  if(last30.length&&start===last30[0].log_date&&end===last30[last30.length-1].log_date){setActivePreset('preset30');return;}
+  if(ALL_DAILY.slice(-1)[0]?.log_date===start&&start===end){setActivePreset('presetYesterday');return;}
+  setActivePreset(null);
+}
+
 function setSourceFilter(value){
+  const startEl=document.getElementById('dateStart');
+  const endEl=document.getElementById('dateEnd');
+  const previousStart=startEl?.value||'';
+  const previousEnd=endEl?.value||'';
   sourceFilter=value||'all';
   setActiveSource();
   rebuildSourceViews(sourceFilter);
-  renderHeader();
-  setDatePreset('all');
+  syncDateInputBounds();
+  const first=ALL_DAILY[0]?.log_date||'';
+  const last=ALL_DAILY[ALL_DAILY.length-1]?.log_date||'';
+  if(previousStart||previousEnd){
+    let nextStart=clampDateValue(previousStart||first,first,last);
+    let nextEnd=clampDateValue(previousEnd||last,first,last);
+    if(nextStart>nextEnd){
+      if(previousStart>last)nextEnd=nextStart;
+      else nextStart=nextEnd;
+    }
+    if(startEl)startEl.value=nextStart;
+    if(endEl)endEl.value=nextEnd;
+    viewDaily=ALL_DAILY.filter(r=>String(r.log_date)>=nextStart&&String(r.log_date)<=nextEnd);
+    syncPresetFromDateInputs();
+    applyDateView(false);
+  }else{
+    viewDaily=ALL_DAILY.slice();
+    syncPresetFromDateInputs();
+    applyDateView();
+  }
   if(modalChartSourceId)setModalPreset('dashboard');
 }
 
@@ -1774,6 +1826,7 @@ function applyDateView(updateInputs=true){
   viewChannels=aggregateChannels(viewDaily);
   if(updateInputs)syncDateInputs();
   else document.getElementById('selectedRange').textContent=viewDaily.length?`${sourceLabel(sourceFilter)} | ${fmtDateRange(viewDaily[0].log_date,viewDaily[viewDaily.length-1].log_date)} | ${viewDaily.length} days`:`${sourceLabel(sourceFilter)} | No data in selected range`;
+  renderHeader();
   renderTrendRegionOptions();
   renderTrendFocusOptions();
   renderCards(selectedSummary());
@@ -1783,6 +1836,7 @@ function applyDateView(updateInputs=true){
 }
 
 function setDatePreset(mode){
+  syncDateInputBounds();
   if(mode==='all')viewDaily=ALL_DAILY.slice();
   else if(mode==='yesterday')viewDaily=ALL_DAILY.slice(-1);
   else viewDaily=ALL_DAILY.slice(-Number(mode));
@@ -1800,6 +1854,7 @@ function handleCustomDate(){
     const end=document.getElementById('dateEnd').value||'9999-99-99';
     viewDaily=ALL_DAILY.filter(r=>String(r.log_date)>=start&&String(r.log_date)<=end);
     applyDateView(false);
+    syncPresetFromDateInputs();
   },200);
 }
 
@@ -3213,19 +3268,25 @@ function initSectionObserver(){
   ids.forEach(id=>{const el=document.getElementById(id);if(el)observer.observe(el);});
 }
 
+function sourceTrueRangeForHeader(source){
+  if(source==='all')return D.true_data_range||{};
+  const ranges=D.source_true_ranges||[];
+  const hit=ranges.find(r=>String(r.source||'').toLowerCase()===source);
+  return hit?{first:hit.first_ist||hit.first||'',last:hit.last_ist||hit.last||''}:{};
+}
+
 function renderHeader(){
   document.getElementById('reportTitle').textContent=sourceFilter==='all'?D.title:`${D.title} - ${sourceLabel(sourceFilter)}`;
   const allDates=ALL_DAILY_RAW;
-  const trueStart=sourceFilter==='all'?(D.true_data_range?.first||(allDates.length?`${allDates[0].log_date} 00:00:00`:'')):(allDates.length?`${allDates[0].log_date} 00:00:00`:'');
-  const trueEnd=sourceFilter==='all'?(D.true_data_range?.last||(allDates.length?`${allDates[allDates.length-1].log_date} 23:59:59`:'')):(allDates.length?`${allDates[allDates.length-1].log_date} 23:59:59`:'');
-  const usedStart=ALL_DAILY.length?fmtDateTime12(`${ALL_DAILY[0].log_date} 00:00:00`):'';
-  const usedEnd=ALL_DAILY.length?fmtDateTime12(ALL_DAILY[ALL_DAILY.length-1].log_date+' 23:59:59'):'';
+  const trueRange=sourceTrueRangeForHeader(sourceFilter);
+  const trueStart=trueRange.first||(allDates.length?`${allDates[0].log_date} 00:00:00`:'');
+  const trueEnd=trueRange.last||(allDates.length?`${allDates[allDates.length-1].log_date} 23:59:59`:'');
+  const usedStart=viewDaily.length?fmtDateTime12(`${viewDaily[0].log_date} 00:00:00`):'';
+  const usedEnd=viewDaily.length?fmtDateTime12(viewDaily[viewDaily.length-1].log_date+' 23:59:59'):'';
   document.getElementById('rangeText').textContent=trueStart&&trueEnd?`Source: ${sourceLabel(sourceFilter)} | True data range: ${fmtDateTime12(trueStart)} → ${fmtDateTime12(trueEnd)} | Used range: ${usedStart} to ${usedEnd}`:'Profile date range unavailable';
   document.getElementById('genText').textContent=`Last updated ${fmtDateTime12(D.generated_at)}`;
   document.getElementById('definitionNote').innerHTML=D.definitions.map(x=>`<div>${escapeHtml(x)}</div>`).join('');
-  if(ALL_DAILY.length){
-    ['dateStart','dateEnd'].forEach(id=>{const el=document.getElementById(id);if(el){el.min=ALL_DAILY[0].log_date;el.max=ALL_DAILY[ALL_DAILY.length-1].log_date;}});
-  }
+  syncDateInputBounds();
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -3233,7 +3294,7 @@ initTabs();
 rebuildSourceViews(sourceFilter);
 setActiveSource();
 renderHeader();
-setDatePreset('all');
+setDatePreset(7);
 initSectionObserver();
 </script>
 </body>

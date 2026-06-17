@@ -24,6 +24,7 @@ for path in [ETL_ROOT, SRC_ROOT, PROFILE_ROOT]:
 
 from common.chartjs import load_chartjs  # noqa: E402
 from common.render import json_blob, render_template  # noqa: E402
+from common.source_ranges import true_source_ranges_from_lake  # noqa: E402
 from vglive_core import (  # noqa: E402
     DEFAULT_LAKE_FOLDER,
     HOST_MAP,
@@ -450,11 +451,18 @@ def clean_records(df: pd.DataFrame, columns: list[str] | None = None) -> list[di
 def build_payload(tables: dict[str, pd.DataFrame], args: argparse.Namespace) -> dict:
     summary = clean_records(tables.get("summary", pd.DataFrame()))
     stats = summary[0] if summary else {}
+    source_dates: dict[str, list[str]] = {}
+    daily = tables.get("daily", pd.DataFrame())
+    if not daily.empty and {"source", "log_date"}.issubset(daily.columns):
+        for source, group in daily.groupby(daily["source"].fillna("").astype(str).str.lower()):
+            source_dates[source] = sorted(group["log_date"].dropna().astype(str).unique().tolist())
+    source_true_ranges = true_source_ranges_from_lake(source_dates, args.lake)
     return {
         "title": args.title,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "lake": str(args.lake),
         "stats": stats,
+        "source_true_ranges": source_true_ranges,
         "status_meanings": STATUS_CODE_MEANINGS,
         "notes": {
             "primary_metric": "timeToFirstByte is the primary CDN latency metric.",

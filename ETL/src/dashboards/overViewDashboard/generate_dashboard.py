@@ -58,6 +58,7 @@ for path in [HERE, SRC_ROOT]:
         sys.path.insert(0, str(path))
 
 from common.chartjs import load_chartjs
+from common.source_ranges import combined_range, true_source_ranges_from_lake
 from common.render import chartjs_script, json_blob, render_template
 from lib.device  import read_device_data, build_device_summary
 from lib.extract import read_excel, read_source_daily
@@ -85,6 +86,15 @@ snapshot_rows, device_daily_rows, device_first_seen_counts = read_device_data(
 )
 device_summary = build_device_summary(snapshot_rows, device_daily_rows)
 source_rows = read_source_daily(SOURCE_DAILY_CSV)
+source_dates: dict[str, list[str]] = {}
+for row in source_rows:
+    source = str(row.get("source", "")).strip().lower()
+    date_value = str(row.get("date", "")).strip()[:10]
+    if source and date_value:
+        source_dates.setdefault(source, []).append(date_value)
+lake_root = Path(os.getenv("VG_ETL_LAKE_ROOT", str(ETL_ROOT / "data" / "lake"))).expanduser().resolve()
+source_true_ranges = true_source_ranges_from_lake(source_dates, lake_root)
+true_data_range = combined_range(source_true_ranges)
 
 generated_at = datetime.now()
 data_blob = json_blob({
@@ -97,6 +107,8 @@ data_blob = json_blob({
     "generated": generated_at.strftime("%Y-%m-%d %H:%M:%S"),
     "report_date": generated_at.strftime("%Y-%m-%d"),
     "data_range": data_time_range,
+    "true_data_range": true_data_range,
+    "source_true_ranges": source_true_ranges,
 })
 
 ETL_ROOT = HERE.parents[2]

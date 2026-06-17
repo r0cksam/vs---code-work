@@ -368,8 +368,12 @@ function renderScopeMeta(filtered){
   const label=currentScopeLabel();
   const raw=filtered.reduce((a,r)=>a+n(r.raw_watch_hours),0);
   const s200=filtered.reduce((a,r)=>a+n(r.status_200_watch_hours),0);
-  el("rangeText").textContent=label+" processed range: "+fmtDateOnly(stats.min_date)+" to "+fmtDateOnly(stats.max_date)+" | "+fmtInt(stats.cliips)+" cliIPs | "+fmtInt(stats.index_rows)+" index rows | "+fmtH(stats.raw_watch_hours)+" raw hrs";
-  el("coverageNote").textContent="Date preset: "+presetLabel()+". Date inputs are source-aware. "+label+" available range is "+fmtDateOnly(stats.min_date)+" to "+fmtDateOnly(stats.max_date)+". Current filtered range "+dateRangeText()+" has "+fmtH(raw)+" raw hrs and "+fmtH(s200)+" status 200 hrs from the embedded viewer index.";
+  const trueStart=stats.first_seen_ist||(stats.min_date?stats.min_date+" 00:00:00":"");
+  const trueEnd=stats.last_seen_ist||(stats.max_date?stats.max_date+" 23:59:59":"");
+  const usedStart=state.start?state.start+" 00:00:00":"";
+  const usedEnd=state.end?state.end+" 23:59:59":"";
+  el("rangeText").textContent="Source: "+label+" | True data range: "+fmtDateTime12(trueStart)+" → "+fmtDateTime12(trueEnd)+" | Used range: "+fmtDateTime12(usedStart)+" to "+fmtDateTime12(usedEnd);
+  el("coverageNote").textContent="Date preset: "+presetLabel()+". Date inputs are source-aware. "+label+" available range is "+fmtDateTime12(trueStart)+" to "+fmtDateTime12(trueEnd)+". Current filtered range "+dateRangeText()+" has "+fmtH(raw)+" raw hrs and "+fmtH(s200)+" status 200 hrs from "+fmtInt(stats.cliips)+" cliIPs and "+fmtInt(stats.index_rows)+" embedded viewer index rows.";
 }
 function sourceArg(){
   return state.source==="all" ? "" : " --source "+state.source;

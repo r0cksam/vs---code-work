@@ -699,6 +699,7 @@ function syncControls(){
   const platformText=document.getElementById('platformSelect').selectedOptions[0]?.textContent||'All Platforms';
   const channelText=document.getElementById('channelSelect').selectedOptions[0]?.textContent||'All Channels';
   document.getElementById('selectionText').textContent=(startDate&&endDate?formatDateRange(startDate,endDate):'No dates')+' | '+platformText+' | '+channelText+' | '+intervalLabel()+' interval | '+fmt(selectedRows.length)+' minute rows';
+  updateHeaderMeta(selectedRows);
 }
 function setDateRange(){startDate=document.getElementById('dateStart').value||startDate;endDate=document.getElementById('dateEnd').value||endDate;if(startDate>endDate){const t=startDate;startDate=endDate;endDate=t;}render();}
 function setPreset(mode){const days=selectedDates();if(!days.length)return;if(mode==='latest'){startDate=days[days.length-1];endDate=days[days.length-1];}else if(mode==='all'){startDate=days[0];endDate=days[days.length-1];}else{const selected=days.slice(-Number(mode));startDate=selected[0]||days[0];endDate=selected[selected.length-1]||days[days.length-1];}render();}
@@ -1310,6 +1311,17 @@ function selectedWindowLabel(rows){
   }
   return formatDateTime(first)+' to '+formatDateTime(last);
 }
+function dashboardSourceLabel(){
+  const sources=Array.from(new Set((D.minute||[]).map(function(r){return String(r.source||'fast').toUpperCase();}).filter(Boolean))).sort();
+  return sources.length>1?'ALL SOURCES':(sources[0]||'FAST');
+}
+function updateHeaderMeta(selectedRows){
+  const trueStart=D.stats?.first_ist||((D.stats?.first_date||'')+' 00:00:00');
+  const trueEnd=D.stats?.last_ist||((D.stats?.last_date||'')+' 23:59:59');
+  document.getElementById('rangeMeta').textContent='Source: '+dashboardSourceLabel()+' | True data range: '+formatDateTime(trueStart)+' → '+formatDateTime(trueEnd)+' | '+fmt(D.stats?.minute_rows||0)+' minute rows';
+  const used=selectedRows&&selectedRows.length?selectedWindowLabel(selectedRows):(startDate&&endDate?formatDateTime(startDate+' 00:00:00')+' to '+formatDateTime(endDate+' 23:59:59'):'No selected range');
+  document.getElementById('fullDateMeta').textContent='Used range: '+used+' | Full-day filter range: '+formatDateRange(D.stats?.first_date,D.stats?.latest_full_date||D.stats?.last_date);
+}
 function flashGroupRows(rows,keyFn,labelFn,metaFn){
   const buckets=new Map();
   (rows||[]).forEach(function(row){
@@ -1836,8 +1848,7 @@ function render(){
   },80);
 }
 document.getElementById('title').textContent=D.title||'Veto Concurrency';
-document.getElementById('rangeMeta').textContent='True data range: '+formatDate(D.stats?.first_date)+' to '+formatDate(D.stats?.last_date)+' | '+fmt(D.stats?.minute_rows||0)+' minute rows';
-document.getElementById('fullDateMeta').textContent='Full-day filter range: '+formatDateRange(D.stats?.first_date,D.stats?.latest_full_date||D.stats?.last_date)+' IST';
+updateHeaderMeta([]);
 document.getElementById('generatedMeta').textContent='Last updated '+formatDateTime(D.generated_at);
 document.getElementById('fileMeta').textContent='Source parquet: '+(D.files?.minute||'');
 document.getElementById('chartModal').addEventListener('click',function(ev){if(ev.target===this)closeChartModal();});

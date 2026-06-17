@@ -12,6 +12,8 @@ from urllib.parse import unquote_plus
 
 import pandas as pd
 
+from common.source_ranges import combined_range, true_source_ranges_from_lake
+
 from .aggregations import (
     add_status_meanings,
     build_cache_rollup,
@@ -484,7 +486,12 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
         if not files.empty and "date" in files.columns
         else []
     )
-    true_range  = true_data_range(file_dates, files)
+    source_dates = {}
+    if not files.empty and {"source", "date"}.issubset(files.columns):
+        for source, group in files.groupby(files["source"].fillna("").astype(str).str.lower()):
+            source_dates[source] = sorted(group["date"].dropna().astype(str).unique().tolist())
+    source_true_ranges = true_source_ranges_from_lake(source_dates, DEFAULT_LAKE_FOLDER)
+    true_range = combined_range(source_true_ranges) if source_true_ranges else true_data_range(file_dates, files)
     daily_tables = read_all_daily_tables(profile_dir)
     device_decode = load_device_decode_outputs()
     encoded_display_fields = {"state", "city", "sample_reqPath", "sample_value", "userAgent", "UA"}
@@ -507,6 +514,7 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
             "last":  file_dates[-1] if file_dates else "",
         },
         "true_data_range":  true_range,
+        "source_true_ranges": source_true_ranges,
         "status_meanings":  STATUS_CODE_MEANINGS,
         "country_labels":   COUNTRY_LABELS,
         "definitions":      REPORT_DEFINITIONS,

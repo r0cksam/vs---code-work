@@ -118,13 +118,13 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
     </div>
     <div class="filter-group">
        <span>Source</span>
-       <button class="btn-preset active" id="srcAll" onclick="setSourceFilter('all')">ALL</button>
-       <button class="btn-preset" id="srcStream" onclick="setSourceFilter('stream')">STREAM</button>
+       <button class="btn-preset" id="srcAll" onclick="setSourceFilter('all')">ALL</button>
+       <button class="btn-preset active" id="srcStream" onclick="setSourceFilter('stream')">STREAM</button>
        <button class="btn-preset" id="srcFast" onclick="setSourceFilter('fast')">FAST</button>
        <span class="filter-sep"></span>
-       <button class="btn-preset active" id="btnAll" onclick="setPreset('all')">ALL</button>
+       <button class="btn-preset" id="btnAll" onclick="setPreset('all')">ALL</button>
        <button class="btn-preset" id="btn30" onclick="setPreset(30)">30D</button>
-       <button class="btn-preset" id="btn7" onclick="setPreset(7)">7D</button>
+       <button class="btn-preset active" id="btn7" onclick="setPreset(7)">7D</button>
        <span class="filter-sep"></span>
        <input type="date" id="dateStart" onchange="handleCustomDate()" />
        <span>to</span>
@@ -178,7 +178,7 @@ th.b{background:#1F3864} th.g{background:#2e6b10} th.m{background:#7c3aed} th.a{
   </div>
 </div>
 <script>
-const {meta,rows,source_rows,device_daily,device_first_seen_counts,device_summary,generated,report_date,data_range} = $DATA_BLOB;
+const {meta,rows,source_rows,device_daily,device_first_seen_counts,device_summary,generated,report_date,data_range,true_data_range,source_true_ranges} = $DATA_BLOB;
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmtDateTime12(value) {
@@ -225,7 +225,7 @@ const sourceRowsAll = (source_rows || []).map(r => {
   const [y, m, d] = r.date.split('-').map(Number);
   return {...r, source: sourceOf(r), ts: new Date(y, m - 1, d).getTime()};
 }).filter(r => r.date !== report_date).sort((a,b) => a.ts - b.ts || sourceOf(a).localeCompare(sourceOf(b)));
-let sourceFilter = 'all';
+let sourceFilter = 'stream';
 let completeRows = completeRowsForSource(sourceFilter);
 
 function completeRowsForSource(src) {
@@ -234,9 +234,23 @@ function completeRowsForSource(src) {
 }
 
 function usedDateRangeText() {
-  return completeRows.length
-    ? `${fmtDateTime12(completeRows[0].date + ' 00:00:00')} to ${fmtDateTime12(completeRows[completeRows.length - 1].date + ' 23:59:59')}`
-    : '';
+  if (!completeRows.length) return '';
+  const startInput = document.getElementById('dateStart')?.value || '';
+  const endInput = document.getElementById('dateEnd')?.value || '';
+  const startDate = startInput || completeRows[0].date;
+  const endDate = endInput || completeRows[completeRows.length - 1].date;
+  return `${fmtDateTime12(startDate + ' 00:00:00')} to ${fmtDateTime12(endDate + ' 23:59:59')}`;
+}
+function rangeForSourceHeader(src){
+  if(src==='all'){
+    if(true_data_range?.first&&true_data_range?.last)return `${fmtDateTime12(true_data_range.first)} → ${fmtDateTime12(true_data_range.last)}`;
+    return data_range?fmtDateRange12(data_range):'';
+  }
+  const hit=(source_true_ranges||[]).find(r=>String(r.source||'').toLowerCase()===src);
+  if(hit&&(hit.first_ist||hit.first)&&(hit.last_ist||hit.last)){
+    return `${fmtDateTime12(hit.first_ist||hit.first)} → ${fmtDateTime12(hit.last_ist||hit.last)}`;
+  }
+  return completeRows.length?`${fmtDateTime12(completeRows[0].date + ' 00:00:00')} → ${fmtDateTime12(completeRows[completeRows.length - 1].date + ' 23:59:59')}`:'';
 }
 function dateStrToTs(date) {
   const [y, m, d] = String(date || '').split('-').map(Number);
@@ -373,9 +387,7 @@ function syncActiveEndToRange() {
 
 function renderHeader() {
   const used = usedDateRangeText();
-  const sourceRange = sourceFilter === 'all'
-    ? (data_range ? fmtDateRange12(data_range) : '')
-    : (completeRows.length ? `${fmtDateTime12(completeRows[0].date + ' 00:00:00')} → ${fmtDateTime12(completeRows[completeRows.length - 1].date + ' 23:59:59')}` : '');
+  const sourceRange = rangeForSourceHeader(sourceFilter);
   const headerRangeText = (sourceRange ? `Source: ${sourceLabel(sourceFilter)} | True data range: ${sourceRange}` : `Source: ${sourceLabel(sourceFilter)}`)
     + (used ? ` | Used range: ${used}` : '');
   document.getElementById('rangeLbl').style.display = headerRangeText ? '' : 'none';
@@ -725,6 +737,20 @@ function syncUIState(presetMode) {
   else if (presetMode === 7)  document.getElementById('btn7').classList.add('active');
 }
 
+function syncPresetFromDateInputs() {
+  const start = document.getElementById('dateStart')?.value || '';
+  const end = document.getElementById('dateEnd')?.value || '';
+  const first = completeRows[0]?.date || '';
+  const last = completeRows[completeRows.length - 1]?.date || '';
+  if (!start && !end) { syncUIState('all'); return; }
+  if (start === first && end === last) { syncUIState('all'); return; }
+  const last7 = completeRows.slice(-7);
+  const last30 = completeRows.slice(-30);
+  if (last7.length && start === tsToDateStr(last7[0].ts) && end === tsToDateStr(last7[last7.length - 1].ts)) { syncUIState(7); return; }
+  if (last30.length && start === tsToDateStr(last30[0].ts) && end === tsToDateStr(last30[last30.length - 1].ts)) { syncUIState(30); return; }
+  syncUIState(null);
+}
+
 function setActiveSource() {
   [['srcAll','all'],['srcStream','stream'],['srcFast','fast']].forEach(([id, value]) => {
     const el = document.getElementById(id);
@@ -732,12 +758,48 @@ function setActiveSource() {
   });
 }
 
+function syncDateInputBounds() {
+  const startEl = document.getElementById('dateStart');
+  const endEl = document.getElementById('dateEnd');
+  const first = completeRows[0]?.date || '';
+  const last = completeRows[completeRows.length - 1]?.date || '';
+  if (startEl) { startEl.min = first; startEl.max = last; }
+  if (endEl) { endEl.min = first; endEl.max = last; }
+}
+
+function clampDateValue(value, first, last) {
+  if (!value || !first || !last) return value || '';
+  if (value < first) return first;
+  if (value > last) return last;
+  return value;
+}
+
 function setSourceFilter(value) {
+  const startEl = document.getElementById('dateStart');
+  const endEl = document.getElementById('dateEnd');
+  const previousStart = startEl?.value || '';
+  const previousEnd = endEl?.value || '';
   sourceFilter = value || 'all';
   setActiveSource();
   completeRows = completeRowsForSource(sourceFilter);
-  renderHeader();
-  setPreset('all');
+  syncDateInputBounds();
+  const first = completeRows[0]?.date || '';
+  const last = completeRows[completeRows.length - 1]?.date || '';
+  if (previousStart || previousEnd) {
+    let nextStart = clampDateValue(previousStart || first, first, last);
+    let nextEnd = clampDateValue(previousEnd || last, first, last);
+    if (nextStart > nextEnd) {
+      if (previousStart > last) nextEnd = nextStart;
+      else nextStart = nextEnd;
+    }
+    if (startEl) startEl.value = nextStart;
+    if (endEl) endEl.value = nextEnd;
+    _applyCustomDate();
+    syncPresetFromDateInputs();
+  } else {
+    applyViewRows([...completeRows]);
+    syncPresetFromDateInputs();
+  }
   if (modalChartId) setModalPreset('dashboard');
 }
 
@@ -745,12 +807,14 @@ function applyViewRows(rows) {
   viewRows = rows;
   invalidateCache();
   if (sortKey) executeSortLogic();
+  renderHeader();
   renderTable();
   updateCharts();
   updateKPIs();
 }
 
 function setPreset(days) {
+  syncDateInputBounds();
   syncUIState(days);
   let next;
   if (days === 'all' || completeRows.length === 0) {

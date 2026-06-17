@@ -325,6 +325,11 @@ def build_data(data_dir: Path, title: str) -> dict:
         if not minute.empty and "log_date" in minute.columns
         else []
     )
+    minute_times = (
+        sorted(str(value) for value in minute["minute_ist"].dropna().unique())
+        if not minute.empty and "minute_ist" in minute.columns
+        else []
+    )
     current_ist_date = datetime.now(IST).date().isoformat()
     full_dates = [day for day in dates if day < current_ist_date]
     latest_full_date = full_dates[-1] if full_dates else (dates[-1] if dates else "")
@@ -335,6 +340,8 @@ def build_data(data_dir: Path, title: str) -> dict:
         "summary_rows": int(len(summary)),
         "first_date": dates[0] if dates else "",
         "last_date": dates[-1] if dates else "",
+        "first_ist": minute_times[0] if minute_times else "",
+        "last_ist": minute_times[-1] if minute_times else "",
         "latest_full_date": latest_full_date,
         "current_ist_date": current_ist_date,
         "current_date_hidden": bool(current_ist_date in dates and latest_full_date != current_ist_date),

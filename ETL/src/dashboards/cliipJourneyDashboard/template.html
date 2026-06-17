@@ -285,9 +285,17 @@ function barOptions(yLabel,horizontal){
   };
 }
 
+function renderHeader(){
+  const trueStart = D.meta.first_seen_ist || ((D.meta.min_date || "") + " 00:00:00");
+  const trueEnd = D.meta.last_seen_ist || ((D.meta.max_date || "") + " 23:59:59");
+  const usedStart = state.start ? state.start + " 00:00:00" : "";
+  const usedEnd = state.end ? state.end + " 23:59:59" : "";
+  el("rangeText").textContent = "True data range: " + fmtDateTime12(trueStart) + " → " + fmtDateTime12(trueEnd) + " | Used range: " + fmtDateTime12(usedStart) + " to " + fmtDateTime12(usedEnd);
+}
+
 function initControls(){
   el("reportTitle").textContent = D.meta.title || "CLIIP Journey Dashboard";
-  el("rangeText").textContent = "True data range: " + fmtDateRange(D.meta.min_date,D.meta.max_date) + " IST";
+  renderHeader();
   el("genText").textContent = "Last updated " + fmtDateTime12(D.meta.generated || "-");
   el("dateStart").min = D.meta.min_date || "";
   el("dateStart").max = D.meta.max_date || "";
@@ -569,6 +577,7 @@ function renderFiles(){
 }
 
 function renderAll(){
+  renderHeader();
   const rows = filteredDateChannel();
   const hourly = filteredHourly();
   renderCards(rows);

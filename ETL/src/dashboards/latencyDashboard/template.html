@@ -10,7 +10,7 @@
 :root{--ink:#172033;--muted:#667085;--line:#d8e1ee;--surface:#eef3f8;--panel:#fff;--brand:#173b5c;--teal:#0f766e;--gold:#b58517;--red:#b42318;--green:#2f6b2f;--violet:#5b55a3}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--surface);color:var(--ink);min-height:100vh;-webkit-text-size-adjust:100%}
 .topbar{background:var(--brand);color:#fff;border-bottom:4px solid var(--gold);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.topbar h1{font-size:22px;font-weight:850;letter-spacing:0}
+.topbar h1{font-size:21px;font-weight:800}
 .topbar .sub{font-size:12px;color:#dbe7f2;display:flex;flex-direction:column;gap:3px;text-align:right;max-width:min(980px,72vw);line-height:1.35}
 .wrap{max-width:1760px;margin:0 auto;padding:22px 28px 34px}
 .note{background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 14px;color:#475569;font-size:12px;line-height:1.5;margin-bottom:16px}
@@ -619,15 +619,25 @@ function initSectionObserver(){
   },{root:null,rootMargin:'-28% 0px -58% 0px',threshold:0.01});
   names.forEach(name=>{const el=document.getElementById('tab-'+name); if(el)observer.observe(el);});
 }
+function sourceTrueRangeForHeader(source){
+  const ranges=D.source_true_ranges||[];
+  const hit=ranges.find(r=>String(r.source||'').toLowerCase()===source);
+  return hit?{first:hit.first_ist||hit.first||'',last:hit.last_ist||hit.last||''}:{};
+}
 function updateHeaderRange(viewDaily){
   const sourceRows=(D.daily||[]).filter(r=>sourceOk(r));
   const trueSpan=dateSpan(sourceRows);
   const usedSpan=dateSpan(viewDaily);
+  const baseTitle=D.title||'Veto Latency';
+  const titleText=baseTitle+' - '+sourceLabel(sourceFilter);
+  document.title=titleText;
+  document.getElementById('title').textContent=titleText;
   if(!trueSpan){
     document.getElementById('rangeText').textContent='Source: '+sourceLabel(sourceFilter)+' | Profile date range unavailable';
     return;
   }
-  const trueText=dayStart(trueSpan.first)+' to '+dayEnd(trueSpan.last);
+  const trueRange=sourceTrueRangeForHeader(sourceFilter);
+  const trueText=(trueRange.first&&trueRange.last)?(fmtDateTime(trueRange.first)+' → '+fmtDateTime(trueRange.last)):(dayStart(trueSpan.first)+' → '+dayEnd(trueSpan.last));
   const usedText=usedSpan?(dayStart(usedSpan.first)+' to '+dayEnd(usedSpan.last)):('No data in selected range');
   document.getElementById('rangeText').textContent='Source: '+sourceLabel(sourceFilter)+' | True data range: '+trueText+' | Used range: '+usedText;
 }
@@ -750,6 +760,7 @@ function applyFilters(){
   renderSop();
 }
 function init(){
+  document.title=D.title||'Veto Latency';
   document.getElementById('title').textContent=D.title||'Veto Latency';
   if(!sourceBounds()){
     sourceFilter='stream';

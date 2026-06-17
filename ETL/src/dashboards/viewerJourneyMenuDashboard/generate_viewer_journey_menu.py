@@ -104,21 +104,41 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     con.execute(f"SET threads={max(1, int(args.threads))}")
     con.execute(f"SET memory_limit={sql_text(args.memory_limit)}")
     con.execute("SET preserve_insertion_order=false")
+    schema = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{q(index_path)}')").fetchdf()
+    columns = set(schema["column_name"].astype(str).tolist()) if "column_name" in schema.columns else set()
+    dedup_raw_col = "dedup_raw_watch_hours" if "dedup_raw_watch_hours" in columns else "raw_watch_hours"
+    dedup_200_col = (
+        "dedup_status_200_watch_hours"
+        if "dedup_status_200_watch_hours" in columns
+        else "status_200_watch_hours"
+    )
+    row_aliases = []
+    if "dedup_raw_watch_hours" not in columns:
+        row_aliases.append("raw_watch_hours AS dedup_raw_watch_hours")
+    if "dedup_status_200_watch_hours" not in columns:
+        row_aliases.append("status_200_watch_hours AS dedup_status_200_watch_hours")
+    if "dedup_ts_paths" not in columns:
+        row_aliases.append("raw_ts_rows AS dedup_ts_paths")
+    if "dedup_status_200_ts_paths" not in columns:
+        row_aliases.append("status_200_ts_rows AS dedup_status_200_ts_paths")
+    row_alias_sql = (",\n            " + ",\n            ".join(row_aliases)) if row_aliases else ""
 
     stats = fetch_records(
         con,
-        """
+        f"""
         SELECT
             COUNT(*) AS index_rows,
             MIN(log_date) AS min_date,
             MAX(log_date) AS max_date,
+            MIN(first_seen_ist) AS first_seen_ist,
+            MAX(last_seen_ist) AS last_seen_ist,
             COUNT(DISTINCT cliIP) AS cliips,
             COUNT(DISTINCT source) AS sources,
             COUNT(DISTINCT channel_name) AS channels,
             ROUND(SUM(raw_watch_hours), 3) AS raw_watch_hours,
             ROUND(SUM(status_200_watch_hours), 3) AS status_200_watch_hours,
-            ROUND(SUM(dedup_raw_watch_hours), 3) AS dedup_raw_watch_hours,
-            ROUND(SUM(dedup_status_200_watch_hours), 3) AS dedup_status_200_watch_hours,
+            ROUND(SUM({dedup_raw_col}), 3) AS dedup_raw_watch_hours,
+            ROUND(SUM({dedup_200_col}), 3) AS dedup_status_200_watch_hours,
             SUM(row_count)::BIGINT AS raw_rows
         FROM read_parquet(?)
         """,
@@ -126,18 +146,20 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     )[0]
     source_rows = fetch_records(
         con,
-        """
+        f"""
         SELECT
             source,
             COUNT(*) AS index_rows,
             MIN(log_date) AS min_date,
             MAX(log_date) AS max_date,
+            MIN(first_seen_ist) AS first_seen_ist,
+            MAX(last_seen_ist) AS last_seen_ist,
             COUNT(DISTINCT cliIP) AS cliips,
             COUNT(DISTINCT channel_name) AS channels,
             ROUND(SUM(raw_watch_hours), 3) AS raw_watch_hours,
             ROUND(SUM(status_200_watch_hours), 3) AS status_200_watch_hours,
-            ROUND(SUM(dedup_raw_watch_hours), 3) AS dedup_raw_watch_hours,
-            ROUND(SUM(dedup_status_200_watch_hours), 3) AS dedup_status_200_watch_hours,
+            ROUND(SUM({dedup_raw_col}), 3) AS dedup_raw_watch_hours,
+            ROUND(SUM({dedup_200_col}), 3) AS dedup_status_200_watch_hours,
             SUM(row_count)::BIGINT AS raw_rows
         FROM read_parquet(?)
         GROUP BY source
@@ -149,6 +171,7 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
         con,
         f"""
         SELECT *
+            {row_alias_sql}
         FROM read_parquet(?)
         ORDER BY raw_watch_hours DESC, row_count DESC, last_seen_ist DESC
         LIMIT {max(1, int(args.embed_limit))}

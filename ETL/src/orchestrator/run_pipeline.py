@@ -754,9 +754,9 @@ def main() -> None:
     parser.add_argument("--latency-end", default=None, help="Latency IST end date YYYY-MM-DD.")
     parser.add_argument(
         "--latency-source",
-        choices=["fast", "stream"],
-        default="fast",
-        help="Source to process for incremental latency profile. Start with fast, then run stream later.",
+        choices=["fast", "stream", "both"],
+        default="both",
+        help="Source to process for incremental latency profile. Default keeps both FAST and STREAM marts current.",
     )
     parser.add_argument(
         "--latency-window-days",
@@ -1432,46 +1432,50 @@ def main() -> None:
                 latency_start = args.etl1_daily_date
                 latency_end = args.etl1_daily_date
 
-        latency_cmd = [
-            python,
-            str(latency_incremental_script),
-            "--lake",
-            str(lake_root),
-            "--source",
-            args.latency_source,
-            "--out-dir",
-            str(latency_profile),
-            "--parts-dir",
-            str(output_root / "latency" / "parts"),
-            "--state",
-            str(output_root / "latency" / "latency_incremental_state.json"),
+        latency_sources = ["fast", "stream"] if args.latency_source == "both" else [args.latency_source]
+        for latency_source in latency_sources:
+            source_start = latency_start
+            source_end = latency_end
+            latency_cmd = [
+                python,
+                str(latency_incremental_script),
+                "--lake",
+                str(lake_root),
+                "--source",
+                latency_source,
+                "--out-dir",
+                str(latency_profile),
+                "--parts-dir",
+                str(output_root / "latency" / "parts"),
+                "--state",
+                str(output_root / "latency" / "latency_incremental_state.json"),
             "--html-out",
             str(latency_out),
             "--title",
             "Veto Latency",
             "--threads",
-            str(max(1, int(args.latency_threads))),
-            "--memory-limit",
-            args.latency_memory,
-        ]
-        if latency_start and latency_end:
-            latency_cmd.extend(["--start", latency_start, "--end", latency_end])
-        elif args.latency_window_days and args.latency_window_days > 0:
-            latest_latency = _latest_lake_day(lake_root / f"source={args.latency_source}") or _latest_lake_day(lake_root)
-            if latest_latency:
-                latency_start_date = latest_latency - timedelta(days=args.latency_window_days - 1)
-                latency_cmd.extend(["--start", latency_start_date.isoformat(), "--end", latest_latency.isoformat()])
-        if args.dry_run:
-            latency_cmd.append("--dry-run")
-        run(
-            latency_cmd,
-            cwd=etl_root,
-            env=env,
-            step_name="latency_dashboard_html",
-            log_dir=log_dir,
-            allow_failure=args.continue_on_error,
-            retry_on_memory=True,
-        )
+                str(max(1, int(args.latency_threads))),
+                "--memory-limit",
+                args.latency_memory,
+            ]
+            if source_start and source_end:
+                latency_cmd.extend(["--start", source_start, "--end", source_end])
+            elif args.latency_window_days and args.latency_window_days > 0:
+                latest_latency = _latest_lake_day(lake_root / f"source={latency_source}") or _latest_lake_day(lake_root)
+                if latest_latency:
+                    latency_start_date = latest_latency - timedelta(days=args.latency_window_days - 1)
+                    latency_cmd.extend(["--start", latency_start_date.isoformat(), "--end", latest_latency.isoformat()])
+            if args.dry_run:
+                latency_cmd.append("--dry-run")
+            run(
+                latency_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name=f"latency_profile_{latency_source}",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
     else:
         print("\n[skip] latency dashboard skipped.")
 
@@ -1574,7 +1578,7 @@ def main() -> None:
             "--out",
             str(audience_out),
             "--title",
-            "FAST Veto Audience Operations",
+            "Veto Audience Operations",
         ]
         if args.dry_run:
             audience_cmd.append("--dry-run")

@@ -261,10 +261,22 @@ def build_data(
         """,
         [str(segment_path)],
     )
+    time_bounds = fetch_records(
+        con,
+        """
+        SELECT
+            MIN(CAST(start_time_ist AS VARCHAR)) AS first_seen_ist,
+            MAX(CAST(end_time_ist AS VARCHAR)) AS last_seen_ist
+        FROM read_parquet(?)
+        """,
+        [str(segment_path)],
+    )
 
     manifest = read_manifest(input_dir)
     min_date = min((str(row["log_date"]) for row in daily), default="")
     max_date = max((str(row["log_date"]) for row in daily), default="")
+    first_seen_ist = str((time_bounds[0] if time_bounds else {}).get("first_seen_ist") or "")
+    last_seen_ist = str((time_bounds[0] if time_bounds else {}).get("last_seen_ist") or "")
 
     return {
         "meta": {
@@ -274,6 +286,8 @@ def build_data(
             "input_raw_parquet": manifest.get("input", ""),
             "min_date": min_date,
             "max_date": max_date,
+            "first_seen_ist": first_seen_ist,
+            "last_seen_ist": last_seen_ist,
             "top_segments_limit": top_segments,
             "top_switches_limit": top_switches,
             "gap_seconds": manifest.get("gap_seconds"),
