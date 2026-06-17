@@ -403,14 +403,18 @@ function sourceTrueRange(){
   const r=sourceRange();
   return {first:r.min?r.min+" 00:00:00":"",last:r.max?r.max+" 23:59:59":"",min:r.min,max:r.max};
 }
+function addIsoDays(dateText,delta){
+  const p=String(dateText||"").slice(0,10).split("-").map(Number);
+  if(p.length!==3||!p[0]||!p[1]||!p[2])return "";
+  const d=new Date(Date.UTC(p[0],p[1]-1,p[2]));
+  d.setUTCDate(d.getUTCDate()+Number(delta||0));
+  return d.toISOString().slice(0,10);
+}
 function applyPresetRange(p){
   const r=sourceRange();
   if(p==="all"){state.start=r.min;state.end=r.max;return}
   if(p==="yesterday"){state.start=r.max;state.end=r.max;return}
-  const end=new Date(r.max+"T00:00:00");
-  const start=new Date(end);
-  start.setDate(end.getDate()-(Number(p)-1));
-  state.start=start.toISOString().slice(0,10);
+  state.start=addIsoDays(r.max,-(Number(p)-1));
   if(state.start<r.min)state.start=r.min;
   state.end=r.max;
 }
@@ -448,14 +452,86 @@ function scopedWatchRows(){
 function requestHours(rows){return rows.reduce(function(a,r){return a+(n(r.request_watch_hours)||n(r.raw_watch_hours)||n(r.raw_ts_rows)*6/3600||n(r.raw_ts_chunks)*6/3600)},0)}
 function status200Hours(rows){return rows.reduce(function(a,r){return a+(n(r.status_200_request_hours)||n(r.status_200_watch_hours)||n(r.status_200_ts_rows)*6/3600||n(r.status_200_ts_chunks)*6/3600)},0)}
 function segmentCount(rows){return rows.reduce(function(a,r){return a+(n(r.raw_ts_rows)||n(r.raw_ts_chunks)||n(r.ts_rows))},0)}
-function uniqueIpForScope(){
-  if(state.platform!=="all")return 0;
-  if(state.channel!=="all")return max(filterRows(DATA.channel_daily||[],{channel:true,platform:false}),"approx_unique_ips");
-  return max(filterRows(DATA.daily||[],{channel:false,platform:false}),"approx_unique_ips");
-}
-function selectedDayCount(rows){
-  const days=new Set((rows||[]).map(function(r){return String(r.log_date||"").slice(0,10)}).filter(Boolean));
+function selectedDayCount(rows,dateKey){
+  const key=dateKey||"log_date";
+  const days=new Set((rows||[]).map(function(r){return String(r[key]||"").slice(0,10)}).filter(Boolean));
   return days.size;
+}
+function overviewDailyRowsForScope(){
+  if(state.platform!=="all"||state.channel!=="all")return [];
+  return filterRows(DATA.overview_daily||[],{dateKey:"date",channel:false,platform:false});
+}
+function uniqueIpMetricForScope(){
+  if(state.platform!=="all"){
+    const rows=platformChannelRows();
+    return {
+      available:false,
+      value:0,
+      rows:rows,
+      note:"Platform-level total distinct cliIP is not available in the current aggregate; use Concurrency for platform active viewers"
+    };
+  }
+  if(state.channel!=="all"){
+    const rows=filterRows(DATA.channel_daily||[],{channel:true,platform:false});
+    const days=selectedDayCount(rows);
+    return {
+      available:rows.length>0,
+      value:sum(rows,"approx_unique_ips"),
+      rows:rows,
+      note:days>1?("Selected range daily channel cliIP sum across "+days+" days"):"Selected day channel distinct cliIP"
+    };
+  }
+  const overviewRows=overviewDailyRowsForScope();
+  if(overviewRows.length){
+    const days=selectedDayCount(overviewRows,"date");
+    return {
+      available:true,
+      value:sum(overviewRows,"dist_ip"),
+      rows:overviewRows,
+      note:days>1?("Selected range daily distinct cliIP sum across "+days+" days; same basis as Overview"):"Selected day distinct cliIP; same basis as Overview"
+    };
+  }
+  const rows=filterRows(DATA.daily||[],{channel:false,platform:false});
+  const days=selectedDayCount(rows);
+  return {
+    available:rows.length>0,
+    value:sum(rows,"approx_unique_ips"),
+    rows:rows,
+    note:days>1?("Fallback selected range daily approx cliIP sum across "+days+" days"):"Fallback selected day approx cliIP"
+  };
+}
+function uniqueIpForScope(){return uniqueIpMetricForScope().value}
+function peakAudienceMetricForScope(){
+  if(state.platform!=="all"){
+    const rows=filterRows(DATA.concurrency_summary||[],{channel:true});
+    return {
+      label:"Peak Active Viewers",
+      value:max(rows,"peak_unique_viewers"),
+      note:"FAST platform/channel concurrency peak"
+    };
+  }
+  if(state.channel!=="all"){
+    const rows=filterRows(DATA.channel_daily||[],{channel:true,platform:false});
+    return {
+      label:"Peak Daily Unique IPs",
+      value:max(rows,"approx_unique_ips"),
+      note:"Channel daily approx cliIP peak"
+    };
+  }
+  const overviewRows=overviewDailyRowsForScope();
+  if(overviewRows.length){
+    return {
+      label:"Peak Daily Unique IPs",
+      value:max(overviewRows,"dist_ip"),
+      note:"Daily distinct cliIP peak; same basis as Overview"
+    };
+  }
+  const rows=filterRows(DATA.daily||[],{channel:false,platform:false});
+  return {
+    label:"Peak Daily Unique IPs",
+    value:max(rows,"approx_unique_ips"),
+    note:"Fallback daily approx cliIP peak"
+  };
 }
 function identityRowsForScope(){
   if(state.platform!=="all"&&state.channel!=="all")return filterRows(DATA.identity_platform_channel_daily||[],{channel:true,platform:true});
@@ -546,11 +622,11 @@ function syncFilters(){
 function kpi(label,value,sub,cls){return "<div class='kpi "+(cls||"")+"'><b>"+esc(label)+"</b><span>"+value+"</span><small>"+esc(sub||"")+"</small></div>"}
 function stakeholderKpi(label,value,sub,cls){return "<div class='kpi "+(cls||"")+"'><b>"+esc(label)+"</b><span>"+value+"</span><small>"+esc(sub||"")+"</small></div>"}
 function renderStakeholderKpis(){
-  const daily=filterRows(DATA.daily||[],{channel:false,platform:false});
   const rows=scopedWatchRows();
   const views=scopedManifestViews();
   const canUseDailyScope=state.platform==="all"&&state.channel==="all";
-  const ipHint=uniqueIpForScope();
+  const ipMetric=uniqueIpMetricForScope();
+  const ipHint=ipMetric.value;
   const reqHours=requestHours(rows);
   const ident=identityTotals();
   const channelManifestNote=views==null?"Platform + channel master manifest split is not available":(canUseDailyScope?"Master manifest requests from daily mart":"Master manifest requests from latency profile mart");
@@ -561,25 +637,26 @@ function renderStakeholderKpis(){
   el("stakeholderKpis").innerHTML=[
     stakeholderKpi("Total Users (Based on Device ID - APP DATA)",deviceText,ident.hasIdentity?ident.note:identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Sessions (Based on Session ID in query String - APP DATA)",sessionText,ident.hasIdentity?ident.note:identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Users (Based on Uniq IP)",ipHint?fmtInt(ipHint):notAvailable,ipHint?"Daily unique IP value from available mart":"Platform-level unique IP mart is not available","gold"),
+    stakeholderKpi("Total Users (Based on Uniq IP)",ipMetric.available?fmtInt(ipHint):notAvailable,ipMetric.note,ipMetric.available?"gold":"wip-box"),
     stakeholderKpi("Total New Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.newDevices):notAvailable,ident.hasIdentity?"First seen in selected identity scope":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Returning Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.returningDevices):notAvailable,ident.hasIdentity?"Known device_id seen before in selected identity scope":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Sessions (Based on Uniq IP & UA)",ident.hasIdentity?fmtInt(ident.ipua):notAvailable,ident.hasIdentity?ident.note:"Distinct cliIP + UA identity mart is not available for this selection",ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Views (Total Master Manifest Requests)",views!=null?fmtInt(views):notAvailable,channelManifestNote,views!=null?"gold":"wip-box"),
     stakeholderKpi("Total Session Duration (Hours)",notAvailable,"True app session duration is not present in current "+sourceLabel()+" data","wip-box"),
-    stakeholderKpi("Avg Watch Time per user (Based on Unique IP)",ipHint?fmt(reqHours*60/ipHint,1)+" min":notAvailable,ipHint?"Request hours / daily unique IP value":"Unique IP denominator is not available for this scope",ipHint?"gold":"wip-box"),
-    stakeholderKpi("Total Unique IPs & Sessions (Distinct)",ipHint?("IPs "+fmtInt(ipHint)+" / Sessions "+(ident.hasIdentity?fmtInt(ident.sessions):"NA")):notAvailable,ipHint?(ident.hasIdentity?"IP from watch mart; session_id from identity mart":"Distinct sessions are not available for this source/filter"):"Unique IP + distinct session mart is not available","gold")
+    stakeholderKpi("Avg Watch Time per user (Based on Unique IP)",ipMetric.available&&ipHint?fmt(reqHours*60/ipHint,1)+" min":notAvailable,ipMetric.available?"Request hours / selected Unique IP denominator":"Unique IP denominator is not available for this scope",ipMetric.available?"gold":"wip-box"),
+    stakeholderKpi("Total Unique IPs & Sessions (Distinct)",ipMetric.available?("IPs "+fmtInt(ipHint)+" / Sessions "+(ident.hasIdentity?fmtInt(ident.sessions):"NA")):notAvailable,ipMetric.available?(ident.hasIdentity?"IP from selected watch mart; session_id from identity mart":"Distinct sessions are not available for this source/filter"):"Unique IP + distinct session mart is not available","gold")
   ].join("");
 }
 function renderViewershipTrend(){
   const rows=scopedWatchRows();
   const hours=requestHours(rows);
   const segments=segmentCount(rows);
-  const ipHint=uniqueIpForScope();
+  const ipMetric=uniqueIpMetricForScope();
+  const ipHint=ipMetric.value;
   const bandwidth=scopedVideoBandwidthBytes();
   el("viewershipKpis").innerHTML=[
     kpi("Total Viewership (Hours)",fmt(hours,1)+" h","Request-hour basis: .ts segments * 6 sec",""),
-    kpi("Avg Watch Time/User",ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipHint?"Based on available Unique IP value":"Unique IP denominator unavailable for this scope",ipHint?"gold":"wip-box"),
+    kpi("Avg Watch Time/User",ipMetric.available&&ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipMetric.available?"Based on selected Unique IP denominator":"Unique IP denominator unavailable for this scope",ipMetric.available?"gold":"wip-box"),
     kpi("Total Segments Played",fmtInt(segments),"Total .ts segment request rows","green"),
     kpi("Total Bandwidth (Video)",bandwidth!=null?fmtBytes(bandwidth):"Not Available",bandwidth!=null?".ts rows * avg_total_bytes from latency mart":"Bandwidth unavailable for platform + channel combined split","gold")
   ].join("");
@@ -645,12 +722,12 @@ function renderKpis(){
   const daily=filterRows(DATA.daily||[],{channel:false,platform:false});
   const platformRows=platformChannelRows();
   const channel=platformScopeActive()?platformRows:filterRows(DATA.channel_daily||[],{channel:true,platform:false});
-  const latency=platformScopeActive()?[]:filterRows(DATA.latency_daily||[],{channel:false,platform:false});
+  const latency=latencyRowsForScope("ts");
   const conc=filterRows(DATA.concurrency_summary||[],{channel:true});
   const scoped=state.channel!=="all"||state.platform!=="all";
   const reqHours=scoped?sum(channel,"raw_watch_hours"):sum(daily,"request_watch_hours");
   const okHours=scoped?sum(channel,"status_200_watch_hours"):sum(daily,"status_200_request_hours");
-  const peakIp=state.platform==="all"?(state.channel!=="all"?max(channel,"approx_unique_ips"):max(daily,"approx_unique_ips")):max(conc,"peak_unique_viewers");
+  const peakAudience=peakAudienceMetricForScope();
   const manifest=scopedManifestViews();
   const non200Den=scoped?sum(channel,"raw_ts_chunks"):sum(daily,"rows");
   const non200Num=scoped?Math.max(0,sum(channel,"raw_ts_chunks")-sum(channel,"status_200_ts_chunks")):sum(daily,"non_200_rows");
@@ -661,7 +738,7 @@ function renderKpis(){
   el("kpis").innerHTML=[
     kpi("Request Hours",fmt(reqHours,1)+" h","All .ts request rows * 6 sec",""),
     kpi("Status 200 Hours",fmt(okHours,1)+" h","Successful .ts request rows only","green"),
-    kpi(state.platform==="all"?"Peak Daily Unique IPs":"Peak Active Viewers",fmtInt(peakIp),state.platform==="all"?"Approx daily max in selected range":"Platform-specific concurrency peak","gold"),
+    kpi(peakAudience.label,peakAudience.value?fmtInt(peakAudience.value):"Not Available",peakAudience.note,"gold"),
     kpi("Manifest Requests",manifest!=null?fmtInt(manifest):"Not Available",manifest!=null?"Master manifest requests from processed mart":"Platform + channel manifest split is not available","violet"),
     kpi("Non-200 Response Rate",pct(non200),"HTTP rows outside status 200",non200>5?"red":""),
     kpi("TTFB p95",ttfb?fmt(ttfb,1)+" ms":"No data","Weighted by latency rows",""),

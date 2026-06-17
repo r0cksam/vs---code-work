@@ -242,6 +242,37 @@ def build_daily(watch_dir: Path) -> pd.DataFrame:
     return daily[[c for c in keep if c in daily.columns]].sort_values(["log_date", "source"])
 
 
+def build_overview_daily(output_root: Path) -> pd.DataFrame:
+    path = output_root / "overview" / "overview_source_daily.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        overview = pd.read_csv(path)
+    except Exception as exc:
+        print(f"[warn] Could not read {path}: {exc}")
+        return pd.DataFrame()
+    if overview.empty or "date" not in overview.columns:
+        return pd.DataFrame()
+    overview["date"] = date_string(overview["date"])
+    metrics = [
+        "bytes",
+        "rows",
+        "ip_rows",
+        "dist_ip",
+        "dist_ipua",
+        "dist_dev",
+        "dist_sess",
+        "dist_ip_r2",
+        "dist_ipua_r2",
+        "sess_avail",
+        "sess_na",
+        "sess_none",
+    ]
+    overview = numeric(overview, metrics)
+    keep = ["date", "source"] + metrics
+    return overview[[c for c in keep if c in overview.columns]].sort_values(["date", "source"])
+
+
 def build_channel(watch_dir: Path) -> pd.DataFrame:
     channel = read_parquet(watch_dir / "channel_audience_daily.parquet")
     if channel.empty:
@@ -547,6 +578,7 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     content_dir = output_root / "content"
 
     daily = build_daily(watch_dir)
+    overview_daily = build_overview_daily(output_root)
     channel = build_channel(watch_dir)
     geo = build_geo(watch_dir)
     ua_playtime = build_ua_playtime(watch_dir)
@@ -695,10 +727,12 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "concurrency": range_info(concurrency["summary"]),
             "latency": range_info(latency["daily"]),
             "identity": range_info(identity["daily"]),
+            "overview_daily": range_info(overview_daily, "date"),
         },
         "availability": availability,
         "data": {
             "daily": records(daily, 5000),
+            "overview_daily": records(overview_daily, 5000),
             "channel_daily": records(channel, 6000),
             "geo_daily": records(geo, 25000),
             "channel_top": records(channel_top, 80),
