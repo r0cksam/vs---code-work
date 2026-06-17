@@ -4,19 +4,17 @@
 from __future__ import annotations
 
 import argparse
-import json
+import importlib.util
 import os
+import re
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
-
-try:
-    import duckdb
-except Exception:  # pragma: no cover - dashboard can fall back to date ranges
-    duckdb = None
 
 
 HERE = Path(__file__).resolve().parent
@@ -24,18 +22,53 @@ SRC_ROOT = HERE.parents[1]
 ETL_ROOT = SRC_ROOT.parent
 DEFAULT_OUTPUT_ROOT = ETL_ROOT / "output"
 DEFAULT_OUT = DEFAULT_OUTPUT_ROOT / "audience_ops" / "veto_audience_operations.html"
-CHARTJS_CACHE = DEFAULT_OUTPUT_ROOT / "cache" / "chartjs" / "chart.umd.min.js"
 
-for path in [SRC_ROOT, ETL_ROOT]:
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
-
-from common.chartjs import load_chartjs  # noqa: E402
-from common.render import chartjs_script, json_blob, render_template  # noqa: E402
+IST_ZONE = ZoneInfo("Asia/Kolkata")
+# Each HLS .ts segment represents six seconds. 6 / 3600 converts one segment
+# row into hours, which is the unit used by the stakeholder dashboard.
+HOURS_PER_TS_SEGMENT = 6 / 3600
 
 
-CHUNK_DURATION_HOURS = 6 / 3600
-IST_OFFSET_SECONDS = 5 * 60 * 60 + 30 * 60
+class DashboardDataError(RuntimeError):
+    """Raised when an input required to build a trustworthy dashboard is invalid."""
+
+
+class ParquetReadError(DashboardDataError):
+    """Raised when a parquet file exists but cannot be read."""
+
+
+def warn(message: str) -> None:
+    print(f"[warn] {message}", file=sys.stderr)
+
+
+def _load_common_module(module_name: str, file_name: str) -> Any:
+    """Load local shared helpers without mutating sys.path at import time."""
+    path = SRC_ROOT / "common" / file_name
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {module_name} from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_chartjs_module = _load_common_module("veto_common_chartjs", "chartjs.py")
+_render_module = _load_common_module("veto_common_render", "render.py")
+
+load_chartjs = _chartjs_module.load_chartjs
+chartjs_script = _render_module.chartjs_script
+json_blob = _render_module.json_blob
+render_template = _render_module.render_template
+
+
+def get_duckdb() -> Any | None:
+    """Import duckdb lazily so optional dependency failure has no import-time side effect."""
+    try:
+        import duckdb  # type: ignore[import-not-found]
+    except (ImportError, OSError) as exc:
+        warn(f"DuckDB is unavailable; true reqTimeSec ranges will use date fallbacks: {exc}")
+        return None
+    return duckdb
 
 
 def read_parquet(path: Path) -> pd.DataFrame:
@@ -44,15 +77,21 @@ def read_parquet(path: Path) -> pd.DataFrame:
     try:
         return pd.read_parquet(path)
     except Exception as exc:
-        print(f"[warn] Could not read {path}: {exc}")
-        return pd.DataFrame()
+        # Missing optional marts are allowed, but a present unreadable parquet is
+        # a data-quality failure and must not be converted into a silent empty
+        # dashboard section.
+        raise ParquetReadError(f"Could not read parquet file {path}: {exc}") from exc
 
 
 def latest_file(folder: Path, pattern: str) -> Path | None:
     files = sorted(folder.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    skipped_tmp = 0
     for file in files:
         if ".tmp." not in file.name and file.suffix.lower() == ".parquet":
             return file
+        skipped_tmp += 1
+    if skipped_tmp:
+        warn(f"Only temporary files matched {folder / pattern}; ignoring {skipped_tmp} candidate(s).")
     return None
 
 
@@ -60,22 +99,33 @@ def records(df: pd.DataFrame, limit: int | None = None, tail: bool = False) -> l
     if df.empty:
         return []
     if limit is not None:
+        if limit < 0:
+            raise ValueError("records() limit must be non-negative")
         df = df.tail(limit) if tail else df.head(limit)
     clean = df.copy()
     for col in clean.columns:
         if pd.api.types.is_datetime64_any_dtype(clean[col]):
             clean[col] = clean[col].dt.strftime("%Y-%m-%d %H:%M:%S")
-    return json.loads(clean.to_json(orient="records", date_format="iso"))
+    # json.dumps accepts NaN by default, but JavaScript dashboard math treats it
+    # as a value. Convert missing scalars to JSON null before rendering.
+    clean = clean.astype(object).where(pd.notna(clean), None)
+    return clean.to_dict(orient="records")
 
 
-def numeric(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+def numeric(df: pd.DataFrame, cols: list[str], fill_value: float | None = 0) -> pd.DataFrame:
     if df.empty:
         return df
     out = df.copy()
     for col in cols:
         if col in out.columns:
-            out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0)
+            values = pd.to_numeric(out[col], errors="coerce")
+            out[col] = values.fillna(fill_value) if fill_value is not None else values
     return out
+
+
+def numeric_nullable(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """Coerce numeric columns while preserving NaN where missing has meaning."""
+    return numeric(df, cols, fill_value=None)
 
 
 def date_string(series: pd.Series) -> pd.Series:
@@ -87,11 +137,12 @@ def add_watch_hours(df: pd.DataFrame) -> pd.DataFrame:
         return df
     out = numeric(df, ["raw_ts_rows", "status_200_ts_rows", "ts_rows", "m3u8_rows", "rows", "approx_unique_ips"])
     if "request_watch_hours" not in out.columns:
-        out["request_watch_hours"] = out.get("raw_ts_rows", 0) * CHUNK_DURATION_HOURS
+        out["request_watch_hours"] = out.get("raw_ts_rows", 0) * HOURS_PER_TS_SEGMENT
     if "status_200_request_hours" not in out.columns:
-        out["status_200_request_hours"] = out.get("status_200_ts_rows", 0) * CHUNK_DURATION_HOURS
+        out["status_200_request_hours"] = out.get("status_200_ts_rows", 0) * HOURS_PER_TS_SEGMENT
     if "non_200_rows" in out.columns and "rows" in out.columns:
-        out["non_200_pct"] = out.apply(lambda r: (r["non_200_rows"] * 100 / r["rows"]) if r["rows"] else 0, axis=1)
+        rows = out["rows"].where(out["rows"].ne(0))
+        out["non_200_pct"] = (out["non_200_rows"] * 100 / rows).fillna(0)
     return out
 
 
@@ -120,20 +171,24 @@ def source_ranges(df: pd.DataFrame, date_col: str = "log_date") -> list[dict[str
 
 
 def sql_path(path: Path | str) -> str:
-    return str(path).replace("\\", "/").replace("'", "''")
+    # The DuckDB call uses parameter binding, so do not SQL-escape here; only
+    # normalize Windows separators for the glob pattern.
+    return str(path).replace("\\", "/")
 
 
 def resolve_lake_root() -> Path:
     env = os.getenv("VG_ETL_LAKE_ROOT")
     if env:
-        return Path(env).expanduser()
+        return Path(env).expanduser().resolve()
     return ETL_ROOT / "data" / "lake"
 
 
 def format_epoch_ist(epoch: float | None) -> str:
     if epoch is None:
         return ""
-    return datetime.fromtimestamp(float(epoch) + IST_OFFSET_SECONDS, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    # reqTimeSec is a UTC Unix epoch. Convert from UTC to IST with zoneinfo
+    # instead of adding a hardcoded offset.
+    return datetime.fromtimestamp(float(epoch), timezone.utc).astimezone(IST_ZONE).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def day_partition_folder(lake_root: Path, source: str, date_text: str) -> Path | None:
@@ -146,26 +201,31 @@ def day_partition_folder(lake_root: Path, source: str, date_text: str) -> Path |
 
 
 def reqtime_bounds(folder: Path | None) -> tuple[float | None, float | None]:
+    duckdb = get_duckdb()
     if duckdb is None or folder is None:
         return None, None
     if not any(folder.glob("*.parquet")):
         return None, None
     glob = sql_path(folder / "*.parquet")
+    con = None
     try:
         con = duckdb.connect()
         row = con.execute(
-            f"""
+            """
             SELECT
                 MIN(TRY_CAST(reqTimeSec AS DOUBLE)) AS first_epoch,
                 MAX(TRY_CAST(reqTimeSec AS DOUBLE)) AS last_epoch
-            FROM read_parquet('{glob}', hive_partitioning=1, union_by_name=1)
+            FROM read_parquet(?, hive_partitioning=1, union_by_name=1)
             WHERE TRY_CAST(reqTimeSec AS DOUBLE) IS NOT NULL
-            """
+            """,
+            [glob],
         ).fetchone()
-        con.close()
     except Exception as exc:
-        print(f"[warn] Could not scan true time range for {folder}: {exc}")
+        warn(f"Could not scan true time range for {folder}: {exc}")
         return None, None
+    finally:
+        if con is not None:
+            con.close()
     if not row:
         return None, None
     return row[0], row[1]
@@ -201,9 +261,14 @@ def safe_group_sum(df: pd.DataFrame, keys: list[str], metrics: list[str]) -> pd.
     if df.empty:
         return pd.DataFrame(columns=keys + metrics)
     cols = list(dict.fromkeys(c for c in keys + metrics if c in df.columns))
+    group_keys = [k for k in keys if k in cols]
+    if not group_keys:
+        return pd.DataFrame(columns=keys + metrics)
     metric_cols = list(dict.fromkeys(m for m in metrics if m in cols))
-    out = numeric(df[cols].copy(), metric_cols)
-    return out.groupby([k for k in keys if k in out.columns], dropna=False, as_index=False).sum(numeric_only=True)
+    out = numeric(df[cols], metric_cols)
+    # groupby(..., as_index=False) preserves non-numeric key columns while
+    # numeric_only=True restricts aggregation to metric columns.
+    return out.groupby(group_keys, dropna=False, as_index=False, observed=True).sum(numeric_only=True)
 
 
 def filter_source(df: pd.DataFrame, source: str) -> pd.DataFrame:
@@ -215,8 +280,27 @@ def filter_source(df: pd.DataFrame, source: str) -> pd.DataFrame:
 def filter_date_window(df: pd.DataFrame, min_date: Any, max_date: Any, date_col: str = "log_date") -> pd.DataFrame:
     if df.empty or date_col not in df.columns:
         return df
-    dates = pd.to_datetime(df[date_col], errors="coerce")
-    return df[dates.dt.date.ge(min_date) & dates.dt.date.le(max_date)].copy()
+    start = pd.Timestamp(str(min_date))
+    end = pd.Timestamp(str(max_date))
+    dates = pd.to_datetime(df[date_col], errors="coerce").dt.normalize()
+    return df[dates.ge(start) & dates.le(end)].copy()
+
+
+def filter_frame_dict(frames: dict[str, pd.DataFrame], source: str) -> dict[str, pd.DataFrame]:
+    return {name: filter_source(frame, source) for name, frame in frames.items()}
+
+
+def filter_frame_dict_dates(
+    frames: dict[str, pd.DataFrame],
+    min_date: Any,
+    max_date: Any,
+    date_cols: dict[str, str] | None = None,
+) -> dict[str, pd.DataFrame]:
+    date_cols = date_cols or {}
+    return {
+        name: filter_date_window(frame, min_date, max_date, date_cols.get(name, "log_date"))
+        for name, frame in frames.items()
+    }
 
 
 def build_daily(watch_dir: Path) -> pd.DataFrame:
@@ -249,8 +333,7 @@ def build_overview_daily(output_root: Path) -> pd.DataFrame:
     try:
         overview = pd.read_csv(path)
     except Exception as exc:
-        print(f"[warn] Could not read {path}: {exc}")
-        return pd.DataFrame()
+        raise DashboardDataError(f"Could not read overview daily CSV {path}: {exc}") from exc
     if overview.empty or "date" not in overview.columns:
         return pd.DataFrame()
     overview["date"] = date_string(overview["date"])
@@ -302,68 +385,73 @@ def build_geo(watch_dir: Path) -> pd.DataFrame:
     return geo.sort_values(["log_date", "source", "raw_watch_hours"], ascending=[True, True, False])
 
 
+UA_PLATFORM_RULES = [
+    (r"aft|fire tv", "Amazon Fire TV"),
+    (r"bravia|sony", "Sony BRAVIA"),
+    (r"tizen|stvplus|samsung", "Samsung / Tizen TV"),
+    (r"webos|web0s|lg smart", "LG Smart TV"),
+    (r"xiaomi|mitv|mi tv", "Xiaomi Mi TV"),
+    (r"sharp", "Sharp TV"),
+    (r"hisense", "Hisense Smart TV"),
+    (r"haier", "Haier MatrixTV"),
+    (r"vu tv|vutv", "VU TV"),
+    (r"ai pont|aipont", "AI PONT TV"),
+    (r"iphone|ipad", "iPhone/iPad"),
+    (r"android|okhttp|exoplayer|dalvik", "ExoPlayer-Android"),
+    (r"smart-tv|smart tv", "Smart TV / Other"),
+    (r"mac os", "macOS"),
+    (r"windows", "Windows"),
+]
+
+UA_OS_RULES = [
+    (r"aft|fire tv", "FireOS"),
+    (r"android|okhttp|dalvik|exoplayer", "Android"),
+    (r"webos|web0s", "webOS"),
+    (r"tizen", "Tizen"),
+    (r"appletv|apple tv", "Apple TV"),
+    (r"iphone|ipad|cpu os", "iOS"),
+    (r"mac os", "macOS"),
+    (r"windows", "Windows"),
+    (r"linux", "Linux"),
+]
+
+
+def clean_ua_text(value: Any) -> str:
+    return str(value or "").replace("%20", " ").replace("+", " ").strip()
+
+
 def ua_label(value: Any) -> str:
-    text = str(value or "").replace("%20", " ").replace("+", " ").strip()
-    return text
+    return clean_ua_text(value)
+
+
+def clean_ua_series(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype(str).str.replace("%20", " ", regex=False).str.replace("+", " ", regex=False).str.strip()
+
+
+def classify_ua_series(series: pd.Series, rules: list[tuple[str, str]], default: str) -> pd.Series:
+    clean = clean_ua_series(series).str.lower()
+    output = pd.Series(default, index=series.index, dtype="object")
+    unmatched = pd.Series(True, index=series.index)
+    for pattern, label in rules:
+        mask = unmatched & clean.str.contains(pattern, regex=True, na=False)
+        output.loc[mask] = label
+        unmatched &= ~mask
+    return output
 
 
 def derive_ua_platform(ua_value: Any) -> str:
-    ua = ua_label(ua_value)
-    low = ua.lower()
-    if "aft" in low or "fire tv" in low:
-        return "Amazon Fire TV"
-    if "bravia" in low or "sony" in low:
-        return "Sony BRAVIA"
-    if "tizen" in low or "stvplus" in low or "samsung" in low:
-        return "Samsung / Tizen TV"
-    if "webos" in low or "web0s" in low or "lg smart" in low:
-        return "LG Smart TV"
-    if "xiaomi" in low or "mitv" in low or "mi tv" in low:
-        return "Xiaomi Mi TV"
-    if "sharp" in low:
-        return "Sharp TV"
-    if "hisense" in low:
-        return "Hisense Smart TV"
-    if "haier" in low:
-        return "Haier MatrixTV"
-    if "vu tv" in low or "vutv" in low:
-        return "VU TV"
-    if "ai pont" in low or "aipont" in low:
-        return "AI PONT TV"
-    if "iphone" in low or "ipad" in low:
-        return "iPhone/iPad"
-    if "android" in low or "okhttp" in low or "exoplayer" in low or "dalvik" in low:
-        return "ExoPlayer-Android"
-    if "smart-tv" in low or "smart tv" in low:
-        return "Smart TV / Other"
-    if "mac os" in low:
-        return "macOS"
-    if "windows" in low:
-        return "Windows"
+    clean = clean_ua_text(ua_value).lower()
+    for pattern, label in UA_PLATFORM_RULES:
+        if re.search(pattern, clean):
+            return label
     return "Others"
 
 
 def derive_ua_os(ua_value: Any) -> str:
-    ua = ua_label(ua_value)
-    low = ua.lower()
-    if "aft" in low or "fire tv" in low:
-        return "FireOS"
-    if "android" in low or "okhttp" in low or "dalvik" in low or "exoplayer" in low:
-        return "Android"
-    if "webos" in low or "web0s" in low:
-        return "webOS"
-    if "tizen" in low:
-        return "Tizen"
-    if "appletv" in low or "apple tv" in low:
-        return "Apple TV"
-    if "iphone" in low or "ipad" in low or "cpu os" in low:
-        return "iOS"
-    if "mac os" in low:
-        return "macOS"
-    if "windows" in low:
-        return "Windows"
-    if "linux" in low:
-        return "Linux"
+    clean = clean_ua_text(ua_value).lower()
+    for pattern, label in UA_OS_RULES:
+        if re.search(pattern, clean):
+            return label
     return "Others"
 
 
@@ -373,10 +461,12 @@ def build_ua_playtime(watch_dir: Path) -> dict[str, pd.DataFrame]:
         return {"platform": pd.DataFrame(), "os": pd.DataFrame()}
     ua = numeric(ua, ["rows", "raw_ts_rows", "status_200_ts_rows", "approx_unique_ips"])
     ua["log_date"] = date_string(ua["log_date"])
-    ua["playtime_hours"] = ua["raw_ts_rows"] * CHUNK_DURATION_HOURS
-    ua["status_200_playtime_hours"] = ua["status_200_ts_rows"] * CHUNK_DURATION_HOURS
-    ua["ua_platform"] = ua["userAgent"].map(derive_ua_platform)
-    ua["ua_os"] = ua["userAgent"].map(derive_ua_os)
+    ua["playtime_hours"] = ua["raw_ts_rows"] * HOURS_PER_TS_SEGMENT
+    ua["status_200_playtime_hours"] = ua["status_200_ts_rows"] * HOURS_PER_TS_SEGMENT
+    # Use vectorized regex classification; row-by-row Python UA parsing is slow
+    # on the full distinct-UA mart.
+    ua["ua_platform"] = classify_ua_series(ua["userAgent"], UA_PLATFORM_RULES, "Others")
+    ua["ua_os"] = classify_ua_series(ua["userAgent"], UA_OS_RULES, "Others")
     metrics = ["rows", "raw_ts_rows", "status_200_ts_rows", "approx_unique_ips", "playtime_hours", "status_200_playtime_hours"]
     platform = safe_group_sum(ua, ["log_date", "source", "ua_platform"], metrics).sort_values(["log_date", "source", "playtime_hours"])
     os = safe_group_sum(ua, ["log_date", "source", "ua_os"], metrics).sort_values(["log_date", "source", "playtime_hours"])
@@ -390,7 +480,7 @@ def build_latency(latency_dir: Path) -> dict[str, pd.DataFrame]:
     host = read_parquet(latency_dir / "host_daily.parquet")
     status = read_parquet(latency_dir / "status_daily.parquet")
     cache = read_parquet(latency_dir / "cache_daily.parquet")
-    metric_cols = [
+    count_cols = [
         "rows",
         "status_200_rows",
         "non_200_rows",
@@ -398,6 +488,8 @@ def build_latency(latency_dir: Path) -> dict[str, pd.DataFrame]:
         "approx_unique_ips",
         "cache_hit_rows",
         "ttfb_rows",
+    ]
+    value_cols = [
         "ttfb_p50_ms",
         "ttfb_p95_ms",
         "ttfb_p99_ms",
@@ -415,15 +507,17 @@ def build_latency(latency_dir: Path) -> dict[str, pd.DataFrame]:
         "status": status,
         "cache": cache,
     }.items():
-        frame = numeric(frame, metric_cols)
+        frame = numeric(frame, count_cols)
+        frame = numeric_nullable(frame, value_cols)
         if not frame.empty and "log_date" in frame.columns:
             frame["log_date"] = date_string(frame["log_date"])
         if not frame.empty and "hour_ist" in frame.columns:
             frame["hour_ist"] = pd.to_datetime(frame["hour_ist"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
         if not frame.empty and "rows" in frame.columns:
-            frame["cache_hit_pct"] = frame.apply(lambda r: (r.get("cache_hit_rows", 0) * 100 / r["rows"]) if r["rows"] else 0, axis=1)
-            frame["error_5xx_pct"] = frame.apply(lambda r: (r.get("status_5xx_rows", 0) * 100 / r["rows"]) if r["rows"] else 0, axis=1)
-            frame["non_200_pct"] = frame.apply(lambda r: (r.get("non_200_rows", 0) * 100 / r["rows"]) if r["rows"] else 0, axis=1)
+            denom = frame["rows"].where(frame["rows"].ne(0))
+            frame["cache_hit_pct"] = (frame.get("cache_hit_rows", 0) * 100 / denom).fillna(0)
+            frame["error_5xx_pct"] = (frame.get("status_5xx_rows", 0) * 100 / denom).fillna(0)
+            frame["non_200_pct"] = (frame.get("non_200_rows", 0) * 100 / denom).fillna(0)
         out[name] = frame
     return out
 
@@ -445,8 +539,12 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
             ],
         )
         minute["log_date"] = date_string(minute["log_date"])
+        # minute_ist is already produced as an IST timestamp by the upstream
+        # concurrency mart. Keep it timezone-naive but do not reinterpret it as
+        # UTC here; just bucket the local wall-clock value.
         minute["minute_ist"] = pd.to_datetime(minute["minute_ist"], errors="coerce")
-        minute["bucket_5min"] = minute["minute_ist"].dt.floor("5min").dt.strftime("%Y-%m-%d %H:%M:%S")
+        minute = minute[minute["minute_ist"].notna()].copy()
+        minute["bucket_5min"] = minute["minute_ist"].dt.floor("5min")
         minute5 = (
             minute.groupby(["log_date", "source", "bucket_5min", "platform_name", "channel_name"], dropna=False, as_index=False)
             .agg(
@@ -458,6 +556,7 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
             )
             .sort_values(["log_date", "bucket_5min"])
         )
+        minute5["bucket_5min"] = minute5["bucket_5min"].dt.strftime("%Y-%m-%d %H:%M:%S")
     else:
         minute5 = pd.DataFrame()
     if not summary.empty:
@@ -467,11 +566,21 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
                 "minute_count",
                 "raw_ts_rows",
                 "status_200_ts_rows",
+            ],
+        )
+        summary = numeric_nullable(
+            summary,
+            [
                 "avg_unique_viewers",
                 "peak_unique_viewers",
                 "p95_unique_viewers",
                 "avg_unique_ua_viewers",
                 "peak_unique_ua_viewers",
+                "p95_unique_ua_viewers",
+                "avg_segment_viewers_estimate",
+                "peak_segment_viewers_estimate",
+                "avg_status_200_segment_viewers_estimate",
+                "peak_status_200_segment_viewers_estimate",
             ],
         )
         summary["log_date"] = date_string(summary["log_date"])
@@ -488,11 +597,9 @@ def build_device_decode(device_dir: Path) -> dict[str, pd.DataFrame | str]:
     summary = read_parquet(summary_path) if summary_path else pd.DataFrame()
     ua = read_parquet(ua_path) if ua_path else pd.DataFrame()
     top_ua = read_parquet(top_ua_path) if top_ua_path else pd.DataFrame()
-    for frame in [summary, ua, top_ua]:
-        if not frame.empty:
-            for col in ["rows", "ts_rows", "status_200_rows", "status_200_ts_rows", "watch_hours", "status_200_watch_hours", "approx_ips"]:
-                if col in frame.columns:
-                    frame[col] = pd.to_numeric(frame[col], errors="coerce").fillna(0)
+    summary = numeric(summary, ["rows", "ts_rows", "status_200_rows", "status_200_ts_rows", "watch_hours", "status_200_watch_hours", "approx_ips"])
+    ua = numeric(ua, ["rows", "ts_rows", "status_200_rows", "status_200_ts_rows", "watch_hours", "status_200_watch_hours", "approx_ips"])
+    top_ua = numeric(top_ua, ["rows", "ts_rows", "status_200_rows", "status_200_ts_rows", "watch_hours", "status_200_watch_hours", "approx_ips"])
     return {
         "summary": summary,
         "ua": ua,
@@ -568,6 +675,85 @@ def top_table(df: pd.DataFrame, group_cols: list[str], metric: str, limit: int =
     return grouped.sort_values(metric, ascending=False).head(limit)
 
 
+def completed_date_window(primary: pd.DataFrame, fallback_frames: list[pd.DataFrame]) -> tuple[Any, Any]:
+    latest_completed = datetime.now(IST_ZONE).date() - timedelta(days=1)
+
+    def collect_dates(frame: pd.DataFrame) -> list[Any]:
+        if frame.empty or "log_date" not in frame.columns:
+            return []
+        dates = pd.to_datetime(frame["log_date"], errors="coerce").dropna().dt.date
+        return [d for d in dates.tolist() if d <= latest_completed]
+
+    primary_dates = collect_dates(primary)
+    if primary_dates:
+        return min(primary_dates), max(primary_dates)
+
+    all_dates: list[Any] = []
+    for frame in fallback_frames:
+        all_dates.extend(collect_dates(frame))
+    if not all_dates:
+        return latest_completed, latest_completed
+    return min(all_dates), max(all_dates)
+
+
+def weighted_group(
+    df: pd.DataFrame,
+    keys: list[str],
+    sum_cols: list[str],
+    weighted_cols: list[str],
+    weight_col: str = "rows",
+) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=keys + sum_cols + weighted_cols)
+    cols = [c for c in dict.fromkeys(keys + sum_cols + weighted_cols + [weight_col]) if c in df.columns]
+    out = numeric(df[cols], [c for c in sum_cols + [weight_col] if c in cols])
+    out = numeric_nullable(out, [c for c in weighted_cols if c in cols])
+    valid_keys = [k for k in keys if k in out.columns]
+    if not valid_keys:
+        return pd.DataFrame()
+    if weight_col not in out.columns:
+        out[weight_col] = 0
+    sum_cols_present = [c for c in sum_cols if c in out.columns]
+    weighted_cols_present = [c for c in weighted_cols if c in out.columns]
+    work = out.copy()
+    agg_spec: dict[str, tuple[str, str]] = {col: (col, "sum") for col in sum_cols_present}
+    agg_spec["_weight_rows"] = (weight_col, "sum")
+    numerator_cols: list[str] = []
+    for col in weighted_cols_present:
+        numerator_col = f"__weighted_{col}"
+        numerator_cols.append(numerator_col)
+        work[numerator_col] = work[col] * work[weight_col]
+        agg_spec[numerator_col] = (numerator_col, "sum")
+    result = work.groupby(valid_keys, dropna=False, observed=True).agg(**agg_spec).reset_index()
+    for col, numerator_col in zip(weighted_cols_present, numerator_cols):
+        if col not in out.columns:
+            continue
+        result[col] = result[numerator_col] / result["_weight_rows"].where(result["_weight_rows"].ne(0))
+    result = result.drop(columns=["_weight_rows"] + numerator_cols)
+    return result
+
+
+def validate_output_root(path: Path) -> Path:
+    root = path.expanduser().resolve()
+    if not root.exists():
+        raise FileNotFoundError(f"Output root does not exist: {root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"Output root is not a directory: {root}")
+    return root
+
+
+def validate_output_target(path: Path, dry_run: bool) -> Path:
+    target = path.expanduser().resolve()
+    if dry_run:
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Fail fast before expensive parquet reads if the final destination cannot
+    # be written.
+    with tempfile.NamedTemporaryFile(prefix=".write-test-", suffix=".tmp", dir=target.parent, delete=True):
+        pass
+    return target
+
+
 def build_data(args: argparse.Namespace) -> dict[str, Any]:
     output_root = args.output_root.expanduser().resolve()
     watch_dir = output_root / "watch_hours" / "daily_tables"
@@ -590,50 +776,37 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     source = args.source.lower()
 
     daily = filter_source(daily, source)
+    overview_daily = filter_source(overview_daily, source)
     channel = filter_source(channel, source)
     geo = filter_source(geo, source)
-    ua_playtime = {name: filter_source(frame, source) for name, frame in ua_playtime.items()}
-    latency = {name: filter_source(frame, source) for name, frame in latency.items()}
-    concurrency = {name: filter_source(frame, source) for name, frame in concurrency.items()}
-    identity = {name: filter_source(frame, source) for name, frame in identity.items()}
+    ua_playtime = filter_frame_dict(ua_playtime, source)
+    latency = filter_frame_dict(latency, source)
+    concurrency = filter_frame_dict(concurrency, source)
+    identity = filter_frame_dict(identity, source)
     content = filter_source(content, source)
-    if isinstance(devices.get("summary"), pd.DataFrame):
-        devices["summary"] = filter_source(devices["summary"], source)
-    if isinstance(devices.get("ua"), pd.DataFrame):
-        devices["ua"] = filter_source(devices["ua"], source)
-    if isinstance(devices.get("top_ua"), pd.DataFrame):
-        devices["top_ua"] = filter_source(devices["top_ua"], source)
+    for name in ("summary", "ua", "top_ua"):
+        if isinstance(devices.get(name), pd.DataFrame):
+            devices[name] = filter_source(devices[name], source)
 
     source_true_ranges = source_true_ranges_from_lake(daily)
 
-    latest_possible = datetime.now().date() - timedelta(days=1)
-    max_dates = [
-        pd.to_datetime(frame["log_date"], errors="coerce").max()
-        for frame in [daily, channel, geo, latency["daily"], concurrency["summary"], identity["daily"]]
-        if not frame.empty and "log_date" in frame.columns
-    ]
-    max_date = min([d.date() for d in max_dates if pd.notna(d)] + [latest_possible])
-    min_dates = [
-        pd.to_datetime(frame["log_date"], errors="coerce").min()
-        for frame in [daily, channel, geo, latency["daily"], concurrency["summary"], identity["daily"]]
-        if not frame.empty and "log_date" in frame.columns
-    ]
-    min_date = min([d.date() for d in min_dates if pd.notna(d)] + [max_date])
+    min_date, max_date = completed_date_window(
+        daily,
+        [channel, geo, latency["daily"], concurrency["summary"], identity["daily"], content],
+    )
 
     daily = filter_date_window(daily, min_date, max_date)
+    overview_daily = filter_date_window(overview_daily, min_date, max_date, "date")
     channel = filter_date_window(channel, min_date, max_date)
     geo = filter_date_window(geo, min_date, max_date)
-    ua_playtime = {name: filter_date_window(frame, min_date, max_date) for name, frame in ua_playtime.items()}
-    latency = {name: filter_date_window(frame, min_date, max_date) for name, frame in latency.items()}
-    concurrency = {name: filter_date_window(frame, min_date, max_date) for name, frame in concurrency.items()}
-    identity = {name: filter_date_window(frame, min_date, max_date) for name, frame in identity.items()}
+    ua_playtime = filter_frame_dict_dates(ua_playtime, min_date, max_date)
+    latency = filter_frame_dict_dates(latency, min_date, max_date)
+    concurrency = filter_frame_dict_dates(concurrency, min_date, max_date)
+    identity = filter_frame_dict_dates(identity, min_date, max_date)
     content = filter_date_window(content, min_date, max_date)
-    if isinstance(devices.get("summary"), pd.DataFrame):
-        devices["summary"] = filter_date_window(devices["summary"], min_date, max_date)
-    if isinstance(devices.get("ua"), pd.DataFrame):
-        devices["ua"] = filter_date_window(devices["ua"], min_date, max_date, "first_date")
-    if isinstance(devices.get("top_ua"), pd.DataFrame):
-        devices["top_ua"] = filter_date_window(devices["top_ua"], min_date, max_date, "first_date")
+    for name, date_col in {"summary": "log_date", "ua": "first_date", "top_ua": "first_date"}.items():
+        if isinstance(devices.get(name), pd.DataFrame):
+            devices[name] = filter_date_window(devices[name], min_date, max_date, date_col)
 
     channel_top = top_table(channel, ["source", "channel_name"], "raw_watch_hours", 60)
     geo_top = top_table(geo, ["source", "country", "state", "city"], "raw_watch_hours", 80)
@@ -642,10 +815,22 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     status_top = top_table(latency["status"], ["source", "extension", "status_code"], "rows", 80)
     host_latency = top_table(latency["host"], ["source", "platform_name", "reqHost"], "rows", 80)
     if not host_latency.empty and not latency["host"].empty:
-        cols = ["source", "platform_name", "reqHost", "rows", "ttfb_p95_ms", "cache_hit_pct", "error_5xx_pct", "non_200_pct"]
-        host_latency = latency["host"][[c for c in cols if c in latency["host"].columns]].sort_values(
-            ["ttfb_p95_ms", "rows"], ascending=[False, False]
-        ).head(80)
+        # Collapse daily host rows to one row per host/platform. The p95 value
+        # is a row-weighted average of daily p95s, which is not a mathematically
+        # exact p95 over the whole range but is safer than showing one arbitrary
+        # high day as if it were the selected-range host value.
+        host_latency = weighted_group(
+            latency["host"],
+            ["source", "platform_name", "reqHost"],
+            ["rows", "cache_hit_rows", "status_5xx_rows", "non_200_rows"],
+            ["ttfb_p95_ms"],
+        )
+        if not host_latency.empty:
+            denom = host_latency["rows"].where(host_latency["rows"].ne(0))
+            host_latency["cache_hit_pct"] = (host_latency.get("cache_hit_rows", 0) * 100 / denom).fillna(0)
+            host_latency["error_5xx_pct"] = (host_latency.get("status_5xx_rows", 0) * 100 / denom).fillna(0)
+            host_latency["non_200_pct"] = (host_latency.get("non_200_rows", 0) * 100 / denom).fillna(0)
+            host_latency = host_latency.sort_values(["ttfb_p95_ms", "rows"], ascending=[False, False]).head(80)
 
     device_summary = devices["summary"]
     device_by_name = pd.DataFrame()
@@ -763,8 +948,8 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "device_decode": str(device_dir),
             "identity": str(identity_dir),
             "content": str(content_dir),
-            "device_summary": devices["summary_path"],
-            "ua_decode": devices["ua_path"],
+            "device_summary": str(devices["summary_path"]),
+            "ua_decode": str(devices["ua_path"]),
         },
     }
 
@@ -778,8 +963,12 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
+    args.out = validate_output_target(args.out, args.dry_run)
+    args.output_root = validate_output_root(args.output_root)
+
     data = build_data(args)
-    chartjs = load_chartjs(CHARTJS_CACHE, fallback="window.Chart=null;")
+    chartjs_cache = args.output_root / "cache" / "chartjs" / "chart.umd.min.js"
+    chartjs = load_chartjs(chartjs_cache, fallback="window.Chart=null;")
     html = render_template(
         HERE / "template.html",
         CHARTJS_TAG=chartjs_script(chartjs),
@@ -791,7 +980,6 @@ def main() -> None:
         print(f"Would write: {args.out}")
         return
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(html, encoding="utf-8")
     print(f"Audience operations dashboard written: {args.out.resolve()}")
     print(f"Size: {args.out.stat().st_size / 1024:.1f} KB")
