@@ -51,11 +51,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Show latest ETL pipeline health summary.")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--summary", type=Path, default=None)
+    parser.add_argument(
+        "--health",
+        action="store_true",
+        help="Read the latest dry-run health summary instead of the production daily-run summary.",
+    )
     parser.add_argument("--all", action="store_true", help="Show all steps, not only issues.")
     parser.add_argument("--tail", action="store_true", help="Show short captured tail for failed steps.")
     args = parser.parse_args()
 
-    summary_path = args.summary or args.output_root / "state" / "pipeline_last_run.json"
+    default_name = "pipeline_health_last_run.json" if args.health else "pipeline_last_run.json"
+    summary_path = args.summary or args.output_root / "state" / default_name
     data = load_summary(summary_path.expanduser().resolve())
     steps = data.get("steps", [])
     issues = [

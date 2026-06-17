@@ -4,25 +4,57 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
-import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 
 HERE = Path(__file__).resolve().parent
-SRC_ROOT = HERE.parents[1]
-ETL_ROOT = SRC_ROOT.parent
-for path in [SRC_ROOT, ETL_ROOT]:
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
 
-from common.chartjs import load_chartjs  # noqa: E402
-from common.render import chartjs_script, json_blob, render_template  # noqa: E402
+
+def resolve_src_root() -> Path:
+    env_root = os.getenv("VG_ETL_SRC_ROOT")
+    candidates = [Path(env_root).expanduser().resolve()] if env_root else []
+    candidates.extend(list(HERE.parents)[:6])
+    for candidate in candidates:
+        if (candidate / "common" / "chartjs.py").exists() and (candidate / "common" / "render.py").exists():
+            return candidate
+    raise FileNotFoundError(
+        f"Could not locate ETL src/common helpers from {HERE}. "
+        "Set VG_ETL_SRC_ROOT to the ETL/src directory."
+    )
+
+
+SRC_ROOT = resolve_src_root()
+ETL_ROOT = SRC_ROOT.parent
+
+
+def _load_common_module(module_name: str, file_name: str) -> Any:
+    path = SRC_ROOT / "common" / file_name
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {module_name} from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_chartjs_module = _load_common_module("veto_common_chartjs", "chartjs.py")
+_render_module = _load_common_module("veto_common_render", "render.py")
+
+load_chartjs = _chartjs_module.load_chartjs
+chartjs_script = _render_module.chartjs_script
+json_blob = _render_module.json_blob
+render_template = _render_module.render_template
+
+DEFAULT_CHARTJS_CACHE = ETL_ROOT / "output" / "cache" / "chartjs" / "chart.umd.min.js"
 
 
 DEFAULT_DATA_DIR = Path(
@@ -37,7 +69,6 @@ DEFAULT_OUT = Path(
         str(DEFAULT_DATA_DIR / "veto_concurrency.html"),
     )
 )
-CHARTJS_CACHE = ETL_ROOT / "output" / "cache" / "chartjs" / "chart.umd.min.js"
 IST = ZoneInfo("Asia/Kolkata")
 STATUS_CODE_MEANINGS = {
     "000": "Non-standard: no HTTP response code was logged; commonly indicates the request closed before a normal response was recorded.",
@@ -60,25 +91,84 @@ STATUS_CODE_MEANINGS = {
 }
 
 
-def read_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
+class ParquetReadError(RuntimeError):
+    """Raised when an existing parquet file cannot be read."""
+
+
+def warn(message: str) -> None:
+    print(f"[warn] {message}")
+
+
+def temp_path_for(target: Path) -> Path:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    os.close(handle)
+    return Path(temp_name)
+
+
+def atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    temp_path = None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError):
-        return {}
+        temp_path = temp_path_for(path)
+        temp_path.write_text(text, encoding=encoding)
+        os.replace(temp_path, path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
+
+
+def atomic_write_exports(export: pd.DataFrame, csv_path: Path, parquet_path: Path) -> None:
+    csv_tmp = None
+    parquet_tmp = None
+    try:
+        csv_tmp = temp_path_for(csv_path)
+        parquet_tmp = temp_path_for(parquet_path)
+        export.to_csv(csv_tmp, index=False, encoding="utf-8")
+        export.to_parquet(parquet_tmp, index=False, compression="zstd")
+        # Each output file is replaced atomically, but the CSV/parquet pair is
+        # not a single atomic transaction. Parquet is the machine-readable
+        # primary output, and CSV is a convenience export, so publish parquet
+        # last to make the primary file the final visible update.
+        os.replace(csv_tmp, csv_path)
+        os.replace(parquet_tmp, parquet_path)
+    finally:
+        for temp_path in (csv_tmp, parquet_tmp):
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink()
+
+
+def read_json(path: Path) -> dict:
+    data, _ = read_json_with_status(path)
+    return data
+
+
+def read_json_with_status(path: Path) -> tuple[dict, str]:
+    if not path.exists():
+        return {}, ""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), ""
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        message = f"Could not read manifest JSON {path}: {exc}"
+        warn(message)
+        return {}, message
 
 
 def read_parquet(path: Path) -> pd.DataFrame:
     if not path.exists():
-        raise SystemExit(f"Required parquet not found: {path}")
-    return pd.read_parquet(path)
+        raise FileNotFoundError(f"Required parquet not found: {path}")
+    try:
+        return pd.read_parquet(path)
+    except Exception as exc:
+        raise ParquetReadError(f"Could not read parquet file {path}: {exc}") from exc
 
 
 def read_optional_parquet(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
-    return pd.read_parquet(path)
+    try:
+        return pd.read_parquet(path)
+    except Exception as exc:
+        raise ParquetReadError(f"Could not read optional parquet file {path}: {exc}") from exc
 
 
 def clean_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -102,28 +192,36 @@ def clean_frame(df: pd.DataFrame) -> pd.DataFrame:
         if col in out.columns:
             out[col] = out[col].fillna("").astype(str)
     if "pair_key" not in out.columns and not out.empty:
-        def text_series(name: str) -> pd.Series:
-            if name in out.columns:
-                return out[name].fillna("").astype(str)
-            return pd.Series([""] * len(out), index=out.index, dtype=str)
-
-        out["pair_key"] = (
-            text_series("source")
-            + "|"
-            + text_series("platform_key")
-            + "|"
-            + text_series("candidate_id")
-            + "|"
-            + text_series("channel_name")
-        )
+        out["pair_key"] = build_pair_key(out)
     return out
+
+
+def build_pair_key(df: pd.DataFrame) -> pd.Series:
+    parts = []
+    for name in ["source", "platform_key", "candidate_id", "channel_name"]:
+        if name in df.columns:
+            parts.append(df[name].fillna("").astype(str))
+        else:
+            parts.append(pd.Series([""] * len(df), index=df.index, dtype=str))
+
+    raw = pd.Series("", index=df.index, dtype=str)
+    for part in parts:
+        raw = raw + part.str.len().astype(str) + ":" + part
+    return raw
 
 
 def records(df: pd.DataFrame, columns: list[str]) -> list[dict]:
     if df.empty:
         return []
     out = df[[col for col in columns if col in df.columns]].copy()
-    return json.loads(out.to_json(orient="records", date_format="iso"))
+    for col in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[col]):
+            if getattr(out[col].dt, "tz", None) is not None:
+                out[col] = out[col].dt.tz_convert(IST).dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                out[col] = out[col].dt.strftime("%Y-%m-%d %H:%M:%S")
+    out = out.astype(object).where(pd.notna(out), None)
+    return out.to_dict(orient="records")
 
 
 def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[dict]]:
@@ -215,8 +313,7 @@ def write_viewer_exports(
             ]
         )
         if not dry_run:
-            empty.to_csv(csv_path, index=False, encoding="utf-8")
-            empty.to_parquet(parquet_path, index=False, compression="zstd")
+            atomic_write_exports(empty, csv_path, parquet_path)
         return {"csv": str(csv_path), "parquet": str(parquet_path), "rows": 0}
 
     export = minute[
@@ -245,8 +342,7 @@ def write_viewer_exports(
         .sort_values(["Timestamp (IST)", "Platform name", "Channel name"])
     )
     if not dry_run:
-        export.to_csv(csv_path, index=False, encoding="utf-8")
-        export.to_parquet(parquet_path, index=False, compression="zstd")
+        atomic_write_exports(export, csv_path, parquet_path)
     return {"csv": str(csv_path), "parquet": str(parquet_path), "rows": int(len(export))}
 
 
@@ -272,12 +368,19 @@ def write_cliip_viewer_exports(data_dir: Path, minute: pd.DataFrame, dry_run: bo
     )
 
 
-def build_data(data_dir: Path, title: str) -> dict:
+def _numeric_column(df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in df.columns:
+        return pd.Series([0] * len(df), index=df.index, dtype="float64")
+    return pd.to_numeric(df[column], errors="coerce").fillna(0)
+
+
+def build_data(data_dir: Path, title: str) -> tuple[dict, pd.DataFrame]:
     minute_path = data_dir / "concurrency_minute.parquet"
     status_minute_path = data_dir / "concurrency_status_minute.parquet"
     summary_path = data_dir / "concurrency_summary.parquet"
     manifest_path = data_dir / "concurrency_manifest.json"
 
+    manifest, manifest_error = read_json_with_status(manifest_path)
     minute = clean_frame(read_parquet(minute_path))
     status_minute = clean_frame(read_optional_parquet(status_minute_path))
     summary = clean_frame(read_parquet(summary_path))
@@ -293,10 +396,8 @@ def build_data(data_dir: Path, title: str) -> dict:
 
     integrity_checks = []
     if not minute.empty and not status_minute.empty:
-        minute_total = int(pd.to_numeric(minute.get("raw_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
-        status_total = int(
-            pd.to_numeric(status_minute.get("status_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()
-        )
+        minute_total = int(_numeric_column(minute, "raw_ts_rows").sum())
+        status_total = int(_numeric_column(status_minute, "status_ts_rows").sum())
         integrity_checks.append(
             {
                 "name": "minute_vs_status_ts_rows",
@@ -307,8 +408,8 @@ def build_data(data_dir: Path, title: str) -> dict:
             }
         )
     if not minute.empty and not summary.empty:
-        minute_total = int(pd.to_numeric(minute.get("raw_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
-        summary_total = int(pd.to_numeric(summary.get("raw_ts_rows", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+        minute_total = int(_numeric_column(minute, "raw_ts_rows").sum())
+        summary_total = int(_numeric_column(summary, "raw_ts_rows").sum())
         integrity_checks.append(
             {
                 "name": "minute_vs_summary_ts_rows",
@@ -318,7 +419,10 @@ def build_data(data_dir: Path, title: str) -> dict:
                 "diff": minute_total - summary_total,
             }
         )
-    integrity_status = "OK" if integrity_checks and all(item["status"] == "ok" for item in integrity_checks) else "Check"
+    if not integrity_checks:
+        integrity_status = "Unknown"
+    else:
+        integrity_status = "OK" if all(item["status"] == "ok" for item in integrity_checks) else "Check"
 
     dates = (
         sorted(str(day) for day in minute["log_date"].dropna().unique())
@@ -332,7 +436,7 @@ def build_data(data_dir: Path, title: str) -> dict:
     )
     current_ist_date = datetime.now(IST).date().isoformat()
     full_dates = [day for day in dates if day < current_ist_date]
-    latest_full_date = full_dates[-1] if full_dates else (dates[-1] if dates else "")
+    latest_full_date = full_dates[-1] if full_dates else ""
 
     stats = {
         "minute_rows": int(len(minute)),
@@ -344,7 +448,7 @@ def build_data(data_dir: Path, title: str) -> dict:
         "last_ist": minute_times[-1] if minute_times else "",
         "latest_full_date": latest_full_date,
         "current_ist_date": current_ist_date,
-        "current_date_hidden": bool(current_ist_date in dates and latest_full_date != current_ist_date),
+        "current_date_hidden": bool(latest_full_date and current_ist_date in dates),
         "dates": len(dates),
         "platforms": int(minute["platform_name"].nunique()) if not minute.empty and "platform_name" in minute.columns else 0,
         "channels": int(minute["channel_name"].nunique()) if not minute.empty and "channel_name" in minute.columns else 0,
@@ -353,12 +457,11 @@ def build_data(data_dir: Path, title: str) -> dict:
         else 0,
         "integrity_status": integrity_status,
         "integrity_checks": integrity_checks,
-        "peak_unique_viewers": int(pd.to_numeric(minute.get("unique_viewers", pd.Series(dtype=float)), errors="coerce").max() or 0)
+        "manifest_read_error": manifest_error,
+        "peak_unique_viewers": int(_numeric_column(minute, "unique_viewers").max() or 0)
         if not minute.empty
         else 0,
-        "peak_unique_ua_viewers": int(
-            pd.to_numeric(minute.get("unique_ua_viewers", pd.Series(dtype=float)), errors="coerce").max() or 0
-        )
+        "peak_unique_ua_viewers": int(_numeric_column(minute, "unique_ua_viewers").max() or 0)
         if not minute.empty
         else 0,
     }
@@ -382,7 +485,7 @@ def build_data(data_dir: Path, title: str) -> dict:
         "pair_key",
     ]
 
-    return {
+    data = {
         "title": title,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "data_dir": str(data_dir),
@@ -393,7 +496,7 @@ def build_data(data_dir: Path, title: str) -> dict:
             "manifest": str(manifest_path),
         },
         "stats": stats,
-        "manifest": read_json(manifest_path),
+        "manifest": manifest,
         "status_meanings": STATUS_CODE_MEANINGS,
         "status_code_options": status_code_options,
         "status_extra": status_extra,
@@ -432,6 +535,7 @@ def build_data(data_dir: Path, title: str) -> dict:
             ],
         ),
     }
+    return data, minute
 
 
 def main() -> None:
@@ -444,8 +548,7 @@ def main() -> None:
 
     data_dir = args.data_dir.expanduser().resolve()
     out_path = args.out.expanduser().resolve()
-    data = build_data(data_dir, args.title)
-    minute_for_export = clean_frame(read_parquet(data_dir / "concurrency_minute.parquet"))
+    data, minute_for_export = build_data(data_dir, args.title)
     data["files"]["ua_viewers_export"] = write_ua_viewer_exports(
         data_dir,
         minute_for_export,
@@ -456,20 +559,20 @@ def main() -> None:
         minute_for_export,
         dry_run=args.dry_run,
     )
-    chartjs = load_chartjs(CHARTJS_CACHE, fallback="window.Chart=null;")
+    if args.dry_run:
+        stats = data.get("stats", {})
+        print(f"[Dry run] Concurrency data OK - {stats.get('minute_rows', 0):,} minute rows")
+        print(f"  Would write: {out_path}")
+        return
+
+    chartjs = load_chartjs(DEFAULT_CHARTJS_CACHE, fallback="window.Chart=null;")
     html = render_template(
         HERE / "template.html",
         DATA_BLOB=json_blob(data),
         CHARTJS_TAG=chartjs_script(chartjs),
     )
 
-    if args.dry_run:
-        print(f"[Dry run] Concurrency dashboard OK - {len(html):,} chars")
-        print(f"  Would write: {out_path}")
-        return
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(html, encoding="utf-8")
+    atomic_write_text(out_path, html, encoding="utf-8")
     print(f"Concurrency dashboard written: {out_path}")
     print(f"Size: {out_path.stat().st_size / 1024:.1f} KB")
 

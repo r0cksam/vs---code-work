@@ -55,6 +55,13 @@ def _safe_log_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_") or "step"
 
 
+def _safe_state_name(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_")
+    if not cleaned:
+        raise SystemExit("--state-name must contain at least one letter, digit, dot, underscore, or dash.")
+    return cleaned
+
+
 def _print_subprocess_line(line: str) -> None:
     """Echo child-process output without failing on legacy Windows consoles."""
     try:
@@ -182,12 +189,19 @@ class RunRecorder:
         self.output_root = output_root
         self.state_dir = output_root / "state"
         self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.last_path = self.state_dir / "pipeline_last_run.json"
-        self.run_path = self.state_dir / f"pipeline_run_{self.run_id}.json"
-        self.steps_csv = self.state_dir / "pipeline_last_run_steps.csv"
+        state_name = getattr(args, "state_name", "pipeline") or "pipeline"
+        if getattr(args, "dry_run", False) and state_name == "pipeline":
+            # Dry-runs are health/validation probes. Keep them out of the real
+            # daily-run state so a probe cannot hide the last production run.
+            state_name = "pipeline_health"
+        self.state_name = _safe_state_name(state_name)
+        self.last_path = self.state_dir / f"{self.state_name}_last_run.json"
+        self.run_path = self.state_dir / f"{self.state_name}_run_{self.run_id}.json"
+        self.steps_csv = self.state_dir / f"{self.state_name}_last_run_steps.csv"
         self.data: dict[str, Any] = {
             "schema_version": 1,
             "run_id": self.run_id,
+            "state_name": self.state_name,
             "status": "running",
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "finished_at": "",
@@ -683,11 +697,19 @@ def main() -> None:
     )
     parser.add_argument("--dry-run", action="store_true", help="Run dashboards in validation mode where supported.")
     parser.add_argument(
+        "--state-name",
+        default="pipeline",
+        help=(
+            "State file prefix under output/state. Default writes pipeline_last_run.*; "
+            "dry-run automatically uses pipeline_health_last_run.* unless this is overridden."
+        ),
+    )
+    parser.add_argument(
         "--continue-on-error",
         action="store_true",
         help=(
             "Continue after recoverable enrichment/dashboard failures and record them in "
-            "output/state/pipeline_last_run.json. Core raw/stage/lake/watch-profile steps remain strict."
+            "the selected output/state summary. Core raw/stage/lake/watch-profile steps remain strict."
         ),
     )
 
