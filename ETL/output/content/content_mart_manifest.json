@@ -1,0 +1,22 @@
+{
+  "generated_at_utc": "2026-06-17T07:51:21.186597+00:00",
+  "lake": "ETL\\data\\lake",
+  "out_dir": "ETL\\output\\content",
+  "source": "stream",
+  "start": null,
+  "end": null,
+  "table": "ETL\\output\\content\\content_daily.parquet",
+  "stats": {
+    "rows": 31060,
+    "min_date": "2026-03-26",
+    "max_date": "2026-06-17",
+    "sources": 1,
+    "source_rows": 67226675,
+    "raw_ts_rows": 0,
+    "status_200_ts_rows": 0,
+    "m3u8_rows": 67226675,
+    "raw_watch_hours": 0.0,
+    "status_200_watch_hours": 0.0
+  },
+  "processed_partitions": 85
+}

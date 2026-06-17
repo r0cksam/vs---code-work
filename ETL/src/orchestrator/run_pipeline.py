@@ -527,6 +527,21 @@ def main() -> None:
         action="store_true",
         help="Skip Veto latency dashboard generation.",
     )
+    parser.add_argument(
+        "--skip-identity-mart",
+        action="store_true",
+        help="Skip reusable queryStr identity mart generation.",
+    )
+    parser.add_argument(
+        "--skip-content-mart",
+        action="store_true",
+        help="Skip reusable content_title manifest-view mart generation.",
+    )
+    parser.add_argument(
+        "--skip-audience",
+        action="store_true",
+        help="Skip Veto Audience Operations dashboard generation.",
+    )
 
     # 001.py controls
     parser.add_argument(
@@ -762,6 +777,33 @@ def main() -> None:
         help="Reusable latency aggregate/profile output folder.",
     )
 
+    # Audience identity mart controls
+    parser.add_argument("--identity-start", default=None, help="Identity mart IST start date YYYY-MM-DD.")
+    parser.add_argument("--identity-end", default=None, help="Identity mart IST end date YYYY-MM-DD.")
+    parser.add_argument(
+        "--identity-source",
+        choices=["fast", "stream"],
+        default="stream",
+        help="Source filter for identity mart. STREAM has queryStr identity today; run fast explicitly if that changes.",
+    )
+    parser.add_argument("--identity-threads", type=int, default=6)
+    parser.add_argument("--identity-memory", default="16GB")
+    parser.add_argument("--content-start", default=None, help="Content mart IST start date YYYY-MM-DD.")
+    parser.add_argument("--content-end", default=None, help="Content mart IST end date YYYY-MM-DD.")
+    parser.add_argument(
+        "--content-source",
+        choices=["fast", "stream", "all"],
+        default="stream",
+        help="Source filter for content mart. STREAM has content_title today; FAST currently has none.",
+    )
+    parser.add_argument("--content-threads", type=int, default=6)
+    parser.add_argument("--content-memory", default="16GB")
+    parser.add_argument(
+        "--audience-html",
+        default=None,
+        help="Standalone Veto Audience Operations dashboard html output path.",
+    )
+
     args = parser.parse_args()
 
     base_root = Path(args.base).resolve()
@@ -777,6 +819,7 @@ def main() -> None:
     watch_dir = src_root / "dashboards" / "watchHoursDashboard"
     concurrency_dashboard_dir = src_root / "dashboards" / "concurrencyDashboard"
     overview_dashboard_dir = src_root / "dashboards" / "overViewDashboard"
+    audience_dashboard_dir = src_root / "dashboards" / "audienceOpsDashboard"
     profile_dir = Path(args.watch_profile).resolve() if args.watch_profile else output_root / "watch_hours" / "profile"
     watch_out = Path(args.watch_out).resolve() if args.watch_out else output_root / "watch_hours" / "veto_watch_hours.html"
     concurrency_out = (
@@ -794,6 +837,11 @@ def main() -> None:
         if args.latency_profile
         else output_root / "latency" / "profile"
     )
+    audience_out = (
+        Path(args.audience_html).resolve()
+        if args.audience_html
+        else output_root / "audience_ops" / "veto_audience_operations.html"
+    )
     overview_data_dir = Path(args.overview_data_dir).resolve() if args.overview_data_dir else output_root / "overview"
     overview_html = Path(args.overview_html).resolve() if args.overview_html else overview_data_dir / "overview_dashboard.html"
 
@@ -809,6 +857,9 @@ def main() -> None:
         and args.skip_device_decode_profile
         and (args.skip_watch or args.skip_concurrency)
         and args.skip_latency
+        and args.skip_identity_mart
+        and args.skip_content_mart
+        and args.skip_audience
         and not args.run_ua_profile
     ):
         raise SystemExit("Nothing to run. Remove one skip flag.")
@@ -818,6 +869,7 @@ def main() -> None:
     concurrency_out.parent.mkdir(parents=True, exist_ok=True)
     latency_out.parent.mkdir(parents=True, exist_ok=True)
     latency_profile.mkdir(parents=True, exist_ok=True)
+    audience_out.parent.mkdir(parents=True, exist_ok=True)
     overview_data_dir.mkdir(parents=True, exist_ok=True)
     overview_html.parent.mkdir(parents=True, exist_ok=True)
 
@@ -827,6 +879,8 @@ def main() -> None:
         or (not args.skip_device_decode_profile)
         or (not args.skip_overview)
         or (not args.skip_latency)
+        or (not args.skip_identity_mart)
+        or (not args.skip_content_mart)
         or ((not args.skip_watch) and (not args.skip_concurrency))
         or args.run_ua_profile
     )
@@ -844,6 +898,7 @@ def main() -> None:
             "VG_CONCURRENCY_HTML": str(concurrency_out),
             "VG_LATENCY_HTML": str(latency_out),
             "VG_LATENCY_PROFILE_DIR": str(latency_profile),
+            "VG_AUDIENCE_HTML": str(audience_out),
             "VG_ETL_LAKE_ROOT": str(lake_root),
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
@@ -920,6 +975,18 @@ def main() -> None:
     latency_incremental_script = _local_script(
         etl_root,
         str(Path("src") / "tools" / "build_latency_profile_incremental.py"),
+    )
+    identity_mart_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_identity_mart.py"),
+    )
+    content_mart_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_content_mart.py"),
+    )
+    audience_dashboard_script = _local_script(
+        etl_root,
+        str(Path("src") / "dashboards" / "audienceOpsDashboard" / "generate_audience_ops.py"),
     )
 
     if not args.skip_etl:
@@ -1407,6 +1474,125 @@ def main() -> None:
         )
     else:
         print("\n[skip] latency dashboard skipped.")
+
+    identity_ok = True
+    if not args.skip_identity_mart:
+        identity_start = args.identity_start
+        identity_end = args.identity_end
+        if not (identity_start and identity_end) and args.etl1_daily_date:
+            daily_dates = _daily_profile_dates(lake_root, date.fromisoformat(args.etl1_daily_date))
+            if daily_dates:
+                identity_start = min(daily_dates).isoformat()
+                identity_end = max(daily_dates).isoformat()
+            else:
+                identity_start = args.etl1_daily_date
+                identity_end = args.etl1_daily_date
+
+        identity_cmd = [
+            python,
+            str(identity_mart_script),
+            "--lake",
+            str(lake_root),
+            "--out-dir",
+            str(output_root / "identity"),
+            "--state",
+            str(output_root / "identity" / "identity_mart_state.json"),
+            "--threads",
+            str(max(1, int(args.identity_threads))),
+            "--memory-limit",
+            args.identity_memory,
+        ]
+        if args.identity_source:
+            identity_cmd.extend(["--source", args.identity_source])
+        if identity_start and identity_end:
+            identity_cmd.extend(["--start", identity_start, "--end", identity_end])
+        if args.dry_run:
+            identity_cmd.append("--dry-run")
+        identity_ok = run(
+            identity_cmd,
+            cwd=etl_root,
+            env=env,
+            step_name="identity_mart",
+            log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+            retry_on_memory=True,
+        )
+    else:
+        print("\n[skip] identity mart skipped.")
+
+    content_ok = True
+    if not args.skip_content_mart:
+        content_start = args.content_start
+        content_end = args.content_end
+        if not (content_start and content_end) and args.etl1_daily_date:
+            daily_dates = _daily_profile_dates(lake_root, date.fromisoformat(args.etl1_daily_date))
+            if daily_dates:
+                content_start = min(daily_dates).isoformat()
+                content_end = max(daily_dates).isoformat()
+            else:
+                content_start = args.etl1_daily_date
+                content_end = args.etl1_daily_date
+
+        content_cmd = [
+            python,
+            str(content_mart_script),
+            "--lake",
+            str(lake_root),
+            "--out-dir",
+            str(output_root / "content"),
+            "--state",
+            str(output_root / "content" / "content_mart_state.json"),
+            "--source",
+            args.content_source,
+            "--threads",
+            str(max(1, int(args.content_threads))),
+            "--memory-limit",
+            args.content_memory,
+        ]
+        if content_start and content_end:
+            content_cmd.extend(["--start", content_start, "--end", content_end])
+        if args.dry_run:
+            content_cmd.append("--dry-run")
+        content_ok = run(
+            content_cmd,
+            cwd=etl_root,
+            env=env,
+            step_name="content_title_mart",
+            log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+            retry_on_memory=True,
+        )
+    else:
+        print("\n[skip] content title mart skipped.")
+
+    if not args.skip_audience:
+        audience_cmd = [
+            python,
+            str(audience_dashboard_script),
+            "--output-root",
+            str(output_root),
+            "--out",
+            str(audience_out),
+            "--title",
+            "FAST Veto Audience Operations",
+        ]
+        if args.dry_run:
+            audience_cmd.append("--dry-run")
+        if identity_ok and content_ok:
+            run(
+                audience_cmd,
+                cwd=audience_dashboard_dir,
+                env=env,
+                step_name="audience_ops_dashboard_html",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+            )
+        else:
+            reason = "identity/content mart failed; skipped audience HTML refresh to avoid publishing stale data"
+            print(f"\n[skip] audience_ops_dashboard_html: {reason}")
+            record_skip("audience_ops_dashboard_html", reason)
+    else:
+        print("\n[skip] audience operations dashboard skipped.")
 
     if not args.skip_watch:
         watch_cmd = [

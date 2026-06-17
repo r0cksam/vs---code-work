@@ -698,5 +698,33 @@
     "promoted_files": 2,
     "elapsed_sec": 13.65,
     "processed_at_utc": "2026-06-16T03:05:52.150334+00:00"
+  },
+  "fast_2026_06_16_final_clean.parquet": {
+    "status": "ok",
+    "partition_version": 3,
+    "partition_timezone": "Asia/Kolkata",
+    "source_key": "fast",
+    "file_prefix": "part_fast_2026_06_16",
+    "signature": "c13503b09af61c848b854bc6aed58f04",
+    "src_prefix": "part_fast_2026_06_16",
+    "rows": 38576391,
+    "removed_previous_files": 0,
+    "promoted_files": 2,
+    "elapsed_sec": 50.57,
+    "processed_at_utc": "2026-06-17T03:35:46.555395+00:00"
+  },
+  "stream_2026_06_16_final_clean.parquet": {
+    "status": "ok",
+    "partition_version": 3,
+    "partition_timezone": "Asia/Kolkata",
+    "source_key": "stream",
+    "file_prefix": "part_stream_2026_06_16",
+    "signature": "5ae4a58bbc7cd78d124fa229cc2de2aa",
+    "src_prefix": "part_stream_2026_06_16",
+    "rows": 21267467,
+    "removed_previous_files": 0,
+    "promoted_files": 3,
+    "elapsed_sec": 13.92,
+    "processed_at_utc": "2026-06-17T03:36:00.483689+00:00"
   }
 }

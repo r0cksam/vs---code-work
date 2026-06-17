@@ -1,0 +1,1025 @@
+{
+  "partitions": {
+    "stream/2026-06-16": {
+      "source": "stream",
+      "date": "2026-06-16",
+      "file_count": 2,
+      "bytes": 777361859,
+      "max_mtime_ns": 1781667360377885000,
+      "output_counts": {
+        "identity_device_daily": 12230,
+        "identity_session_daily": 15880,
+        "identity_ipua_daily": 14411
+      }
+    },
+    "stream/2026-03-25": {
+      "source": "stream",
+      "date": "2026-03-25",
+      "file_count": 1,
+      "bytes": 7881,
+      "max_mtime_ns": 1779786536124011900,
+      "output_counts": {
+        "identity_device_daily": 0,
+        "identity_session_daily": 0,
+        "identity_ipua_daily": 0
+      }
+    },
+    "stream/2026-03-26": {
+      "source": "stream",
+      "date": "2026-03-26",
+      "file_count": 2,
+      "bytes": 503045974,
+      "max_mtime_ns": 1779786654971823600,
+      "output_counts": {
+        "identity_device_daily": 9978,
+        "identity_session_daily": 11605,
+        "identity_ipua_daily": 10852
+      }
+    },
+    "stream/2026-03-27": {
+      "source": "stream",
+      "date": "2026-03-27",
+      "file_count": 2,
+      "bytes": 839861403,
+      "max_mtime_ns": 1779786656852691100,
+      "output_counts": {
+        "identity_device_daily": 12887,
+        "identity_session_daily": 16511,
+        "identity_ipua_daily": 14954
+      }
+    },
+    "stream/2026-03-28": {
+      "source": "stream",
+      "date": "2026-03-28",
+      "file_count": 2,
+      "bytes": 764622752,
+      "max_mtime_ns": 1779786775719303400,
+      "output_counts": {
+        "identity_device_daily": 11883,
+        "identity_session_daily": 15165,
+        "identity_ipua_daily": 13784
+      }
+    },
+    "stream/2026-03-29": {
+      "source": "stream",
+      "date": "2026-03-29",
+      "file_count": 2,
+      "bytes": 705494130,
+      "max_mtime_ns": 1779786913292050100,
+      "output_counts": {
+        "identity_device_daily": 12387,
+        "identity_session_daily": 15608,
+        "identity_ipua_daily": 14252
+      }
+    },
+    "stream/2026-03-30": {
+      "source": "stream",
+      "date": "2026-03-30",
+      "file_count": 2,
+      "bytes": 698871595,
+      "max_mtime_ns": 1779787083060450300,
+      "output_counts": {
+        "identity_device_daily": 12002,
+        "identity_session_daily": 15281,
+        "identity_ipua_daily": 13924
+      }
+    },
+    "stream/2026-03-31": {
+      "source": "stream",
+      "date": "2026-03-31",
+      "file_count": 3,
+      "bytes": 768525377,
+      "max_mtime_ns": 1779787256036997000,
+      "output_counts": {
+        "identity_device_daily": 13177,
+        "identity_session_daily": 16544,
+        "identity_ipua_daily": 15187
+      }
+    },
+    "stream/2026-04-01": {
+      "source": "stream",
+      "date": "2026-04-01",
+      "file_count": 2,
+      "bytes": 765398936,
+      "max_mtime_ns": 1779787256601234400,
+      "output_counts": {
+        "identity_device_daily": 13050,
+        "identity_session_daily": 16453,
+        "identity_ipua_daily": 15094
+      }
+    },
+    "stream/2026-04-02": {
+      "source": "stream",
+      "date": "2026-04-02",
+      "file_count": 2,
+      "bytes": 708750550,
+      "max_mtime_ns": 1778583376006187900,
+      "output_counts": {
+        "identity_device_daily": 12508,
+        "identity_session_daily": 15778,
+        "identity_ipua_daily": 14383
+      }
+    },
+    "stream/2026-04-03": {
+      "source": "stream",
+      "date": "2026-04-03",
+      "file_count": 2,
+      "bytes": 756536077,
+      "max_mtime_ns": 1778583457660118300,
+      "output_counts": {
+        "identity_device_daily": 13018,
+        "identity_session_daily": 16725,
+        "identity_ipua_daily": 15112
+      }
+    },
+    "stream/2026-04-04": {
+      "source": "stream",
+      "date": "2026-04-04",
+      "file_count": 2,
+      "bytes": 684488654,
+      "max_mtime_ns": 1778583554725401200,
+      "output_counts": {
+        "identity_device_daily": 12281,
+        "identity_session_daily": 15576,
+        "identity_ipua_daily": 14053
+      }
+    },
+    "stream/2026-04-05": {
+      "source": "stream",
+      "date": "2026-04-05",
+      "file_count": 2,
+      "bytes": 671037252,
+      "max_mtime_ns": 1778583678752053600,
+      "output_counts": {
+        "identity_device_daily": 12952,
+        "identity_session_daily": 16455,
+        "identity_ipua_daily": 14814
+      }
+    },
+    "stream/2026-04-06": {
+      "source": "stream",
+      "date": "2026-04-06",
+      "file_count": 2,
+      "bytes": 801741033,
+      "max_mtime_ns": 1778583850139158000,
+      "output_counts": {
+        "identity_device_daily": 13880,
+        "identity_session_daily": 17711,
+        "identity_ipua_daily": 15944
+      }
+    },
+    "stream/2026-04-07": {
+      "source": "stream",
+      "date": "2026-04-07",
+      "file_count": 2,
+      "bytes": 859780633,
+      "max_mtime_ns": 1778584074772219100,
+      "output_counts": {
+        "identity_device_daily": 14728,
+        "identity_session_daily": 19113,
+        "identity_ipua_daily": 17039
+      }
+    },
+    "stream/2026-04-08": {
+      "source": "stream",
+      "date": "2026-04-08",
+      "file_count": 4,
+      "bytes": 826080200,
+      "max_mtime_ns": 1779102340751932100,
+      "output_counts": {
+        "identity_device_daily": 13904,
+        "identity_session_daily": 17987,
+        "identity_ipua_daily": 16222
+      }
+    },
+    "stream/2026-04-09": {
+      "source": "stream",
+      "date": "2026-04-09",
+      "file_count": 2,
+      "bytes": 785353779,
+      "max_mtime_ns": 1778584526836143200,
+      "output_counts": {
+        "identity_device_daily": 13718,
+        "identity_session_daily": 17528,
+        "identity_ipua_daily": 15844
+      }
+    },
+    "stream/2026-04-10": {
+      "source": "stream",
+      "date": "2026-04-10",
+      "file_count": 3,
+      "bytes": 755738248,
+      "max_mtime_ns": 1778585815797271700,
+      "output_counts": {
+        "identity_device_daily": 13074,
+        "identity_session_daily": 16867,
+        "identity_ipua_daily": 15113
+      }
+    },
+    "stream/2026-04-11": {
+      "source": "stream",
+      "date": "2026-04-11",
+      "file_count": 2,
+      "bytes": 716713516,
+      "max_mtime_ns": 1778585001857312000,
+      "output_counts": {
+        "identity_device_daily": 13336,
+        "identity_session_daily": 17486,
+        "identity_ipua_daily": 15551
+      }
+    },
+    "stream/2026-04-12": {
+      "source": "stream",
+      "date": "2026-04-12",
+      "file_count": 2,
+      "bytes": 738396727,
+      "max_mtime_ns": 1778585248465568800,
+      "output_counts": {
+        "identity_device_daily": 13933,
+        "identity_session_daily": 18134,
+        "identity_ipua_daily": 16122
+      }
+    },
+    "stream/2026-04-13": {
+      "source": "stream",
+      "date": "2026-04-13",
+      "file_count": 2,
+      "bytes": 815672255,
+      "max_mtime_ns": 1778585527166765900,
+      "output_counts": {
+        "identity_device_daily": 13689,
+        "identity_session_daily": 17769,
+        "identity_ipua_daily": 15892
+      }
+    },
+    "stream/2026-04-14": {
+      "source": "stream",
+      "date": "2026-04-14",
+      "file_count": 2,
+      "bytes": 820331452,
+      "max_mtime_ns": 1778585817196318300,
+      "output_counts": {
+        "identity_device_daily": 14256,
+        "identity_session_daily": 18544,
+        "identity_ipua_daily": 16599
+      }
+    },
+    "stream/2026-04-15": {
+      "source": "stream",
+      "date": "2026-04-15",
+      "file_count": 2,
+      "bytes": 760479726,
+      "max_mtime_ns": 1778586100503865300,
+      "output_counts": {
+        "identity_device_daily": 13043,
+        "identity_session_daily": 16612,
+        "identity_ipua_daily": 15179
+      }
+    },
+    "stream/2026-04-16": {
+      "source": "stream",
+      "date": "2026-04-16",
+      "file_count": 2,
+      "bytes": 734266618,
+      "max_mtime_ns": 1778586389056466800,
+      "output_counts": {
+        "identity_device_daily": 12544,
+        "identity_session_daily": 16075,
+        "identity_ipua_daily": 14564
+      }
+    },
+    "stream/2026-04-17": {
+      "source": "stream",
+      "date": "2026-04-17",
+      "file_count": 2,
+      "bytes": 795809285,
+      "max_mtime_ns": 1778586704431680600,
+      "output_counts": {
+        "identity_device_daily": 12577,
+        "identity_session_daily": 16429,
+        "identity_ipua_daily": 14838
+      }
+    },
+    "stream/2026-04-18": {
+      "source": "stream",
+      "date": "2026-04-18",
+      "file_count": 2,
+      "bytes": 716193049,
+      "max_mtime_ns": 1778587002329605000,
+      "output_counts": {
+        "identity_device_daily": 12185,
+        "identity_session_daily": 15520,
+        "identity_ipua_daily": 14088
+      }
+    },
+    "stream/2026-04-19": {
+      "source": "stream",
+      "date": "2026-04-19",
+      "file_count": 2,
+      "bytes": 633762302,
+      "max_mtime_ns": 1778587258771253400,
+      "output_counts": {
+        "identity_device_daily": 11535,
+        "identity_session_daily": 14602,
+        "identity_ipua_daily": 13271
+      }
+    },
+    "stream/2026-04-20": {
+      "source": "stream",
+      "date": "2026-04-20",
+      "file_count": 2,
+      "bytes": 660931984,
+      "max_mtime_ns": 1778587529684501800,
+      "output_counts": {
+        "identity_device_daily": 11328,
+        "identity_session_daily": 14479,
+        "identity_ipua_daily": 13050
+      }
+    },
+    "stream/2026-04-21": {
+      "source": "stream",
+      "date": "2026-04-21",
+      "file_count": 2,
+      "bytes": 689973442,
+      "max_mtime_ns": 1778587826221537000,
+      "output_counts": {
+        "identity_device_daily": 11815,
+        "identity_session_daily": 15115,
+        "identity_ipua_daily": 13751
+      }
+    },
+    "stream/2026-04-22": {
+      "source": "stream",
+      "date": "2026-04-22",
+      "file_count": 2,
+      "bytes": 706368481,
+      "max_mtime_ns": 1778588127845645700,
+      "output_counts": {
+        "identity_device_daily": 12138,
+        "identity_session_daily": 15585,
+        "identity_ipua_daily": 14089
+      }
+    },
+    "stream/2026-04-23": {
+      "source": "stream",
+      "date": "2026-04-23",
+      "file_count": 2,
+      "bytes": 848473070,
+      "max_mtime_ns": 1778588480911731700,
+      "output_counts": {
+        "identity_device_daily": 13683,
+        "identity_session_daily": 18888,
+        "identity_ipua_daily": 16387
+      }
+    },
+    "stream/2026-04-24": {
+      "source": "stream",
+      "date": "2026-04-24",
+      "file_count": 2,
+      "bytes": 739641234,
+      "max_mtime_ns": 1778588806540159000,
+      "output_counts": {
+        "identity_device_daily": 12620,
+        "identity_session_daily": 16630,
+        "identity_ipua_daily": 14841
+      }
+    },
+    "stream/2026-04-25": {
+      "source": "stream",
+      "date": "2026-04-25",
+      "file_count": 3,
+      "bytes": 660028541,
+      "max_mtime_ns": 1778589385972299300,
+      "output_counts": {
+        "identity_device_daily": 11880,
+        "identity_session_daily": 15379,
+        "identity_ipua_daily": 13762
+      }
+    },
+    "stream/2026-04-26": {
+      "source": "stream",
+      "date": "2026-04-26",
+      "file_count": 2,
+      "bytes": 677273281,
+      "max_mtime_ns": 1778589385218472500,
+      "output_counts": {
+        "identity_device_daily": 12239,
+        "identity_session_daily": 15889,
+        "identity_ipua_daily": 14217
+      }
+    },
+    "stream/2026-04-27": {
+      "source": "stream",
+      "date": "2026-04-27",
+      "file_count": 2,
+      "bytes": 741866605,
+      "max_mtime_ns": 1778589707406473100,
+      "output_counts": {
+        "identity_device_daily": 12194,
+        "identity_session_daily": 15686,
+        "identity_ipua_daily": 14237
+      }
+    },
+    "stream/2026-04-28": {
+      "source": "stream",
+      "date": "2026-04-28",
+      "file_count": 2,
+      "bytes": 721697024,
+      "max_mtime_ns": 1778590029957888200,
+      "output_counts": {
+        "identity_device_daily": 12239,
+        "identity_session_daily": 15888,
+        "identity_ipua_daily": 14367
+      }
+    },
+    "stream/2026-04-29": {
+      "source": "stream",
+      "date": "2026-04-29",
+      "file_count": 2,
+      "bytes": 938471614,
+      "max_mtime_ns": 1778590458482956600,
+      "output_counts": {
+        "identity_device_daily": 16538,
+        "identity_session_daily": 24737,
+        "identity_ipua_daily": 20531
+      }
+    },
+    "stream/2026-04-30": {
+      "source": "stream",
+      "date": "2026-04-30",
+      "file_count": 2,
+      "bytes": 800544073,
+      "max_mtime_ns": 1778590804796178300,
+      "output_counts": {
+        "identity_device_daily": 14087,
+        "identity_session_daily": 18509,
+        "identity_ipua_daily": 16752
+      }
+    },
+    "stream/2026-05-01": {
+      "source": "stream",
+      "date": "2026-05-01",
+      "file_count": 2,
+      "bytes": 796193225,
+      "max_mtime_ns": 1778841630907285800,
+      "output_counts": {
+        "identity_device_daily": 13606,
+        "identity_session_daily": 18028,
+        "identity_ipua_daily": 16020
+      }
+    },
+    "stream/2026-05-02": {
+      "source": "stream",
+      "date": "2026-05-02",
+      "file_count": 2,
+      "bytes": 639699021,
+      "max_mtime_ns": 1778841670106699400,
+      "output_counts": {
+        "identity_device_daily": 13806,
+        "identity_session_daily": 18662,
+        "identity_ipua_daily": 16383
+      }
+    },
+    "stream/2026-05-03": {
+      "source": "stream",
+      "date": "2026-05-03",
+      "file_count": 2,
+      "bytes": 185625120,
+      "max_mtime_ns": 1778841685247833600,
+      "output_counts": {
+        "identity_device_daily": 14560,
+        "identity_session_daily": 19194,
+        "identity_ipua_daily": 16899
+      }
+    },
+    "stream/2026-05-04": {
+      "source": "stream",
+      "date": "2026-05-04",
+      "file_count": 2,
+      "bytes": 1622291984,
+      "max_mtime_ns": 1778841850541991500,
+      "output_counts": {
+        "identity_device_daily": 28582,
+        "identity_session_daily": 52749,
+        "identity_ipua_daily": 38525
+      }
+    },
+    "stream/2026-05-05": {
+      "source": "stream",
+      "date": "2026-05-05",
+      "file_count": 2,
+      "bytes": 1161946347,
+      "max_mtime_ns": 1778842015537618700,
+      "output_counts": {
+        "identity_device_daily": 17913,
+        "identity_session_daily": 24874,
+        "identity_ipua_daily": 21592
+      }
+    },
+    "stream/2026-05-06": {
+      "source": "stream",
+      "date": "2026-05-06",
+      "file_count": 3,
+      "bytes": 1013523206,
+      "max_mtime_ns": 1778842423923309000,
+      "output_counts": {
+        "identity_device_daily": 16007,
+        "identity_session_daily": 21621,
+        "identity_ipua_daily": 19235
+      }
+    },
+    "stream/2026-05-07": {
+      "source": "stream",
+      "date": "2026-05-07",
+      "file_count": 2,
+      "bytes": 1050792792,
+      "max_mtime_ns": 1778842423030379100,
+      "output_counts": {
+        "identity_device_daily": 16918,
+        "identity_session_daily": 23183,
+        "identity_ipua_daily": 20223
+      }
+    },
+    "stream/2026-05-08": {
+      "source": "stream",
+      "date": "2026-05-08",
+      "file_count": 2,
+      "bytes": 1059835848,
+      "max_mtime_ns": 1778842681346317300,
+      "output_counts": {
+        "identity_device_daily": 16086,
+        "identity_session_daily": 22327,
+        "identity_ipua_daily": 19420
+      }
+    },
+    "stream/2026-05-09": {
+      "source": "stream",
+      "date": "2026-05-09",
+      "file_count": 2,
+      "bytes": 1139549257,
+      "max_mtime_ns": 1778842983713636600,
+      "output_counts": {
+        "identity_device_daily": 17576,
+        "identity_session_daily": 24796,
+        "identity_ipua_daily": 21375
+      }
+    },
+    "stream/2026-05-10": {
+      "source": "stream",
+      "date": "2026-05-10",
+      "file_count": 2,
+      "bytes": 849193681,
+      "max_mtime_ns": 1778843229269831600,
+      "output_counts": {
+        "identity_device_daily": 14860,
+        "identity_session_daily": 19418,
+        "identity_ipua_daily": 17406
+      }
+    },
+    "stream/2026-05-11": {
+      "source": "stream",
+      "date": "2026-05-11",
+      "file_count": 2,
+      "bytes": 914431068,
+      "max_mtime_ns": 1778843529515701900,
+      "output_counts": {
+        "identity_device_daily": 14221,
+        "identity_session_daily": 18446,
+        "identity_ipua_daily": 16579
+      }
+    },
+    "stream/2026-05-12": {
+      "source": "stream",
+      "date": "2026-05-12",
+      "file_count": 2,
+      "bytes": 943561077,
+      "max_mtime_ns": 1779102340099925400,
+      "output_counts": {
+        "identity_device_daily": 15134,
+        "identity_session_daily": 19808,
+        "identity_ipua_daily": 17892
+      }
+    },
+    "stream/2026-05-13": {
+      "source": "stream",
+      "date": "2026-05-13",
+      "file_count": 2,
+      "bytes": 930092544,
+      "max_mtime_ns": 1779102470578751600,
+      "output_counts": {
+        "identity_device_daily": 15154,
+        "identity_session_daily": 20298,
+        "identity_ipua_daily": 18136
+      }
+    },
+    "stream/2026-05-14": {
+      "source": "stream",
+      "date": "2026-05-14",
+      "file_count": 2,
+      "bytes": 900135327,
+      "max_mtime_ns": 1779102632695269100,
+      "output_counts": {
+        "identity_device_daily": 14624,
+        "identity_session_daily": 19345,
+        "identity_ipua_daily": 17375
+      }
+    },
+    "stream/2026-05-15": {
+      "source": "stream",
+      "date": "2026-05-15",
+      "file_count": 2,
+      "bytes": 881870773,
+      "max_mtime_ns": 1779102813170644800,
+      "output_counts": {
+        "identity_device_daily": 14169,
+        "identity_session_daily": 18728,
+        "identity_ipua_daily": 16749
+      }
+    },
+    "stream/2026-05-16": {
+      "source": "stream",
+      "date": "2026-05-16",
+      "file_count": 2,
+      "bytes": 796532940,
+      "max_mtime_ns": 1779103004472472800,
+      "output_counts": {
+        "identity_device_daily": 13973,
+        "identity_session_daily": 18184,
+        "identity_ipua_daily": 16368
+      }
+    },
+    "stream/2026-05-17": {
+      "source": "stream",
+      "date": "2026-05-17",
+      "file_count": 2,
+      "bytes": 741856406,
+      "max_mtime_ns": 1779103212661338600,
+      "output_counts": {
+        "identity_device_daily": 13854,
+        "identity_session_daily": 17751,
+        "identity_ipua_daily": 15997
+      }
+    },
+    "stream/2026-05-18": {
+      "source": "stream",
+      "date": "2026-05-18",
+      "file_count": 2,
+      "bytes": 823807830,
+      "max_mtime_ns": 1779171093141446000,
+      "output_counts": {
+        "identity_device_daily": 13754,
+        "identity_session_daily": 17787,
+        "identity_ipua_daily": 16151
+      }
+    },
+    "stream/2026-05-19": {
+      "source": "stream",
+      "date": "2026-05-19",
+      "file_count": 2,
+      "bytes": 838031065,
+      "max_mtime_ns": 1779445401851764400,
+      "output_counts": {
+        "identity_device_daily": 13366,
+        "identity_session_daily": 17340,
+        "identity_ipua_daily": 15689
+      }
+    },
+    "stream/2026-05-20": {
+      "source": "stream",
+      "date": "2026-05-20",
+      "file_count": 2,
+      "bytes": 855013948,
+      "max_mtime_ns": 1779445505199353600,
+      "output_counts": {
+        "identity_device_daily": 13793,
+        "identity_session_daily": 18021,
+        "identity_ipua_daily": 16334
+      }
+    },
+    "stream/2026-05-21": {
+      "source": "stream",
+      "date": "2026-05-21",
+      "file_count": 2,
+      "bytes": 861965394,
+      "max_mtime_ns": 1779445639205532900,
+      "output_counts": {
+        "identity_device_daily": 14288,
+        "identity_session_daily": 18851,
+        "identity_ipua_daily": 17103
+      }
+    },
+    "stream/2026-05-22": {
+      "source": "stream",
+      "date": "2026-05-22",
+      "file_count": 2,
+      "bytes": 790027912,
+      "max_mtime_ns": 1779692445288242300,
+      "output_counts": {
+        "identity_device_daily": 14185,
+        "identity_session_daily": 18463,
+        "identity_ipua_daily": 16498
+      }
+    },
+    "stream/2026-05-23": {
+      "source": "stream",
+      "date": "2026-05-23",
+      "file_count": 2,
+      "bytes": 714244887,
+      "max_mtime_ns": 1779692517534913500,
+      "output_counts": {
+        "identity_device_daily": 14632,
+        "identity_session_daily": 18840,
+        "identity_ipua_daily": 16843
+      }
+    },
+    "stream/2026-05-24": {
+      "source": "stream",
+      "date": "2026-05-24",
+      "file_count": 2,
+      "bytes": 716314744,
+      "max_mtime_ns": 1779692623913795400,
+      "output_counts": {
+        "identity_device_daily": 15443,
+        "identity_session_daily": 20297,
+        "identity_ipua_daily": 17975
+      }
+    },
+    "stream/2026-05-25": {
+      "source": "stream",
+      "date": "2026-05-25",
+      "file_count": 2,
+      "bytes": 841621422,
+      "max_mtime_ns": 1779780154011761400,
+      "output_counts": {
+        "identity_device_daily": 14962,
+        "identity_session_daily": 19126,
+        "identity_ipua_daily": 17418
+      }
+    },
+    "stream/2026-05-26": {
+      "source": "stream",
+      "date": "2026-05-26",
+      "file_count": 3,
+      "bytes": 809570727,
+      "max_mtime_ns": 1780486168190403800,
+      "output_counts": {
+        "identity_device_daily": 13576,
+        "identity_session_daily": 17581,
+        "identity_ipua_daily": 16027
+      }
+    },
+    "stream/2026-05-27": {
+      "source": "stream",
+      "date": "2026-05-27",
+      "file_count": 2,
+      "bytes": 786255758,
+      "max_mtime_ns": 1780486168329225400,
+      "output_counts": {
+        "identity_device_daily": 13883,
+        "identity_session_daily": 17870,
+        "identity_ipua_daily": 16229
+      }
+    },
+    "stream/2026-05-28": {
+      "source": "stream",
+      "date": "2026-05-28",
+      "file_count": 3,
+      "bytes": 888290423,
+      "max_mtime_ns": 1780486168329225400,
+      "output_counts": {
+        "identity_device_daily": 15819,
+        "identity_session_daily": 20716,
+        "identity_ipua_daily": 18737
+      }
+    },
+    "stream/2026-05-29": {
+      "source": "stream",
+      "date": "2026-05-29",
+      "file_count": 2,
+      "bytes": 735709430,
+      "max_mtime_ns": 1780485455488792600,
+      "output_counts": {
+        "identity_device_daily": 13792,
+        "identity_session_daily": 17539,
+        "identity_ipua_daily": 15913
+      }
+    },
+    "stream/2026-05-30": {
+      "source": "stream",
+      "date": "2026-05-30",
+      "file_count": 2,
+      "bytes": 733398018,
+      "max_mtime_ns": 1780485481526069600,
+      "output_counts": {
+        "identity_device_daily": 15686,
+        "identity_session_daily": 19965,
+        "identity_ipua_daily": 18152
+      }
+    },
+    "stream/2026-05-31": {
+      "source": "stream",
+      "date": "2026-05-31",
+      "file_count": 2,
+      "bytes": 699770681,
+      "max_mtime_ns": 1780485481765885500,
+      "output_counts": {
+        "identity_device_daily": 14037,
+        "identity_session_daily": 17459,
+        "identity_ipua_daily": 15928
+      }
+    },
+    "stream/2026-06-01": {
+      "source": "stream",
+      "date": "2026-06-01",
+      "file_count": 2,
+      "bytes": 816217883,
+      "max_mtime_ns": 1780494309193827600,
+      "output_counts": {
+        "identity_device_daily": 14609,
+        "identity_session_daily": 18473,
+        "identity_ipua_daily": 16812
+      }
+    },
+    "stream/2026-06-02": {
+      "source": "stream",
+      "date": "2026-06-02",
+      "file_count": 2,
+      "bytes": 840204975,
+      "max_mtime_ns": 1780494309314934400,
+      "output_counts": {
+        "identity_device_daily": 13596,
+        "identity_session_daily": 17458,
+        "identity_ipua_daily": 15760
+      }
+    },
+    "stream/2026-06-03": {
+      "source": "stream",
+      "date": "2026-06-03",
+      "file_count": 2,
+      "bytes": 753677537,
+      "max_mtime_ns": 1780552033837417700,
+      "output_counts": {
+        "identity_device_daily": 13198,
+        "identity_session_daily": 17279,
+        "identity_ipua_daily": 15403
+      }
+    },
+    "stream/2026-06-04": {
+      "source": "stream",
+      "date": "2026-06-04",
+      "file_count": 2,
+      "bytes": 717518707,
+      "max_mtime_ns": 1780635483132576000,
+      "output_counts": {
+        "identity_device_daily": 13050,
+        "identity_session_daily": 17038,
+        "identity_ipua_daily": 15427
+      }
+    },
+    "stream/2026-06-05": {
+      "source": "stream",
+      "date": "2026-06-05",
+      "file_count": 3,
+      "bytes": 766449706,
+      "max_mtime_ns": 1780897254932613300,
+      "output_counts": {
+        "identity_device_daily": 11986,
+        "identity_session_daily": 15528,
+        "identity_ipua_daily": 14049
+      }
+    },
+    "stream/2026-06-06": {
+      "source": "stream",
+      "date": "2026-06-06",
+      "file_count": 3,
+      "bytes": 721738343,
+      "max_mtime_ns": 1780973868254199000,
+      "output_counts": {
+        "identity_device_daily": 13627,
+        "identity_session_daily": 17564,
+        "identity_ipua_daily": 15679
+      }
+    },
+    "stream/2026-06-07": {
+      "source": "stream",
+      "date": "2026-06-07",
+      "file_count": 2,
+      "bytes": 686083799,
+      "max_mtime_ns": 1780899378559651600,
+      "output_counts": {
+        "identity_device_daily": 12653,
+        "identity_session_daily": 16056,
+        "identity_ipua_daily": 14500
+      }
+    },
+    "stream/2026-06-08": {
+      "source": "stream",
+      "date": "2026-06-08",
+      "file_count": 2,
+      "bytes": 804817282,
+      "max_mtime_ns": 1780973868131707700,
+      "output_counts": {
+        "identity_device_daily": 12750,
+        "identity_session_daily": 16652,
+        "identity_ipua_daily": 14874
+      }
+    },
+    "stream/2026-06-09": {
+      "source": "stream",
+      "date": "2026-06-09",
+      "file_count": 2,
+      "bytes": 834058080,
+      "max_mtime_ns": 1781059685451916300,
+      "output_counts": {
+        "identity_device_daily": 12778,
+        "identity_session_daily": 17004,
+        "identity_ipua_daily": 15206
+      }
+    },
+    "stream/2026-06-10": {
+      "source": "stream",
+      "date": "2026-06-10",
+      "file_count": 2,
+      "bytes": 831685077,
+      "max_mtime_ns": 1781146236965788600,
+      "output_counts": {
+        "identity_device_daily": 13038,
+        "identity_session_daily": 17130,
+        "identity_ipua_daily": 15359
+      }
+    },
+    "stream/2026-06-11": {
+      "source": "stream",
+      "date": "2026-06-11",
+      "file_count": 3,
+      "bytes": 705771007,
+      "max_mtime_ns": 1781319522733847100,
+      "output_counts": {
+        "identity_device_daily": 12066,
+        "identity_session_daily": 15607,
+        "identity_ipua_daily": 14215
+      }
+    },
+    "stream/2026-06-12": {
+      "source": "stream",
+      "date": "2026-06-12",
+      "file_count": 2,
+      "bytes": 784786374,
+      "max_mtime_ns": 1781319522611094300,
+      "output_counts": {
+        "identity_device_daily": 12193,
+        "identity_session_daily": 15923,
+        "identity_ipua_daily": 14366
+      }
+    },
+    "stream/2026-06-13": {
+      "source": "stream",
+      "date": "2026-06-13",
+      "file_count": 2,
+      "bytes": 694947118,
+      "max_mtime_ns": 1781405841844229800,
+      "output_counts": {
+        "identity_device_daily": 11591,
+        "identity_session_daily": 15066,
+        "identity_ipua_daily": 13615
+      }
+    },
+    "stream/2026-06-14": {
+      "source": "stream",
+      "date": "2026-06-14",
+      "file_count": 3,
+      "bytes": 698327435,
+      "max_mtime_ns": 1781667360386890200,
+      "output_counts": {
+        "identity_device_daily": 12462,
+        "identity_session_daily": 16041,
+        "identity_ipua_daily": 14383
+      }
+    },
+    "stream/2026-06-15": {
+      "source": "stream",
+      "date": "2026-06-15",
+      "file_count": 2,
+      "bytes": 814253815,
+      "max_mtime_ns": 1781579151941686700,
+      "output_counts": {
+        "identity_device_daily": 11953,
+        "identity_session_daily": 15688,
+        "identity_ipua_daily": 14125
+      }
+    },
+    "stream/2026-06-17": {
+      "source": "stream",
+      "date": "2026-06-17",
+      "file_count": 1,
+      "bytes": 59898885,
+      "max_mtime_ns": 1781667360384884500,
+      "output_counts": {
+        "identity_device_daily": 511,
+        "identity_session_daily": 527,
+        "identity_ipua_daily": 543
+      }
+    }
+  },
+  "updated_at_utc": "2026-06-17T07:04:23.030664+00:00"
+}

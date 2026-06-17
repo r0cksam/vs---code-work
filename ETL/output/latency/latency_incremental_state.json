@@ -1285,18 +1285,55 @@
     },
     "fast|2026-06-16": {
       "date": "2026-06-16",
-      "duration_seconds": 1.662,
-      "processed_at": "2026-06-16T08:47:47",
+      "duration_seconds": 54.026,
+      "processed_at": "2026-06-17T09:27:11",
       "result": {
-        "base_rows": 674445,
+        "base_rows": 37395105,
         "rows": {
-          "cache_daily": 5,
-          "channel_daily": 9,
-          "daily": 3,
-          "geo_daily": 113,
-          "host_daily": 10,
-          "hourly": 13,
-          "status_daily": 6,
+          "cache_daily": 11,
+          "channel_daily": 12,
+          "daily": 6,
+          "geo_daily": 232,
+          "host_daily": 20,
+          "hourly": 55,
+          "status_daily": 9,
+          "summary": 1
+        }
+      },
+      "signature": {
+        "file_count": 2,
+        "files": [
+          {
+            "bytes": 23900344,
+            "mtime_ns": 1781579138321597800,
+            "name": "part_fast_2026_06_15_0.parquet"
+          },
+          {
+            "bytes": 4084938940,
+            "mtime_ns": 1781667346185308700,
+            "name": "part_fast_2026_06_16_0.parquet"
+          }
+        ],
+        "max_mtime_ns": 1781667346185308700,
+        "total_bytes": 4108839284
+      },
+      "source": "fast",
+      "status": "done"
+    },
+    "fast|2026-06-17": {
+      "date": "2026-06-17",
+      "duration_seconds": 3.392,
+      "processed_at": "2026-06-17T09:27:15",
+      "result": {
+        "base_rows": 1855020,
+        "rows": {
+          "cache_daily": 9,
+          "channel_daily": 11,
+          "daily": 5,
+          "geo_daily": 201,
+          "host_daily": 16,
+          "hourly": 16,
+          "status_daily": 8,
           "summary": 1
         }
       },
@@ -1304,13 +1341,13 @@
         "file_count": 1,
         "files": [
           {
-            "bytes": 23900344,
-            "mtime_ns": 1781579138321597800,
-            "name": "part_fast_2026_06_15_0.parquet"
+            "bytes": 117551610,
+            "mtime_ns": 1781667346316022400,
+            "name": "part_fast_2026_06_16_0.parquet"
           }
         ],
-        "max_mtime_ns": 1781579138321597800,
-        "total_bytes": 23900344
+        "max_mtime_ns": 1781667346316022400,
+        "total_bytes": 117551610
       },
       "source": "fast",
       "status": "done"
