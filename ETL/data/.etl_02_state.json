@@ -606,5 +606,29 @@
     "rows": 38576391,
     "updated_at_utc": "2026-06-17T03:34:52.346593+00:00",
     "elapsed_sec": 372.38
+  },
+  "stream_2026_06_17": {
+    "status": "ok",
+    "signature": "3de75939bf8b1db866d5358bcae44b1a",
+    "source_id": "stream_2026_06_17",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=stream\\year=2026\\month=06\\day=17",
+    "output_file": "stream_2026_06_17_final_clean.parquet",
+    "dedupe_method": "bucketed_32_zstd",
+    "input_rows": 21972563,
+    "rows": 21971043,
+    "updated_at_utc": "2026-06-18T03:31:00.042685+00:00",
+    "elapsed_sec": 162.52
+  },
+  "fast_2026_06_17": {
+    "status": "ok",
+    "signature": "317ec7175791bf502e4c123f58493ffe",
+    "source_id": "fast_2026_06_17",
+    "input_folder": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\stage\\parquet\\source=fast\\year=2026\\month=06\\day=17",
+    "output_file": "fast_2026_06_17_final_clean.parquet",
+    "dedupe_method": "bucketed_32_zstd",
+    "input_rows": 56995796,
+    "rows": 56990626,
+    "updated_at_utc": "2026-06-18T03:41:39.523474+00:00",
+    "elapsed_sec": 639.46
   }
 }

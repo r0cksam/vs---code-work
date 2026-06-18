@@ -3,11 +3,11 @@
     "stream/2026-06-17": {
       "source": "stream",
       "date": "2026-06-17",
-      "file_count": 1,
-      "bytes": 59898885,
-      "max_mtime_ns": 1781667360384884500,
+      "file_count": 2,
+      "bytes": 828062981,
+      "max_mtime_ns": 1781754207355314300,
       "output_counts": {
-        "rows": 156
+        "rows": 531
       }
     },
     "stream/2026-03-25": {
@@ -849,8 +849,18 @@
       "output_counts": {
         "rows": 493
       }
+    },
+    "stream/2026-06-18": {
+      "source": "stream",
+      "date": "2026-06-18",
+      "file_count": 1,
+      "bytes": 65784653,
+      "max_mtime_ns": 1781754207373723400,
+      "output_counts": {
+        "rows": 144
+      }
     }
   },
-  "updated_at_utc": "2026-06-17T07:51:21.039755+00:00",
+  "updated_at_utc": "2026-06-18T04:20:30.801957+00:00",
   "mart_version": 3
 }
