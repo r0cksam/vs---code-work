@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Veto Latency</title>
+<script>$CHARTJS</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--ink:#172033;--muted:#667085;--line:#d8e1ee;--surface:#eef3f8;--panel:#fff;--brand:#173b5c;--teal:#0f766e;--gold:#b58517;--red:#b42318;--green:#2f6b2f;--violet:#5b55a3}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--surface);color:var(--ink);min-height:100vh;-webkit-text-size-adjust:100%}
+.topbar{background:var(--brand);color:#fff;border-bottom:4px solid var(--gold);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.topbar h1{font-size:21px;font-weight:800}
+.topbar .sub{font-size:12px;color:#dbe7f2;display:flex;flex-direction:column;gap:3px;text-align:right;max-width:min(980px,72vw);line-height:1.35}
+.wrap{max-width:1760px;margin:0 auto;padding:22px 28px 34px}
+.note{background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 14px;color:#475569;font-size:12px;line-height:1.5;margin-bottom:16px}
+.sop{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.sop-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:13px;flex-wrap:wrap}
+.sop-head h2{font-size:18px;font-weight:850;color:#173b5c;letter-spacing:0}
+.sop-head span{font-size:12px;color:#64748b;font-weight:750}
+.sop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:10px;margin-bottom:14px}
+.sop-card{border:1px solid #edf2f7;background:#fff;border-left:6px solid #94a3b8;border-radius:6px;padding:12px 12px 11px;min-height:112px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.sop-card.green{border-left-color:#2f6b2f}.sop-card.yellow{border-left-color:#d6a21d}.sop-card.orange{border-left-color:#e8751a}.sop-card.red{border-left-color:#c24135}.sop-card.na{border-left-color:#94a3b8;background:#f8fafc}
+.sop-rule{font-size:17px;font-weight:900;color:#173b5c;margin-bottom:12px;line-height:1.15}
+.sop-card.red .sop-rule{color:#b42318}.sop-card.orange .sop-rule{color:#c05600}.sop-card.yellow .sop-rule{color:#9a6a00}.sop-card.green .sop-rule{color:#166534}
+.sop-label{font-size:11px;color:#667085;font-weight:800;line-height:1.25}.sop-value{font-size:11px;color:#475569;margin-top:5px;font-weight:750;line-height:1.25}
+.threshold-guide{border:1px solid #e2e8f0;border-radius:7px;background:#fbfcfe;margin:0 0 14px;overflow:auto}
+.threshold-guide table{min-width:980px}
+.threshold-guide th{position:static}.threshold-guide td{font-size:11px}
+.zone{font-weight:900;border-radius:5px;padding:4px 7px;display:inline-block;white-space:nowrap}
+.zone.green{background:#ecfdf3;color:#166534}.zone.yellow{background:#fffbeb;color:#92400e}.zone.orange{background:#fff7ed;color:#9a3412}.zone.red{background:#fef2f2;color:#b42318}
+.sop-banner{background:#eaf2fb;border:1px solid #dbe8f5;border-radius:6px;padding:12px 14px;color:#173b5c;font-size:14px;font-weight:850;margin-bottom:14px}
+.protocol-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}
+.protocol{background:#f6f8fc;border:1px solid #e5eaf3;border-radius:6px;padding:12px 13px;min-height:96px}
+.protocol b{display:block;color:#b42318;font-size:12px;margin-bottom:9px}.protocol span{font-size:12px;color:#334155;line-height:1.45}
+.filter-bar{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.sticky-controls{position:sticky;top:0;z-index:45;background:rgba(238,243,248,.96);backdrop-filter:blur(8px);padding:10px 0 2px;margin:-10px 0 16px}
+.sticky-controls .filter-bar{margin-bottom:8px}
+.filter-title{font-size:11px;font-weight:850;text-transform:uppercase;color:#475569;letter-spacing:.04em;margin-right:2px}
+.filter-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;transition:all .15s}
+.filter-btn:hover{background:#edf2f7;color:var(--brand)}
+.filter-btn.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.date-hint{font-size:11px;color:#475569;font-weight:800;line-height:1.25}
+.date-error{font-size:11px;color:#b42318;font-weight:850;line-height:1.25}
+select,input[type="date"]{border:1px solid #cbd5e1;background:#fff;color:#173b5c;border-radius:5px;padding:6px 8px;font-size:11px;font-weight:750;outline:none;min-width:124px}
+select:focus,input[type="date"]:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(23,59,92,.12)}
+.filter-sep{width:1px;height:26px;background:#d8e1ee;flex:0 0 auto}
+.range-meta{margin-left:auto;font-size:12px;color:#64748b;font-weight:750}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:16px;margin-bottom:16px}
+.latency-detail-grid{grid-template-columns:minmax(min(100%,640px),1.15fr) minmax(min(100%,420px),.85fr);align-items:start}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:16px;margin-bottom:16px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.05);min-width:0}
+.panel h2{font-size:14px;margin-bottom:11px;color:#24324a;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.panel h2 span{font-size:11px;color:#94a3b8;font-weight:650}
+.chart-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.expand-btn{border:1px solid #cbd5e1;background:#fff;color:var(--brand);border-radius:5px;padding:3px 8px;font-size:10px;font-weight:800;cursor:pointer}
+.expand-btn:hover{background:#edf2f7;border-color:#94a3b8}
+.chart-box{height:clamp(280px,35vh,430px)}
+.chart-box.tall{height:clamp(360px,48vh,620px)}
+canvas{width:100%!important;height:100%!important}
+.table-wrap{overflow:auto;max-height:520px;border:1px solid #e2e8f0;border-radius:7px;background:#fff}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;min-width:760px}
+th{position:sticky;top:0;z-index:2;background:#f8fafc;color:#475569;font-size:10px;text-align:left;padding:8px;border-bottom:1px solid #dbe3ef;white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid #eef2f7;vertical-align:top;color:#1f2937;line-height:1.25}
+tr:hover td{background:#f6f9ff}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:6px;flex-wrap:nowrap;margin:0 0 8px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 1px 2px rgba(15,23,42,.05);overflow-x:auto}
+.tab-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer}
+.tab-btn.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+.tab{display:block;scroll-margin-top:220px;margin-bottom:16px}.tab.active{display:block}
+.defs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:10px}
+.def{border:1px solid #e2e8f0;border-radius:8px;background:#fbfcfe;padding:10px 12px;line-height:1.4}
+.def b{display:block;font-size:11px;color:#173b5c;margin-bottom:4px}
+.def span{font-size:12px;color:#475569}
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:50;display:none;align-items:center;justify-content:center;padding:22px}
+.modal-backdrop.open{display:flex}
+.chart-modal{width:min(1320px,96vw);height:min(820px,92vh);background:#fff;border-radius:10px;border:1px solid #d8e1ee;box-shadow:0 24px 80px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}
+.modal-top{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;background:#f8fafc}
+.modal-title{font-size:16px;font-weight:850;color:var(--brand)}
+.modal-close{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:6px;padding:5px 10px;font-weight:800;cursor:pointer}
+.modal-body{padding:14px 18px 18px;min-height:0;flex:1}
+.modal-chart-wrap{height:100%;border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#fff}
+.modal-chart-wrap canvas{width:100%!important;height:100%!important}
+.footer{font-size:11px;color:#94a3b8;text-align:center;padding:20px 0 4px}
+@media(max-width:1180px){.topbar .sub{max-width:100%;text-align:left}.range-meta{margin-left:0;width:100%}}
+@media(max-width:800px){.wrap{padding:16px}.grid-2,.grid-3,.latency-detail-grid{grid-template-columns:1fr}.filter-sep{display:none}.chart-box{height:300px}.chart-box.tall{height:420px}.topbar{padding:16px}.chart-modal{height:94vh}.modal-backdrop{padding:10px}.sticky-controls{max-height:58vh;overflow:auto;margin:-8px 0 14px}.tab{scroll-margin-top:58vh}.tabs{padding:7px}.tab-btn{padding:7px 10px;font-size:11px}}
+html,body{max-width:100%;overflow-x:hidden}
+.wrap,.topbar,.sticky-controls,.filter-bar,.tabs,.panel,.sop,.threshold-guide,.table-wrap,.chart-modal,.modal-body,.modal-chart-wrap{max-width:100%;min-width:0}
+.tabs,.filter-bar{overflow-x:visible!important;white-space:normal!important;flex-wrap:wrap!important}
+.threshold-guide,.table-wrap{overflow-x:hidden!important;overflow-y:auto}
+table,.threshold-guide table{min-width:0!important;max-width:100%;table-layout:fixed}
+th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
+.zone{white-space:normal}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1 id="title"></h1>
+  <div class="sub"><span id="rangeText"></span><span id="genText"></span></div>
+</div>
+<div class="wrap">
+  <div class="sticky-controls">
+  <div class="filter-bar">
+    <span class="filter-title">Source</span>
+    <button class="filter-btn active" id="srcFast" onclick="setSource('fast')">FAST</button>
+    <button class="filter-btn" id="srcStream" onclick="setSource('stream')">STREAM</button>
+    <span class="filter-sep"></span>
+    <span class="filter-title">Date</span>
+    <button class="filter-btn active" id="rangeYesterday" onclick="setQuickRange('yesterday')">Yesterday</button>
+    <button class="filter-btn" id="range7" onclick="setQuickRange('7d')">7D</button>
+    <button class="filter-btn" id="range15" onclick="setQuickRange('15d')">15D</button>
+    <button class="filter-btn" id="range30" onclick="setQuickRange('30d')">Month</button>
+    <button class="filter-btn" id="rangeAll" onclick="setQuickRange('all')">All</button>
+    <input type="date" id="startDate" onchange="manualDateChanged()"/>
+    <input type="date" id="endDate" onchange="manualDateChanged()"/>
+    <span class="date-hint" id="dateAvailability"></span>
+    <span class="date-error" id="dateError"></span>
+    <span class="filter-sep"></span>
+    <span class="filter-title">Extension</span>
+    <select id="extensionFilter" onchange="applyFilters()">
+      <option value="ts">.ts segments</option>
+      <option value="m3u8">.m3u8 playlists</option>
+      <option value="all">All extensions</option>
+    </select>
+    <span class="range-meta" id="filterMeta"></span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('overview',this)">Overview</button>
+    <button class="tab-btn" onclick="showTab('channels',this)">Channels</button>
+    <button class="tab-btn" onclick="showTab('hosts',this)">Hosts</button>
+    <button class="tab-btn" onclick="showTab('status',this)">Status & Cache</button>
+    <button class="tab-btn" onclick="showTab('geo',this)">Geography</button>
+    <button class="tab-btn" onclick="showTab('defs',this)">Guide</button>
+  </div>
+
+  <div class="filter-bar" id="metricBar">
+    <span class="filter-title">Metric</span>
+    <select id="metricFilter" onchange="applyFilters()">
+      <option value="ttfb_p95_ms">TTFB p95</option>
+      <option value="ttfb_p50_ms">TTFB p50</option>
+      <option value="ttfb_p99_ms">TTFB p99</option>
+      <option value="turnaround_p95_ms">Turnaround p95</option>
+      <option value="transfer_p95_ms">Transfer p95</option>
+      <option value="throughput_p05">Throughput p05</option>
+      <option value="cache_hit_pct">Cache hit %</option>
+      <option value="error_5xx_pct">5xx row %</option>
+    </select>
+  </div>
+  </div>
+
+  <section class="sop">
+    <div class="sop-head">
+      <h2>CDN Latency Threshold Monitor</h2>
+      <span id="sopMeta"></span>
+    </div>
+    <div class="sop-grid" id="sopCards"></div>
+  </section>
+
+  <section class="tab active" id="tab-overview">
+    <div class="grid-2">
+      <div class="panel"><h2>Latency Trend <span class="chart-actions"><span id="trendSub"></span><button class="expand-btn" onclick="openChartModal('trendChart')">Expand</button></span></h2><div class="chart-box"><canvas id="trendChart"></canvas></div></div>
+      <div class="panel"><h2>Hour Of Day <span class="chart-actions"><span id="hourSub"></span><button class="expand-btn" onclick="openChartModal('hourChart')">Expand</button></span></h2><div class="chart-box"><canvas id="hourChart"></canvas></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-channels">
+    <div class="grid-2 latency-detail-grid">
+      <div class="panel"><h2>Channel Latency <span class="chart-actions"><span>top by rows</span><button class="expand-btn" onclick="openChartModal('channelChart')">Expand</button></span></h2><div class="chart-box tall"><canvas id="channelChart"></canvas></div></div>
+      <div class="panel"><h2>Channel Summary</h2><div class="table-wrap" id="channelTable"></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-hosts">
+    <div class="grid-2 latency-detail-grid">
+      <div class="panel"><h2>Host / Platform Latency <span class="chart-actions"><span>top by rows</span><button class="expand-btn" onclick="openChartModal('hostChart')">Expand</button></span></h2><div class="chart-box tall"><canvas id="hostChart"></canvas></div></div>
+      <div class="panel"><h2>Host / Platform Summary</h2><div class="table-wrap" id="hostTable"></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-status">
+    <div class="grid-2">
+      <div class="panel"><h2>Status Code Latency <span class="chart-actions"><button class="expand-btn" onclick="openChartModal('statusChart')">Expand</button></span></h2><div class="chart-box"><canvas id="statusChart"></canvas></div></div>
+      <div class="panel"><h2>Cache Latency <span class="chart-actions"><button class="expand-btn" onclick="openChartModal('cacheChart')">Expand</button></span></h2><div class="chart-box"><canvas id="cacheChart"></canvas></div></div>
+      <div class="panel"><h2>Status Codes</h2><div class="table-wrap" id="statusTable"></div></div>
+      <div class="panel"><h2>Cache Summary</h2><div class="table-wrap" id="cacheTable"></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-geo">
+    <div class="panel"><h2>Geography Latency <span>top locations retained during generation</span></h2><div class="table-wrap" id="geoTable"></div></div>
+  </section>
+
+  <section class="tab" id="tab-defs">
+    <div class="panel">
+      <h2>Metric Definitions</h2>
+      <div class="defs" id="definitionGrid"></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Threshold Reference</h2>
+      <div class="threshold-guide" id="thresholdGuide"></div>
+      <div class="sop-banner" id="sopBanner"></div>
+      <div class="protocol-grid" id="sopProtocol"></div>
+    </div>
+  </section>
+
+  <div class="footer">Veto Latency dashboard</div>
+</div>
+
+<div class="modal-backdrop" id="chartModal">
+  <div class="chart-modal">
+    <div class="modal-top">
+      <div class="modal-title" id="modalTitle">Chart</div>
+      <button class="modal-close" onclick="closeChartModal()">Close</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-chart-wrap"><canvas id="modalChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const D = $DATA_BLOB;
+const METRICS = ['ttfb_p50_ms','ttfb_p95_ms','ttfb_p99_ms','turnaround_p50_ms','turnaround_p95_ms','turnaround_p99_ms','transfer_p50_ms','transfer_p95_ms','throughput_p05','throughput_p50','tls_overhead_p95_ms','avg_total_bytes'];
+const COLORS = ['#173b5c','#0f766e','#b58517','#b42318','#5b55a3','#2f6b2f','#475569','#a85518','#0369a1','#7c3aed'];
+const charts = {};
+const chartConfigs = {};
+let modalChart = null;
+let sourceFilter = 'fast';
+let activeQuickRange = 'yesterday';
+
+function n(v){const x=Number(v);return Number.isFinite(x)?x:0}
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function uniq(a){return [...new Set(a.filter(Boolean))]}
+function fmt(v,d=1){const x=n(v);return x.toLocaleString('en-IN',{maximumFractionDigits:d,minimumFractionDigits:d})}
+function fmtInt(v){return Math.round(n(v)).toLocaleString('en-IN')}
+function fmtPct(v){return fmt(v,2)+'%'}
+function fmtMs(v){return fmt(v,1)+' ms'}
+function fmtMetric(v,m){if(m==='cache_hit_pct'||m==='error_5xx_pct')return fmtPct(v); if(m.indexOf('throughput')>=0)return fmt(v,1); return fmtMs(v)}
+function metricLabel(m){return ({ttfb_p50_ms:'TTFB p50',ttfb_p95_ms:'TTFB p95',ttfb_p99_ms:'TTFB p99',turnaround_p95_ms:'Turnaround p95',transfer_p95_ms:'Transfer p95',throughput_p05:'Throughput p05',cache_hit_pct:'Cache hit %',error_5xx_pct:'5xx row %'}[m]||m)}
+function fmtDate(d){if(!d)return ''; const p=String(d).slice(0,10).split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0].slice(2):d}
+function fmtDateTime(v){
+  if(!v)return '';
+  const m=String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if(!m)return String(v);
+  let hh=Number(m[4]||0);
+  const ap=hh>=12?'PM':'AM';
+  hh=hh%12||12;
+  return m[3]+'/'+m[2]+'/'+m[1].slice(2)+' '+String(hh).padStart(2,'0')+':'+(m[5]||'00')+':'+(m[6]||'00')+' '+ap+' IST';
+}
+function sourceLabel(v){return String(v||'').toUpperCase()}
+function dayStart(d){return fmtDate(d)+' 12:00:00 AM IST'}
+function dayEnd(d){return fmtDate(d)+' 11:59:59 PM IST'}
+function fmtDisplayValue(key,value){
+  const text=String(value??'');
+  if(/^\d{4}-\d{2}-\d{2}$/.test(text))return fmtDate(text);
+  if(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(text))return fmtDateTime(text);
+  return text;
+}
+function todayKey(){
+  const d=new Date();
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+}
+function dateSpan(rows){
+  const dates=uniq(rows.map(r=>r.log_date)).sort();
+  return dates.length?{first:dates[0],last:dates[dates.length-1],days:dates.length}:null;
+}
+function latestCompletedDate(dates){
+  const sorted=[...dates].sort();
+  const today=todayKey();
+  const completed=sorted.filter(d=>d<today);
+  return completed.length?completed[completed.length-1]:(sorted[sorted.length-1]||'');
+}
+function dateToMs(d){const p=String(d||'').slice(0,10).split('-').map(Number); return p.length===3?Date.UTC(p[0],p[1]-1,p[2]):NaN}
+function addDays(d,delta){const ms=dateToMs(d); if(!Number.isFinite(ms))return ''; const x=new Date(ms+(delta*86400000)); return x.toISOString().slice(0,10)}
+function yesterdayKey(){return addDays(todayKey(),-1)}
+function sourceAvailableRows(){return (D.daily||[]).filter(r=>sourceOk(r))}
+function sourceBounds(){
+  const dates=uniq(sourceAvailableRows().map(r=>r.log_date)).sort();
+  if(!dates.length)return null;
+  const y=yesterdayKey();
+  const completed=dates.filter(d=>d<=y);
+  const usable=completed.length?completed:dates;
+  const defaultEnd=usable[usable.length-1];
+  return {first:usable[0],last:usable[usable.length-1],defaultEnd,trueFirst:dates[0],trueLast:dates[dates.length-1]};
+}
+function rangeDays(key){return ({yesterday:1,'7d':7,'15d':15,'30d':30}[key]||1)}
+function quickButtonId(key){return ({yesterday:'rangeYesterday','7d':'range7','15d':'range15','30d':'range30',all:'rangeAll'}[key]||'')}
+function updateQuickButtons(){['yesterday','7d','15d','30d','all'].forEach(k=>{const id=quickButtonId(k); if(id)document.getElementById(id).classList.toggle('active',activeQuickRange===k);});}
+function setDateInputs(start,end){document.getElementById('startDate').value=start||''; document.getElementById('endDate').value=end||'';}
+function updateDateBounds(){
+  const b=sourceBounds();
+  const start=document.getElementById('startDate');
+  const end=document.getElementById('endDate');
+  const hint=document.getElementById('dateAvailability');
+  if(!b){
+    start.min=''; start.max=''; end.min=''; end.max='';
+    hint.textContent='Available filter range: no '+sourceLabel(sourceFilter)+' data';
+    return null;
+  }
+  start.min=b.first; start.max=b.last; end.min=b.first; end.max=b.last;
+  hint.textContent='Available filter range: '+fmtDate(b.first)+' to '+fmtDate(b.last);
+  return b;
+}
+function showDateError(message){document.getElementById('dateError').textContent=message||''}
+function validateDateSelection(){
+  const b=updateDateBounds();
+  if(!b){
+    showDateError('No data available for '+sourceLabel(sourceFilter)+'.');
+    return false;
+  }
+  const start=document.getElementById('startDate');
+  const end=document.getElementById('endDate');
+  let s=start.value||b.defaultEnd;
+  let e=end.value||b.defaultEnd;
+  let adjusted=false;
+  if(s<b.first){s=b.first; adjusted=true;}
+  if(s>b.last){s=b.last; adjusted=true;}
+  if(e<b.first){e=b.first; adjusted=true;}
+  if(e>b.last){e=b.last; adjusted=true;}
+  if(s>e){s=e; adjusted=true;}
+  setDateInputs(s,e);
+  showDateError(adjusted?'Selected date adjusted to available '+sourceLabel(sourceFilter)+' filter range '+fmtDate(b.first)+' to '+fmtDate(b.last)+'.':'');
+  return true;
+}
+function setQuickRange(key){
+  activeQuickRange=key;
+  updateQuickButtons();
+  const b=updateDateBounds();
+  if(!b){setDateInputs('',''); applyFilters(); return;}
+  const end=b.defaultEnd;
+  let start=key==='all'?b.first:addDays(end,-(rangeDays(key)-1));
+  if(start<b.first)start=b.first;
+  setDateInputs(start,end);
+  showDateError('');
+  applyFilters();
+}
+function manualDateChanged(){
+  activeQuickRange='custom';
+  updateQuickButtons();
+  applyFilters();
+}
+function inRange(r){const s=document.getElementById('startDate').value; const e=document.getElementById('endDate').value; const d=String(r.log_date||''); return (!s||d>=s)&&(!e||d<=e)}
+function sourceOk(r){return String(r.source||'').toLowerCase()===sourceFilter}
+function extOk(r){const ex=document.getElementById('extensionFilter').value; return ex==='all'||String(r.extension||'').toLowerCase()===ex}
+function rowsOf(name){return (D[name]||[]).filter(r=>inRange(r)&&sourceOk(r)&&extOk(r))}
+function derived(row){row.cache_hit_pct = row.rows? n(row.cache_hit_rows)*100/n(row.rows):0; row.error_5xx_pct = row.rows? n(row.status_5xx_rows)*100/n(row.rows):0; return row}
+function aggregate(rows, keys){
+  const map=new Map();
+  rows.forEach(r=>{
+    const key=keys.map(k=>r[k]||'').join('|');
+    let o=map.get(key);
+    if(!o){o={}; keys.forEach(k=>o[k]=r[k]||''); o.rows=0;o.status_200_rows=0;o.non_200_rows=0;o.status_5xx_rows=0;o.approx_unique_ips=0;o.cache_hit_rows=0;o.ttfb_rows=0;o._w={}; METRICS.forEach(m=>o._w[m]=0); map.set(key,o);}
+    const w=n(r.rows); o.rows+=w; o.status_200_rows+=n(r.status_200_rows); o.non_200_rows+=n(r.non_200_rows); o.status_5xx_rows+=n(r.status_5xx_rows); o.approx_unique_ips+=n(r.approx_unique_ips); o.cache_hit_rows+=n(r.cache_hit_rows); o.ttfb_rows+=n(r.ttfb_rows);
+    METRICS.forEach(m=>{const val=Number(r[m]); if(Number.isFinite(val)&&w>0){o._w[m]+=val*w;}});
+  });
+  return [...map.values()].map(o=>{METRICS.forEach(m=>{o[m]=o.rows?o._w[m]/o.rows:0}); delete o._w; return derived(o);});
+}
+function cloneDataset(ds){return Object.assign({},ds,{data:Array.isArray(ds.data)?ds.data.slice():ds.data})}
+const barEndLabelPlugin={
+  id:'barEndLabels',
+  afterDatasetsDraw(chart){
+    const opts=chart.options.plugins&&chart.options.plugins.endValueLabels;
+    if(!opts||!opts.display)return;
+    const area=chart.chartArea;
+    if(!area||chart.width<360)return;
+    const ctx=chart.ctx;
+    const metric=opts.metric||'';
+    ctx.save();
+    ctx.font=opts.font||'700 10px Inter, Segoe UI, Arial, sans-serif';
+    ctx.textBaseline='middle';
+    chart.data.datasets.forEach((dataset,datasetIndex)=>{
+      const meta=chart.getDatasetMeta(datasetIndex);
+      if(meta.hidden)return;
+      meta.data.forEach((bar,index)=>{
+        const raw=Array.isArray(dataset.data)?Number(dataset.data[index]):NaN;
+        if(!Number.isFinite(raw))return;
+        const text=fmtMetric(raw,metric);
+        const width=ctx.measureText(text).width;
+        let color=opts.color||'#334155';
+        let align='center';
+        let drawX=bar.x;
+        let drawY=bar.y;
+        if(chart.options.indexAxis==='y'){
+          const x=Number.isFinite(bar.x)?bar.x:chart.scales.x.getPixelForValue(raw);
+          const base=Number.isFinite(bar.base)?bar.base:chart.scales.x.getPixelForValue(0);
+          const barStart=Math.min(x,base);
+          const barEnd=Math.max(x,base);
+          drawX=barEnd+7;
+          align='left';
+          if(drawX+width>area.right-2){
+            if(barEnd-barStart>width+16){
+              drawX=barEnd-7;
+              align='right';
+              color=opts.insideColor||'#fff';
+            }else{
+              drawX=area.left+6;
+              align='left';
+            }
+          }
+        }else{
+          const y=Number.isFinite(bar.y)?bar.y:chart.scales.y.getPixelForValue(raw);
+          const base=Number.isFinite(bar.base)?bar.base:chart.scales.y.getPixelForValue(0);
+          const barTop=Math.min(y,base);
+          const barBottom=Math.max(y,base);
+          drawX=bar.x;
+          drawY=barTop-7;
+          if(drawY<area.top+7){
+            if(barBottom-barTop>16){
+              drawY=barTop+10;
+              color=opts.insideColor||'#fff';
+            }else{
+              drawY=area.top+8;
+            }
+          }else{
+            ctx.textBaseline='bottom';
+          }
+        }
+        ctx.fillStyle=color;
+        ctx.textAlign=align;
+        ctx.fillText(text,drawX,drawY);
+        ctx.textBaseline='middle';
+      });
+    });
+    ctx.restore();
+  }
+};
+if(window.Chart&&window.Chart.register){window.Chart.register(barEndLabelPlugin);}
+function chart(id,type,labels,datasets,options){
+  if(!window.Chart)return;
+  if(charts[id])charts[id].destroy();
+  const baseOptions=Object.assign({responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom'},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true}}},options||{});
+  chartConfigs[id]={type,labels:labels.slice(),datasets:datasets.map(cloneDataset),options:baseOptions};
+  charts[id]=new Chart(document.getElementById(id),{type,data:{labels,datasets},options:baseOptions});
+}
+function lineDataset(label,data,color){return {label,data,borderColor:color,backgroundColor:color+'22',borderWidth:2,pointRadius:1.5,tension:.28,fill:false}}
+function averageValue(data){const vals=data.map(Number).filter(v=>Number.isFinite(v)); return vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:null}
+function averageLineDataset(label,value,count,color){return {label,data:Array.from({length:count},()=>value),borderColor:color,backgroundColor:'transparent',borderWidth:1.6,borderDash:[7,5],pointRadius:0,pointHoverRadius:0,tension:0,fill:false}}
+function barDataset(label,data,color){return {label,data,backgroundColor:color,borderColor:color,borderWidth:1}}
+function hexToRgba(color,alpha){
+  const hex=String(color||'').replace('#','');
+  if(hex.length!==6)return color;
+  const r=parseInt(hex.slice(0,2),16);
+  const g=parseInt(hex.slice(2,4),16);
+  const b=parseInt(hex.slice(4,6),16);
+  if(!Number.isFinite(r)||!Number.isFinite(g)||!Number.isFinite(b))return color;
+  return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
+function slimBarDataset(label,data,color){
+  return {
+    label,
+    data,
+    backgroundColor:hexToRgba(color,.72),
+    borderColor:hexToRgba(color,.96),
+    borderWidth:1,
+    borderRadius:999,
+    borderSkipped:false,
+    barThickness:7,
+    maxBarThickness:9,
+    minBarLength:2,
+    hoverBackgroundColor:hexToRgba(color,.9)
+  };
+}
+function slimVerticalBarDataset(label,data,color){
+  return {
+    label,
+    data,
+    backgroundColor:hexToRgba(color,.74),
+    borderColor:hexToRgba(color,.96),
+    borderWidth:1,
+    borderRadius:{topLeft:7,topRight:7,bottomLeft:2,bottomRight:2},
+    borderSkipped:false,
+    maxBarThickness:24,
+    minBarLength:2,
+    hoverBackgroundColor:hexToRgba(color,.92)
+  };
+}
+function shortAxisLabel(value,maxLen){
+  const text=String(value||'');
+  return text.length>maxLen?text.slice(0,maxLen-1)+'...':text;
+}
+function slimHorizontalBarOptions(metric,labelMax){
+  return {
+    indexAxis:'y',
+    layout:{padding:{right:78}},
+    plugins:{
+      legend:{display:false},
+      endValueLabels:{display:true,metric:metric},
+      tooltip:{
+        mode:'nearest',
+        intersect:true,
+        callbacks:{
+          title:items=>items.length?items[0].label:'',
+          label:ctx=>' '+metricLabel(metric)+': '+fmtMetric(ctx.parsed.x,metric)
+        }
+      }
+    },
+    scales:{
+      x:{
+        beginAtZero:true,
+        border:{display:false},
+        grid:{color:'#edf2f7',drawTicks:false},
+        ticks:{color:'#64748b',maxTicksLimit:5,callback:v=>fmtMetric(v,metric)}
+      },
+      y:{
+        border:{display:false},
+        grid:{display:false},
+        ticks:{color:'#334155',font:{size:11,weight:'700'},autoSkip:false,callback:function(v){return shortAxisLabel(this.getLabelForValue(v),labelMax||26);}}
+      }
+    }
+  };
+}
+function slimVerticalBarOptions(metric,labelMax){
+  return {
+    layout:{padding:{top:24,right:10,left:2,bottom:2}},
+    plugins:{
+      legend:{display:false},
+      endValueLabels:{display:true,metric:metric},
+      tooltip:{
+        mode:'nearest',
+        intersect:true,
+        callbacks:{
+          title:items=>items.length?items[0].label:'',
+          label:ctx=>' '+metricLabel(metric)+': '+fmtMetric(ctx.parsed.y,metric)
+        }
+      }
+    },
+    scales:{
+      x:{
+        border:{display:false},
+        grid:{display:false},
+        ticks:{
+          color:'#334155',
+          font:{size:11,weight:'700'},
+          maxRotation:0,
+          minRotation:0,
+          callback:function(v){return shortAxisLabel(this.getLabelForValue(v),labelMax||18);}
+        }
+      },
+      y:{
+        beginAtZero:true,
+        border:{display:false},
+        grid:{color:'#edf2f7',drawTicks:false},
+        ticks:{color:'#64748b',maxTicksLimit:5,callback:v=>fmtMetric(v,metric)}
+      }
+    }
+  };
+}
+function fitHorizontalChartHeight(id,count,opts){
+  const canvas=document.getElementById(id);
+  const box=canvas&&canvas.parentElement;
+  if(!box)return;
+  const row=opts&&opts.row?opts.row:18;
+  const min=opts&&opts.min?opts.min:220;
+  const max=opts&&opts.max?opts.max:460;
+  const chrome=opts&&opts.chrome?opts.chrome:74;
+  const height=Math.max(min,Math.min(max,chrome+(Math.max(count,1)*row)));
+  box.style.height=Math.round(height)+'px';
+}
+function fitVerticalChartHeight(id,count,opts){
+  const canvas=document.getElementById(id);
+  const box=canvas&&canvas.parentElement;
+  if(!box)return;
+  const min=opts&&opts.min?opts.min:240;
+  const max=opts&&opts.max?opts.max:340;
+  const extra=Math.max(0,Math.min(count,12)-4)*8;
+  box.style.height=Math.round(Math.max(min,Math.min(max,min+extra)))+'px';
+}
+function openChartModal(id){
+  if(!window.Chart||!chartConfigs[id])return;
+  const cfg=chartConfigs[id];
+  const titles={trendChart:'Latency Trend',hourChart:'Hour Of Day',channelChart:'Channel Latency',hostChart:'Host / Platform Latency',statusChart:'Status Code Latency',cacheChart:'Cache Latency'};
+  document.getElementById('modalTitle').textContent=titles[id]||'Chart';
+  document.getElementById('chartModal').classList.add('open');
+  if(modalChart)modalChart.destroy();
+  modalChart=new Chart(document.getElementById('modalChart'),{
+    type:cfg.type,
+    data:{labels:cfg.labels.slice(),datasets:cfg.datasets.map(cloneDataset)},
+    options:Object.assign({},cfg.options,{maintainAspectRatio:false})
+  });
+}
+function closeChartModal(){
+  document.getElementById('chartModal').classList.remove('open');
+  if(modalChart){modalChart.destroy();modalChart=null;}
+}
+function table(rows,cols,limit){
+  const body=rows.slice(0,limit||100).map(r=>'<tr>'+cols.map(c=>'<td class="'+(c.num?'num':'')+'">'+esc(c.f?c.f(r[c.k],r):fmtDisplayValue(c.k,r[c.k]))+'</td>').join('')+'</tr>').join('');
+  return '<table><thead><tr>'+cols.map(c=>'<th class="'+(c.num?'num':'')+'">'+esc(c.l)+'</th>').join('')+'</tr></thead><tbody>'+body+'</tbody></table>';
+}
+function setSource(v){
+  sourceFilter=v;
+  ['Stream','Fast'].forEach(x=>document.getElementById('src'+x).classList.toggle('active',v===x.toLowerCase()));
+  setQuickRange(activeQuickRange==='custom'?'yesterday':activeQuickRange);
+}
+function updateMetricVisibility(name){
+  const bar=document.getElementById('metricBar');
+  if(!bar)return;
+  bar.style.display=['overview','channels','hosts','status'].includes(name)?'flex':'none';
+}
+function setActiveSection(name,btn){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id==='tab-'+name));
+  document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  else{
+    const index={overview:0,channels:1,hosts:2,status:3,geo:4,defs:5}[name];
+    const buttons=document.querySelectorAll('.tab-btn');
+    if(buttons[index])buttons[index].classList.add('active');
+  }
+  updateMetricVisibility(name);
+}
+function showTab(name,btn){
+  setActiveSection(name,btn);
+  const target=document.getElementById('tab-'+name);
+  if(target)target.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function initSectionObserver(){
+  if(!('IntersectionObserver' in window))return;
+  const names=['overview','channels','hosts','status','geo','defs'];
+  const observer=new IntersectionObserver(entries=>{
+    const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top)[0];
+    if(!visible)return;
+    setActiveSection(visible.target.id.replace('tab-',''));
+  },{root:null,rootMargin:'-28% 0px -58% 0px',threshold:0.01});
+  names.forEach(name=>{const el=document.getElementById('tab-'+name); if(el)observer.observe(el);});
+}
+function sourceTrueRangeForHeader(source){
+  const ranges=D.source_true_ranges||[];
+  const hit=ranges.find(r=>String(r.source||'').toLowerCase()===source);
+  return hit?{first:hit.first_ist||hit.first||'',last:hit.last_ist||hit.last||''}:{};
+}
+function updateHeaderRange(viewDaily){
+  const sourceRows=(D.daily||[]).filter(r=>sourceOk(r));
+  const trueSpan=dateSpan(sourceRows);
+  const usedSpan=dateSpan(viewDaily);
+  const baseTitle=D.title||'Veto Latency';
+  const titleText=baseTitle+' - '+sourceLabel(sourceFilter);
+  document.title=titleText;
+  document.getElementById('title').textContent=titleText;
+  if(!trueSpan){
+    document.getElementById('rangeText').textContent='Source: '+sourceLabel(sourceFilter)+' | Profile date range unavailable';
+    return;
+  }
+  const trueRange=sourceTrueRangeForHeader(sourceFilter);
+  const trueText=(trueRange.first&&trueRange.last)?(fmtDateTime(trueRange.first)+' → '+fmtDateTime(trueRange.last)):(dayStart(trueSpan.first)+' → '+dayEnd(trueSpan.last));
+  const usedText=usedSpan?(dayStart(usedSpan.first)+' to '+dayEnd(usedSpan.last)):('No data in selected range');
+  document.getElementById('rangeText').textContent='Source: '+sourceLabel(sourceFilter)+' | True data range: '+trueText+' | Used range: '+usedText;
+}
+const THRESHOLDS = [
+  {key:'ttfb',label:'CDN Latency / TTFB p95',metric:'ttfb_p95_ms',unit:'ms',mode:'higher',limits:[150,250,500],green:'≤ 150 ms',yellow:'151-250 ms',orange:'251-500 ms',red:'> 500 ms',source:'timeToFirstByte'},
+  {key:'turnaround',label:'Request Turnaround p95',metric:'turnaround_p95_ms',unit:'ms',mode:'higher',limits:[300,500,1000],green:'≤ 300 ms',yellow:'301-500 ms',orange:'501-1000 ms',red:'> 1000 ms',source:'turnAroundTimeMSec'},
+  {key:'transfer',label:'Transfer Time p95',metric:'transfer_p95_ms',unit:'ms',mode:'higher',limits:[1000,2000,5000],green:'≤ 1000 ms',yellow:'1001-2000 ms',orange:'2001-5000 ms',red:'> 5000 ms',source:'transferTimeMSec'},
+  {key:'throughput',label:'Throughput p05',metric:'throughput_p05',unit:'value',mode:'lower',limits:[5000,2500,1000],green:'≥ 5000',yellow:'2500-4999',orange:'1000-2499',red:'< 1000',source:'throughput'},
+  {key:'cache',label:'Cache Hit Rate',metric:'cache_hit_pct',unit:'pct',mode:'lower',limits:[85,70,50],green:'≥ 85%',yellow:'70-84.99%',orange:'50-69.99%',red:'< 50%',source:'cacheStatus = 1'},
+  {key:'5xx',label:'HTTP 5xx Error Rate',metric:'error_5xx_pct',unit:'pct',mode:'higher',limits:[1,3,5],green:'≤ 1%',yellow:'1.01-3%',orange:'3.01-5%',red:'> 5%',source:'statusCode 5xx'},
+  {key:'non200',label:'Non-200 Response Rate',metric:'non200_pct',unit:'pct',mode:'higher',limits:[2,5,10],green:'≤ 2%',yellow:'2.01-5%',orange:'5.01-10%',red:'> 10%',source:'statusCode not 200'}
+];
+function riskLevel(def,value){
+  const v=n(value), l=def.limits;
+  if(def.mode==='lower'){
+    if(v>=l[0])return 'green';
+    if(v>=l[1])return 'yellow';
+    if(v>=l[2])return 'orange';
+    return 'red';
+  }
+  if(v<=l[0])return 'green';
+  if(v<=l[1])return 'yellow';
+  if(v<=l[2])return 'orange';
+  return 'red';
+}
+function formatThresholdValue(def,value){
+  if(def.unit==='pct')return fmtPct(value);
+  if(def.unit==='ms')return fmtMs(value);
+  return fmt(value,1);
+}
+function renderThresholdGuide(){
+  const rows=THRESHOLDS.map(t=>'<tr><td>'+esc(t.label)+'</td><td><span class="zone green">'+esc(t.green)+'</span></td><td><span class="zone yellow">'+esc(t.yellow)+'</span></td><td><span class="zone orange">'+esc(t.orange)+'</span></td><td><span class="zone red">'+esc(t.red)+'</span></td><td>'+esc(t.source)+'</td></tr>').join('');
+  document.getElementById('thresholdGuide').innerHTML='<table><thead><tr><th>Parameter</th><th>Green Safe</th><th>Yellow Watch</th><th>Orange Action</th><th>Red Critical</th><th>Log Field / Basis</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+function renderSop(){
+  const selectedDaily=rowsOf('daily');
+  const selectedStatus=rowsOf('status_daily');
+  const snap=(aggregate(selectedDaily,[])[0])||derived({rows:0});
+  const status=aggregate(selectedStatus,['status_code']);
+  const non200=status.filter(r=>String(r.status_code)!=='200').reduce((s,r)=>s+n(r.rows),0);
+  const non200Pct=snap.rows?non200*100/snap.rows:0;
+  const ex=document.getElementById('extensionFilter').value;
+  const extensionNote=ex==='all'?'selected extensions':'.'+ex+' rows';
+  const byKey=Object.fromEntries(THRESHOLDS.map(t=>[t.key,t]));
+  const rules=[
+    {def:byKey.ttfb,value:snap.ttfb_p95_ms,note:'TTFB p95 on '+extensionNote},
+    {def:byKey.turnaround,value:snap.turnaround_p95_ms,note:'Full request p95'},
+    {def:byKey['5xx'],value:snap.error_5xx_pct,note:'Server/upstream error rate'},
+    {def:byKey.non200,value:non200Pct,note:'All non-200 status rows'},
+    {def:byKey.cache,value:snap.cache_hit_pct,note:'cacheStatus = 1'},
+    {def:byKey.transfer,value:snap.transfer_p95_ms,note:'Response transfer p95'},
+    {def:byKey.throughput,value:snap.throughput_p05,note:'Low-end throughput'}
+  ].map(r=>{
+    if(!r.def)return r;
+    if(!snap.rows)return {label:r.def.label,rule:'No data',value:'0 rows',state:'na',note:'Selected filter has no rows'};
+    const state=riskLevel(r.def,r.value);
+    return {label:r.def.label,rule:r.def[state],value:formatThresholdValue(r.def,r.value),state,note:r.note};
+  });
+  document.getElementById('sopMeta').textContent='';
+  document.getElementById('sopCards').innerHTML=rules.map(r=>'<div class="sop-card '+r.state+'"><div class="sop-rule">'+esc(r.rule)+'</div><div class="sop-label">'+esc(r.label)+'</div><div class="sop-value">'+esc(r.value)+' · '+esc(r.note)+'</div></div>').join('');
+  renderThresholdGuide();
+  const breaches=rules.filter(r=>r.state==='red'||r.state==='orange'||r.state==='yellow').length;
+  const critical=rules.filter(r=>r.state==='red'||r.state==='orange').length;
+  document.getElementById('sopBanner').textContent=!snap.rows?'No threshold status available for the selected filters.':critical?('Threshold action: '+critical+' orange/red item(s) need immediate review; '+breaches+' total item(s) outside green safe zone for the selected range.'):breaches?('Threshold watch: '+breaches+' yellow item(s) need monitoring for the selected range.'):'All configured CDN thresholds are in green safe zone for the selected range.';
+  const protocol=[
+    ['CDN Latency > 150ms','Open Channels and Hosts tabs, sort by TTFB p95 for the selected source, then isolate top host/channel/geography.'],
+    ['5xx Error > 3%','Open Status & Cache, identify failing status by host/channel, then check CDN/origin health for those paths.'],
+    ['Cache Hit < 85%','Check cacheStatus/cacheable split, verify TTL/max-age behavior, and review cache misses by host/platform.'],
+    ['High Turnaround / Low Throughput','Use Geography tab to identify state/city/ASN concentration, then compare with transfer p95 and throughput p05.']
+  ];
+  document.getElementById('sopProtocol').innerHTML=protocol.map(p=>'<div class="protocol"><b>'+esc(p[0])+'</b><span>'+esc(p[1])+'</span></div>').join('');
+}
+function applyFilters(){
+  const metric=document.getElementById('metricFilter').value;
+  validateDateSelection();
+  const viewDaily=rowsOf('daily');
+  updateHeaderRange(viewDaily);
+  const daily=aggregate(viewDaily,[]);
+  const overall=daily[0]||derived({rows:0});
+  document.getElementById('filterMeta').textContent=fmtInt(overall.rows)+' rows in selected filter';
+  document.getElementById('trendSub').textContent=metricLabel(metric);
+  document.getElementById('hourSub').textContent=metricLabel(metric);
+
+  const trend=aggregate(rowsOf('daily'),['log_date','source']).sort((a,b)=>(a.log_date+a.source).localeCompare(b.log_date+b.source));
+  const dates=uniq(trend.map(r=>r.log_date)).sort();
+  const trendData=dates.map(d=>{const r=trend.find(x=>x.log_date===d&&x.source===sourceFilter);return r?n(r[metric]):null});
+  const trendAvg=averageValue(trendData);
+  chart('trendChart','line',dates.map(fmtDate),[lineDataset(sourceFilter.toUpperCase(),trendData,COLORS[0]),averageLineDataset('Average '+metricLabel(metric),trendAvg,dates.length,COLORS[3])],{scales:{y:{ticks:{callback:v=>fmtMetric(v,metric)}}}});
+
+  const hour=aggregate(rowsOf('hourly'),['hour_ist']).sort((a,b)=>n(a.hour_ist)-n(b.hour_ist));
+  const hourLabels=Array.from({length:24},(_,i)=>String(i).padStart(2,'0')+':00');
+  const hourData=hourLabels.map((_,i)=>{const r=hour.find(x=>n(x.hour_ist)===i);return r?n(r[metric]):null});
+  const hourAvg=averageValue(hourData);
+  chart('hourChart','line',hourLabels,[lineDataset(metricLabel(metric),hourData,COLORS[1]),averageLineDataset('Average '+metricLabel(metric),hourAvg,hourLabels.length,COLORS[3])],{scales:{y:{ticks:{callback:v=>fmtMetric(v,metric)}}}});
+
+  const channels=aggregate(rowsOf('channel_daily'),['channel_name']).sort((a,b)=>n(b.rows)-n(a.rows));
+  const chTop=channels.slice(0,20).reverse();
+  fitHorizontalChartHeight('channelChart',chTop.length,{row:17,min:260,max:430,chrome:76});
+  chart('channelChart','bar',chTop.map(r=>r.channel_name),[slimBarDataset(metricLabel(metric),chTop.map(r=>n(r[metric])),COLORS[0])],slimHorizontalBarOptions(metric,28));
+  document.getElementById('channelTable').innerHTML=table(channels,[{k:'channel_name',l:'Channel'},{k:'rows',l:'Rows',num:true,f:fmtInt},{k:'ttfb_p95_ms',l:'TTFB p95',num:true,f:fmtMs},{k:'turnaround_p95_ms',l:'Turnaround p95',num:true,f:fmtMs},{k:'cache_hit_pct',l:'Cache Hit %',num:true,f:fmtPct},{k:'error_5xx_pct',l:'5xx %',num:true,f:fmtPct}],200);
+
+  const hosts=aggregate(rowsOf('host_daily'),['platform_name','reqHost']).sort((a,b)=>n(b.rows)-n(a.rows));
+  const hostTop=hosts.slice(0,20).reverse();
+  fitHorizontalChartHeight('hostChart',hostTop.length,{row:14,min:170,max:340,chrome:62});
+  chart('hostChart','bar',hostTop.map(r=>r.platform_name||r.reqHost),[slimBarDataset(metricLabel(metric),hostTop.map(r=>n(r[metric])),COLORS[2])],slimHorizontalBarOptions(metric,30));
+  document.getElementById('hostTable').innerHTML=table(hosts,[{k:'platform_name',l:'Platform / Host'},{k:'reqHost',l:'Host'},{k:'rows',l:'Rows',num:true,f:fmtInt},{k:'ttfb_p95_ms',l:'TTFB p95',num:true,f:fmtMs},{k:'transfer_p95_ms',l:'Transfer p95',num:true,f:fmtMs},{k:'throughput_p05',l:'Throughput p05',num:true,f:v=>fmt(v,1)}],200);
+
+  const status=aggregate(rowsOf('status_daily'),['status_code']).sort((a,b)=>n(b.rows)-n(a.rows));
+  fitVerticalChartHeight('statusChart',status.length,{min:250,max:330});
+  chart('statusChart','bar',status.map(r=>r.status_code),[slimVerticalBarDataset(metricLabel(metric),status.map(r=>n(r[metric])),COLORS[0])],slimVerticalBarOptions(metric,14));
+  document.getElementById('statusTable').innerHTML=table(status,[{k:'status_code',l:'Status'},{k:'rows',l:'Rows',num:true,f:fmtInt},{k:'ttfb_p95_ms',l:'TTFB p95',num:true,f:fmtMs},{k:'error_5xx_pct',l:'5xx %',num:true,f:fmtPct},{k:'meaning',l:'Meaning',f:(v,r)=>D.status_meanings[String(r.status_code)]||'Observed in logs'}],200);
+
+  const cache=aggregate(rowsOf('cache_daily'),['cacheStatus','cacheable']).sort((a,b)=>n(b.rows)-n(a.rows));
+  fitVerticalChartHeight('cacheChart',cache.length,{min:250,max:330});
+  chart('cacheChart','bar',cache.map(r=>'Status '+r.cacheStatus+' / '+r.cacheable),[slimVerticalBarDataset(metricLabel(metric),cache.map(r=>n(r[metric])),COLORS[4])],slimVerticalBarOptions(metric,18));
+  document.getElementById('cacheTable').innerHTML=table(cache,[{k:'cacheStatus',l:'Cache Status'},{k:'cacheable',l:'Cacheable'},{k:'rows',l:'Rows',num:true,f:fmtInt},{k:'cache_hit_pct',l:'Cache Hit %',num:true,f:fmtPct},{k:'ttfb_p95_ms',l:'TTFB p95',num:true,f:fmtMs}],200);
+
+  const geo=aggregate(rowsOf('geo_daily'),['country','state','city']).sort((a,b)=>n(b.rows)-n(a.rows));
+  document.getElementById('geoTable').innerHTML=table(geo,[{k:'country',l:'Country'},{k:'state',l:'State / Region'},{k:'city',l:'City'},{k:'rows',l:'Rows',num:true,f:fmtInt},{k:'ttfb_p95_ms',l:'TTFB p95',num:true,f:fmtMs},{k:'turnaround_p95_ms',l:'Turnaround p95',num:true,f:fmtMs},{k:'cache_hit_pct',l:'Cache Hit %',num:true,f:fmtPct}],500);
+  renderSop();
+}
+function init(){
+  document.title=D.title||'Veto Latency';
+  document.getElementById('title').textContent=D.title||'Veto Latency';
+  if(!sourceBounds()){
+    sourceFilter='stream';
+    ['Stream','Fast'].forEach(x=>document.getElementById('src'+x).classList.toggle('active',sourceFilter===x.toLowerCase()));
+  }
+  document.getElementById('genText').textContent='Last updated '+fmtDateTime(D.generated_at);
+  document.getElementById('definitionGrid').innerHTML=[
+    ['TTFB','Time to first byte; strongest first signal of CDN/origin response latency.'],
+    ['Turnaround','Full request turnaround time logged by the CDN.'],
+    ['Transfer','Payload transfer duration after response starts.'],
+    ['Throughput','Delivery speed. Low p05 values identify poor delivery edge cases.'],
+    ['Cache Hit %','Rows where cacheStatus is 1 divided by total rows.'],
+    ['p95 / p99','Tail latency. Higher values show slow experience for the worst users/requests.'],
+    ['.ts vs .m3u8','Segments and playlists behave differently and should be reviewed separately.'],
+    ['Static Range Summary',D.notes.range_quantiles]
+  ].map(x=>'<div class="def"><b>'+esc(x[0])+'</b><span>'+esc(x[1])+'</span></div>').join('');
+  setQuickRange('yesterday');
+  setActiveSection('overview');
+  initSectionObserver();
+}
+init();
+</script>
+</body>
+</html>

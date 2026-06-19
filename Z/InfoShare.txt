@@ -1,4 +1,0 @@
-aws s3 sync "s3://veto-stream-logs/veto-stream-logs/04/" "D:\Veto Logs Backup" `
-  --endpoint-url https://in-maa-1.linodeobjects.com `
-  --progress-multiline `
-  --size-only

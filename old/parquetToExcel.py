@@ -4,8 +4,8 @@ import os
 from tqdm import tqdm
 
 # Configuration
-input_path = r"Z:\veto fast logs\14\1110280_final_clean.parquet"
-output_path = r"Z:\veto fast logs\14\1110280_final_clean.xlsx"
+input_path = r"D:\Veto Logs Backup\Vs - Code Work\ETL\output\watch_hours\concurrency\concurrency_ua_viewers.parquet"
+output_path = r"D:\Veto Logs Backup\Vs - Code Work\ETL\output\watch_hours\concurrency\concurrency_ua_viewers.xlsx"
 chunk_size = 50000  
 MAX_EXCEL_ROWS = 1000000 # Safety margin (Excel max is 1,048,576)
 

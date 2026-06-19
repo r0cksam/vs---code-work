@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: Veto Live
+    orgId: 1
+    folder: Veto
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 15
+    options:
+      path: ../../grafana/dashboards

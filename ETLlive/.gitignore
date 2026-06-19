@@ -1,0 +1,13 @@
+data/
+dependency/
+output/
+runtime/
+state/
+logs/
+.env
+config/server_live_config.json
+config/*local*.json
+*.exe
+*.zip
+*.log
+*.tmp

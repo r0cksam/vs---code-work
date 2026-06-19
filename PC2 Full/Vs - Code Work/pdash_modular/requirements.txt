@@ -1,8 +1,0 @@
-streamlit
-pandas
-pyarrow
-duckdb
-plotly
-matplotlib
-reportlab
-requests

@@ -1,0 +1,13 @@
+{
+  "distinct_ua": 746,
+  "elapsed_seconds": 3.88,
+  "generated_at": "2026-06-11T12:16:44",
+  "log_date": "2026-05-08",
+  "raw_rows": 28801949,
+  "signature": {
+    "file_count": 2,
+    "max_mtime_ns": 1778842681346317300,
+    "total_bytes": 1059835848
+  },
+  "source": "stream"
+}

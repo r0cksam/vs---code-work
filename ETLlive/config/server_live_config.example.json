@@ -1,0 +1,37 @@
+{
+  "timezone": "Asia/Kolkata",
+  "poll_interval_seconds": 60,
+  "server_lookback_days": 2,
+  "min_file_age_seconds": 120,
+  "max_files_per_cycle": 0,
+  "server_sources": {
+    "stream": {
+      "enabled": true,
+      "root": "/srv/veto-stream-logs/veto-stream-logs",
+      "path_template": "{month}/{day}"
+    },
+    "fast": {
+      "enabled": true,
+      "root": "/srv/veto-stream-logs/veto-fast-logs",
+      "path_template": "{month}/{day}",
+      "children": ["110280"]
+    }
+  },
+  "clickhouse": {
+    "enabled": false,
+    "url": "http://127.0.0.1:8123",
+    "database": "veto_live",
+    "user": "default",
+    "password": "",
+    "detail_table": "live_ts_detail",
+    "insert_batch_rows": 50000,
+    "timeout_seconds": 30
+  },
+  "output": {
+    "detail_root": "data/detail",
+    "minute_parquet": "output/live_minute_aggregate.parquet",
+    "status_parquet": "output/live_status_minute.parquet",
+    "health_json": "output/live_health.json",
+    "metrics_prom": "output/live_metrics.prom"
+  }
+}

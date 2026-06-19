@@ -1,0 +1,8 @@
+duckdb
+orjson
+openpyxl
+pandas
+psutil
+pyarrow
+requests
+tqdm

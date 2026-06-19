@@ -1,0 +1,60 @@
+{
+  "generated_at_utc": "2026-06-19T05:51:58.608273+00:00",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "out_dir": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\identity",
+  "source": "stream",
+  "start": "2026-06-18",
+  "end": "2026-06-19",
+  "partitions_total": 2,
+  "partitions_processed": 2,
+  "tables": {
+    "identity_device_daily": {
+      "rows": 1165736,
+      "min_date": "2026-03-26",
+      "max_date": "2026-06-19",
+      "sources": 1
+    },
+    "identity_session_daily": {
+      "rows": 1534703,
+      "min_date": "2026-03-26",
+      "max_date": "2026-06-19",
+      "sources": 1
+    },
+    "identity_ipua_daily": {
+      "rows": 1368907,
+      "min_date": "2026-03-26",
+      "max_date": "2026-06-19",
+      "sources": 1
+    },
+    "identity_daily": {
+      "rows": 86,
+      "min_date": "2026-03-26",
+      "max_date": "2026-06-19",
+      "sources": 1
+    },
+    "identity_channel_daily": {
+      "rows": 2126,
+      "min_date": "2026-03-26",
+      "max_date": "2026-06-19",
+      "sources": 1
+    },
+    "identity_platform_daily": {
+      "rows": 695,
+      "min_date": "2026-03-26",
+      "max_date": "2026-06-19",
+      "sources": 1
+    },
+    "identity_platform_channel_daily": {
+      "rows": 12949,
+      "min_date": "2026-03-26",
+      "max_date": "2026-06-19",
+      "sources": 1
+    }
+  },
+  "notes": [
+    "session_id/device_id are extracted from queryStr with safe URL decoding.",
+    "Aggregate tables do not include raw device_id/session_id values.",
+    "New/returning device counts are scoped to the aggregate dimension.",
+    "FAST currently has no session_id/device_id queryStr evidence, so FAST identity aggregates may be empty."
+  ]
+}

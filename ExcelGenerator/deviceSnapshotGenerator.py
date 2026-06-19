@@ -3,13 +3,14 @@
 deviceSnapshotGenerator.py
 Generate full-lake device intelligence CSVs from Veto stream logs.
 
-Edit LAKE_ROOT and CSV_OUT below, then run:
+Configure paths via --lake, --snapshot-csv, --daily-csv, or environment vars.
     py deviceSnapshotGenerator.py
 """
 
 from __future__ import annotations
 
 import logging
+import argparse
 import os
 import subprocess
 import sys
@@ -26,10 +27,9 @@ except ImportError:
     import pyarrow.parquet as pq
 
 
-LAKE_ROOT = Path(r"D:\Veto Logs Backup\veto Stream logs\lake")
-CSV_OUT = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\device_snapshot.csv")
-DAILY_CSV_OUT = Path(r"Y:\Veto Logs Backup\Dashboards\OverView\device_daily.csv")
-DAILY_TMP_OUT = DAILY_CSV_OUT.with_name("_device_daily_new.csv")
+DEFAULT_LAKE_ROOT = Path(os.getenv("VG_ETL_LAKE_ROOT", str(Path.home() / "Veto Stream Logs" / "lake")))
+DEFAULT_CSV_OUT = Path(os.getenv("VG_DEVICE_SNAPSHOT_OUT", Path.home() / "Veto Stream Logs" / "overview" / "device_snapshot.csv"))
+DEFAULT_DAILY_CSV_OUT = Path(os.getenv("VG_DEVICE_DAILY_OUT", Path.home() / "Veto Stream Logs" / "overview" / "device_daily.csv"))
 
 logging.basicConfig(level=logging.INFO, format="  %(levelname)-7s %(message)s")
 log = logging.getLogger("device_snapshot")
@@ -116,11 +116,17 @@ def pa_schema(lake_root: Path) -> set[str]:
     return cols
 
 
-def main() -> None:
-    if not LAKE_ROOT.is_dir():
-        raise SystemExit(f"Lake folder not found: {LAKE_ROOT}")
+def run_snapshot(
+    lake_root: Path,
+    snapshot_csv: Path,
+    daily_csv: Path,
+) -> None:
+    daily_tmp = daily_csv.with_name("_device_daily_new.csv")
 
-    cols = pa_schema(LAKE_ROOT)
+    if not lake_root.is_dir():
+        raise SystemExit(f"Lake folder not found: {lake_root}")
+
+    cols = pa_schema(lake_root)
     required = {"queryStr", "reqTimeSec"}
     missing = required - cols
     if missing:
@@ -129,7 +135,7 @@ def main() -> None:
     has_ip = "cliIP" in cols
     has_ua = "UA" in cols
 
-    reader = lake_reader(LAKE_ROOT)
+    reader = lake_reader(lake_root)
     device_expr = qs_extract("queryStr", "device_id")
     session_expr = qs_extract("queryStr", "session_id")
     ip_select = "cliIP" if has_ip else "NULL AS cliIP"
@@ -176,33 +182,36 @@ def main() -> None:
                 SUM(distinct_ip) AS distinct_ip_day_sum,
                 SUM(distinct_ip_ua) AS distinct_ip_ua_day_sum,
                 SUM(distinct_sessions) AS distinct_sessions_day_sum
-            FROM read_csv_auto('{DAILY_CSV_OUT.as_posix()}', HEADER=true)
+            FROM read_csv_auto('{daily_csv.as_posix()}', HEADER=true)
             GROUP BY device_id
             ORDER BY last_seen_utc_date DESC, total_rows DESC
-        ) TO '{CSV_OUT.as_posix()}' (HEADER, DELIMITER ',');
+        ) TO '{snapshot_csv.as_posix()}' (HEADER, DELIMITER ',');
     """
 
-    log.info(f"Lake folder: {LAKE_ROOT}")
-    log.info(f"Snapshot CSV: {CSV_OUT}")
-    log.info(f"Daily CSV   : {DAILY_CSV_OUT}")
-    CSV_OUT.parent.mkdir(parents=True, exist_ok=True)
-    DAILY_CSV_OUT.parent.mkdir(parents=True, exist_ok=True)
+    log.info(f"Lake folder: {lake_root}")
+    log.info(f"Snapshot CSV: {snapshot_csv}")
+    log.info(f"Daily CSV   : {daily_csv}")
+    snapshot_csv.parent.mkdir(parents=True, exist_ok=True)
+    daily_csv.parent.mkdir(parents=True, exist_ok=True)
 
     log_step(1, 5, "Schema checked and SQL prepared")
     con = get_conn()
     try:
-        max_existing_date = latest_daily_date(con, DAILY_CSV_OUT)
+        max_existing_date = latest_daily_date(con, daily_csv)
         if max_existing_date:
             log.info(f"Existing daily CSV found. Latest loaded date: {max_existing_date}")
-            date_filter = f"AND CAST(to_timestamp(CAST(reqTimeSec AS DOUBLE)) AS DATE) > DATE '{max_existing_date}'"
-            daily_out = DAILY_TMP_OUT
+            date_filter = (
+                "AND CAST(to_timestamp(CAST(reqTimeSec AS DOUBLE)) AS DATE) > "
+                f"DATE '{max_existing_date}'"
+            )
+            daily_out = daily_tmp
         else:
             log.info("No existing daily CSV found. First run will scan the full lake.")
             date_filter = ""
-            daily_out = DAILY_CSV_OUT
+            daily_out = daily_csv
 
-        if DAILY_TMP_OUT.exists():
-            DAILY_TMP_OUT.unlink()
+        if daily_tmp.exists():
+            daily_tmp.unlink()
 
         daily_sql = daily_sql_template.format(
             device_expr=device_expr,
@@ -219,17 +228,17 @@ def main() -> None:
         log_step(2, 5, "Exporting new device_daily rows")
         con.execute(daily_sql)
 
-        if daily_out == DAILY_TMP_OUT:
-            new_lines = csv_data_lines(DAILY_TMP_OUT)
+        if daily_out == daily_tmp:
+            new_lines = csv_data_lines(daily_tmp)
             if new_lines == 0:
                 log_step(3, 5, "No new dates found; daily CSV unchanged")
-                DAILY_TMP_OUT.unlink(missing_ok=True)
+                daily_tmp.unlink(missing_ok=True)
             else:
-                appended = append_csv_without_header(DAILY_TMP_OUT, DAILY_CSV_OUT)
-                DAILY_TMP_OUT.unlink(missing_ok=True)
+                appended = append_csv_without_header(daily_tmp, daily_csv)
+                daily_tmp.unlink(missing_ok=True)
                 log_step(3, 5, f"Appended {appended:,} daily rows")
         else:
-            log_step(3, 5, f"Wrote {csv_data_lines(DAILY_CSV_OUT):,} daily rows")
+            log_step(3, 5, f"Wrote {csv_data_lines(daily_csv):,} daily rows")
 
         log_step(4, 5, "Refreshing device_snapshot.csv from device_daily.csv")
         con.execute(snapshot_sql)
@@ -237,6 +246,20 @@ def main() -> None:
         con.close()
 
     log_step(5, 5, "Device CSV generation complete")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate device snapshot CSVs.")
+    parser.add_argument("--lake", default=str(DEFAULT_LAKE_ROOT))
+    parser.add_argument("--snapshot-csv", default=str(DEFAULT_CSV_OUT))
+    parser.add_argument("--daily-csv", default=str(DEFAULT_DAILY_CSV_OUT))
+    args = parser.parse_args()
+
+    run_snapshot(
+        lake_root=Path(args.lake).expanduser().resolve(),
+        snapshot_csv=Path(args.snapshot_csv).expanduser().resolve(),
+        daily_csv=Path(args.daily_csv).expanduser().resolve(),
+    )
 
 
 if __name__ == "__main__":

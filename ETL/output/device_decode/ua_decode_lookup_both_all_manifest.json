@@ -1,0 +1,24 @@
+{
+  "generated_at_utc": "2026-06-18T11:45:57.931397+00:00",
+  "input": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\distinct_UA_Both_All.csv",
+  "map": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\config\\device_decode\\amazon_fire_tv_models.csv",
+  "api_url": "https://whatmyuseragent.com/api",
+  "api_limit": 0,
+  "outputs": {
+    "csv": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_lookup_both_all.csv",
+    "parquet": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_lookup_both_all.parquet",
+    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_lookup_both_all_summary.csv",
+    "unknown_review": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_lookup_both_all_unknown_review.csv",
+    "api_cache": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\cache\\device_decode\\whatmyuseragent_distinct_ua_cache.parquet"
+  },
+  "stats": {
+    "input_rows": 13256,
+    "decoded_rows": 13197,
+    "local_decoded_rows": 12146,
+    "api_decoded_rows": 1051,
+    "unknown_rows": 24,
+    "malformed_rows": 35,
+    "api_cache_rows": 1051,
+    "elapsed_seconds": 1.61
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "generated_at_utc": "2026-06-16T11:45:29.070701+00:00",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "source": "stream",
+  "row_kind": "media",
+  "start": "2026-06-15",
+  "end": "2026-06-15",
+  "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\exports\\viewer_journey\\parts\\stream_2026-06-15.parquet",
+  "stats": {
+    "index_rows": 56786,
+    "min_date": "2026-06-15",
+    "max_date": "2026-06-15",
+    "cliips": 14350,
+    "sources": 1,
+    "channels": 29,
+    "raw_watch_hours": 14883.402,
+    "status_200_watch_hours": 14123.545,
+    "raw_rows": 22565912
+  }
+}

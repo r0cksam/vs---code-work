@@ -1,0 +1,18 @@
+{
+  "generated_at_utc": "2026-06-05T09:37:11.647071+00:00",
+  "cliIP": "2400:8904::2000:b1ff:fe6b:989d",
+  "source": "all",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\exports\\cliip_journey\\raw_cliip_2400_8904_2000_b1ff_fe6b_989d_09fecd3d65_all_sources_all_available_2026-03-26_to_2026-06-05\\date_channel_volume.parquet",
+  "stats": {
+    "rows": 1809,
+    "min_date": "2026-03-26",
+    "max_date": "2026-06-05",
+    "days": 72,
+    "sources": 1,
+    "channels": 28,
+    "raw_rows": 43230378.0,
+    "raw_watch_minutes": 51489.2,
+    "status_200_watch_minutes": 0.0
+  }
+}

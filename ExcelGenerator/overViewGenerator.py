@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 overview_generator.py
-═══════════════════════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 Standalone, append-aware Overview sheet generator.
 Reproduces the exact Overview format with colored section headers.
 
-First run  → creates  <output_dir>/overview_report.xlsx
-Later runs → queries only new dates, merges with existing data,
+First run  â†’ creates  <output_dir>/overview_report.xlsx
+Later runs â†’ queries only new dates, merges with existing data,
              rewrites the file so formatting stays consistent.
 
 Run:
@@ -19,6 +19,7 @@ Requires:
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -34,53 +35,53 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # LOGGING
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 logging.basicConfig(level=logging.INFO, format="  %(levelname)-7s %(message)s")
 log = logging.getLogger("overview_generator")
 
 
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # CONSTANTS
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 IST_OFFSET        = timedelta(hours=5, minutes=30)
 OVERVIEW_FILENAME = "overview_report.xlsx"
 OVERVIEW_SHEET    = "Overview"
 
-# ── Column indices (1-indexed for openpyxl) ──────────────────
+# â”€â”€ Column indices (1-indexed for openpyxl) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #   A (1) = reserved for % Drop label
-#   B (2) = Date (IST)  …  S (19) = % Session Not Found
+#   B (2) = Date (IST)  â€¦  S (19) = % Session Not Found
 COL_DATE         = 2   # B
-COL_BYTES        = 3   # C – Total Bytes (GiB)
-COL_ROWS         = 4   # D – Total Rows* (from Parquet metadata)
-COL_IP_ROWS      = 5   # E – cliIP rows
-COL_DIST_IP      = 6   # F – Distinct cliIP
-COL_DIST_IP_UA   = 7   # G – Distinct cliIP & UA
-COL_DIST_DEV     = 8   # H – Distinct device_id
-COL_DIST_SESS    = 9   # I – Distinct session_id
-COL_UNIQ_IP      = 10  # J – UNIQUE SET: Distinct cliIP  (formula =E)
-COL_UNIQ_IP_UA   = 11  # K – UNIQUE SET: Distinct cliIP & UA  (formula =E)
-COL_SESS_AVAIL   = 12  # L – ROWS AGAINST: Session Found - ID Available
-COL_SESS_NA      = 13  # M – ROWS AGAINST: Session Found - ID NOT Available
-COL_SESS_NONE    = 14  # N – ROWS AGAINST: Session Not Found
-COL_PCT_IP       = 15  # O – % Distinct cliIP  (formula =J/$E)
-COL_PCT_IP_UA    = 16  # P – % Distinct cliIP & UA  (formula =K/$E)
-COL_PCT_SESS     = 17  # Q – % Session Found - ID Available  (formula =L/$E)
-COL_PCT_SESS_NA  = 18  # R – % Session Found - ID NOT Available  (formula =M/$E)
-COL_PCT_NONE     = 19  # S – % Session Not Found  (formula =N/$E)
+COL_BYTES        = 3   # C â€“ Total Bytes (GiB)
+COL_ROWS         = 4   # D â€“ Total Rows* (from Parquet metadata)
+COL_IP_ROWS      = 5   # E â€“ cliIP rows
+COL_DIST_IP      = 6   # F â€“ Distinct cliIP
+COL_DIST_IP_UA   = 7   # G â€“ Distinct cliIP & UA
+COL_DIST_DEV     = 8   # H â€“ Distinct device_id
+COL_DIST_SESS    = 9   # I â€“ Distinct session_id
+COL_UNIQ_IP      = 10  # J â€“ UNIQUE SET: Distinct cliIP  (formula =E)
+COL_UNIQ_IP_UA   = 11  # K â€“ UNIQUE SET: Distinct cliIP & UA  (formula =E)
+COL_SESS_AVAIL   = 12  # L â€“ ROWS AGAINST: Session Found - ID Available
+COL_SESS_NA      = 13  # M â€“ ROWS AGAINST: Session Found - ID NOT Available
+COL_SESS_NONE    = 14  # N â€“ ROWS AGAINST: Session Not Found
+COL_PCT_IP       = 15  # O â€“ % Distinct cliIP  (formula =J/$E)
+COL_PCT_IP_UA    = 16  # P â€“ % Distinct cliIP & UA  (formula =K/$E)
+COL_PCT_SESS     = 17  # Q â€“ % Session Found - ID Available  (formula =L/$E)
+COL_PCT_SESS_NA  = 18  # R â€“ % Session Found - ID NOT Available  (formula =M/$E)
+COL_PCT_NONE     = 19  # S â€“ % Session Not Found  (formula =N/$E)
 LAST_COL         = COL_PCT_NONE  # 19
 
-# ── Fixed row positions ───────────────────────────────────────
+# â”€â”€ Fixed row positions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ROW_TITLE_META   = 1
 ROW_META_START   = 2   # first key/value pair
 ROW_SECTION_HDR  = 11  # colored group header row
 ROW_COL_HDR      = 12  # column-label header row
 DATA_START_ROW   = 13  # first data row
 
-# ── Colors (hex, no leading #) ───────────────────────────────
+# â”€â”€ Colors (hex, no leading #) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 C_DARK_BLUE = "1F3864"   # title / day-breakdown section
 C_KV_BG     = "D6E4F0"   # metadata key background
 C_WHITE     = "FFFFFF"
@@ -92,9 +93,9 @@ C_ORANGE    = "E36209"   # TOTAL row
 C_ALT       = "F2F2F2"   # alternating row background
 
 
-# ══════════════════════════════════════════════════════════════
-# SECTION A – DuckDB / Lake helpers
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION A â€“ DuckDB / Lake helpers
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def get_conn() -> duckdb.DuckDBPyConnection:
     mem_avail = psutil.virtual_memory().available / (1024 ** 3)
@@ -175,7 +176,7 @@ def safe_query(con, sql: str, label: str = "") -> pd.DataFrame:
 
 
 def utc_date_to_ist_str(utc_date) -> str:
-    """Convert UTC date (date/Timestamp/datetime) → 'DD/MM/YY' IST string."""
+    """Convert UTC date (date/Timestamp/datetime) â†’ 'DD/MM/YY' IST string."""
     if isinstance(utc_date, pd.Timestamp):
         dt = utc_date.to_pydatetime()
     elif isinstance(utc_date, datetime):
@@ -185,9 +186,9 @@ def utc_date_to_ist_str(utc_date) -> str:
     return (dt + IST_OFFSET).strftime("%d/%m/%y")
 
 
-# ══════════════════════════════════════════════════════════════
-# SECTION B – Prompt helpers
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION B â€“ Prompt helpers
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def prompt_path(question: str) -> Path:
     while True:
@@ -198,11 +199,31 @@ def prompt_path(question: str) -> Path:
         p = Path(raw).expanduser().resolve()
         if p.is_dir():
             return p
-        print(f"  ❌ Directory not found: {p}")
+        print(f"  âŒ Directory not found: {p}")
 
 
-def prompt_year_month(lake_root: Path) -> tuple[str | None, str | None]:
-    print("\n📅  Filter by month? (y/n): ", end="")
+def prompt_year_month(
+    lake_root: Path,
+    year_pref: str | None = None,
+    month_pref: str | None = None,
+) -> tuple[str | None, str | None]:
+    if year_pref is not None or month_pref is not None:
+        year = year_pref.strip() if year_pref else None
+        month = month_pref.strip() if month_pref else None
+        if year and (not year.isdigit() or len(year) != 4):
+            raise SystemExit("Month filter year must be YYYY.")
+        if month and (not month.isdigit() or len(month) != 2 or not (1 <= int(month) <= 12)):
+            raise SystemExit("Month filter month must be MM (01-12).")
+        if month and not year:
+            raise SystemExit("Month cannot be provided without year.")
+        if year and month:
+            partition = lake_root / f"year={year}" / f"month={month}"
+            if not partition.exists():
+                print(f"  âš ï¸  Partition not found: {partition}. Continuing with full lake.")
+                return None, None
+        return year, month
+
+    print("\nðŸ“…  Filter by month? (y/n): ", end="")
     try:
         if input().strip().lower() != "y":
             return None, None
@@ -217,17 +238,17 @@ def prompt_year_month(lake_root: Path) -> tuple[str | None, str | None]:
             y = input("  Year (e.g. 2026): ").strip()
             if y.isdigit() and 2000 <= int(y) <= 2100:
                 break
-            print("  ❌ Invalid year")
+            print("  âŒ Invalid year")
         while True:
-            m = input("  Month 1–12: ").strip()
+            m = input("  Month 1â€“12: ").strip()
             if m.isdigit() and 1 <= int(m) <= 12:
                 break
-            print("  ❌ Invalid month")
+            print("  âŒ Invalid month")
         year_str  = y
         month_str = f"{int(m):02d}"
         partition = lake_root / f"year={year_str}" / f"month={month_str}"
         if not partition.exists():
-            print(f"  ⚠️  Partition not found: {partition}. Continue? (y/n): ", end="")
+            print(f"  âš ï¸  Partition not found: {partition}. Continue? (y/n): ", end="")
             if input().strip().lower() != "y":
                 return None, None
         return year_str, month_str
@@ -236,9 +257,9 @@ def prompt_year_month(lake_root: Path) -> tuple[str | None, str | None]:
         return None, None
 
 
-# ══════════════════════════════════════════════════════════════
-# SECTION C – Append helpers  (read existing Overview data)
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION C â€“ Append helpers  (read existing Overview data)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def get_existing_dates(output_path: Path) -> set[str]:
     """Return the set of 'DD/MM/YY' IST date strings already in the Overview."""
@@ -262,6 +283,32 @@ def get_existing_dates(output_path: Path) -> set[str]:
     except Exception as exc:
         log.warning(f"Could not read existing dates: {exc}")
         return set()
+
+
+def get_existing_row_counts(output_path: Path) -> dict[str, int]:
+    """Return existing Overview row counts by 'DD/MM/YY' IST date."""
+    if not output_path.exists():
+        return {}
+    try:
+        wb = load_workbook(output_path, read_only=True, data_only=True)
+        if OVERVIEW_SHEET not in wb.sheetnames:
+            wb.close()
+            return {}
+        ws = wb[OVERVIEW_SHEET]
+        counts: dict[str, int] = {}
+        for row in ws.iter_rows(min_row=DATA_START_ROW, values_only=True):
+            date_val = row[COL_DATE - 1]
+            if not date_val or not isinstance(date_val, str) or "/" not in str(date_val):
+                break
+            try:
+                counts[str(date_val).strip()] = int(row[COL_ROWS - 1] or 0)
+            except Exception:
+                counts[str(date_val).strip()] = 0
+        wb.close()
+        return counts
+    except Exception as exc:
+        log.warning(f"Could not read existing row counts: {exc}")
+        return {}
 
 
 def load_existing_rows(output_path: Path) -> list[dict]:
@@ -309,9 +356,9 @@ def load_existing_rows(output_path: Path) -> list[dict]:
         return []
 
 
-# ══════════════════════════════════════════════════════════════
-# SECTION D – DuckDB query
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION D â€“ DuckDB query
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def query_new_dates(
     con,
@@ -319,17 +366,17 @@ def query_new_dates(
     year: str | None,
     month: str | None,
     cols: set[str],
-    existing_dates: set[str],
+    existing_row_counts: dict[str, int],
     day_counts: dict[str, int],
 ) -> list[dict]:
-    """Query DuckDB for day-by-day stats, skip dates already in existing_dates."""
+    """Query DuckDB for day-by-day stats, refreshing dates whose parquet row count changed."""
     ip_col = "cliIP"
     ua_col = "UA"
     qs_col = "queryStr"
     ts_col = "reqTimeSec"
 
     if ts_col not in cols:
-        log.warning("reqTimeSec not found — cannot build day breakdown.")
+        log.warning("reqTimeSec not found â€” cannot build day breakdown.")
         return []
 
     has_ip = ip_col in cols
@@ -385,11 +432,14 @@ def query_new_dates(
     new_rows: list[dict] = []
     for _, row in df.iterrows():
         ist_str = utc_date_to_ist_str(row["utc_date"])
-        if ist_str in existing_dates:
-            log.info(f"  Skipping {ist_str} (already loaded)")
-            continue
-        utc_key   = str(row["utc_date"])
+        utc_key = pd.to_datetime(row["utc_date"]).strftime("%Y-%m-%d")
         pa_count  = day_counts.get(utc_key, int(row["total_rows"]))
+        existing_count = existing_row_counts.get(ist_str)
+        if existing_count == pa_count:
+            log.info(f"  Skipping {ist_str} (already loaded, {pa_count:,} rows unchanged)")
+            continue
+        if existing_count is not None:
+            log.info(f"  Refreshing {ist_str} (row count changed {existing_count:,} -> {pa_count:,})")
         bytes_gib = (
             float(row["total_bytes"]) / (1024 ** 3)
             if has_tb and pd.notna(row["total_bytes"]) else 0.0
@@ -410,9 +460,9 @@ def query_new_dates(
     return new_rows
 
 
-# ══════════════════════════════════════════════════════════════
-# SECTION E – openpyxl style helpers
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION E â€“ openpyxl style helpers
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _fill(hex_color: str) -> PatternFill:
     return PatternFill("solid", fgColor=hex_color)
@@ -454,9 +504,9 @@ def _write(
     return c
 
 
-# ══════════════════════════════════════════════════════════════
-# SECTION F – Excel writer
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION F â€“ Excel writer
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def write_overview_excel(
     output_path:      Path,
@@ -474,7 +524,7 @@ def write_overview_excel(
     ws = wb.active
     ws.title = OVERVIEW_SHEET
 
-    # ── Column widths ─────────────────────────────────────────
+    # â”€â”€ Column widths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.column_dimensions["A"].width = 30     # % Drop label
     ws.column_dimensions["B"].width = 14     # Date
     ws.column_dimensions["C"].width = 14     # Bytes
@@ -499,13 +549,13 @@ def write_overview_excel(
     ws.row_dimensions[ROW_SECTION_HDR].height = 22
     ws.row_dimensions[ROW_COL_HDR].height     = 42
 
-    # ── Row 1: "📊 Report Metadata" title ──────────────────────
+    # â”€â”€ Row 1: "ðŸ“Š Report Metadata" title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.merge_cells(start_row=ROW_TITLE_META, start_column=2,
                    end_row=ROW_TITLE_META, end_column=3)
-    _write(ws, ROW_TITLE_META, 2, "📊  Report Metadata",
+    _write(ws, ROW_TITLE_META, 2, "ðŸ“Š  Report Metadata",
            fill_hex=C_DARK_BLUE, font_color=C_WHITE, bold=True)
 
-    # ── Rows 2–9: key/value metadata ──────────────────────────
+    # â”€â”€ Rows 2â€“9: key/value metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ist_now = datetime.now(timezone.utc) + IST_OFFSET
     kv_pairs = [
         ("Report generated",      ist_now.strftime("%Y-%m-%d %H:%M IST")),
@@ -523,9 +573,9 @@ def write_overview_excel(
         _write(ws, r, 2, key, fill_hex=C_KV_BG, font_color=C_BLACK, bold=True)
         _write(ws, r, 3, val, fill_hex=C_WHITE,  font_color=C_BLACK, bold=False)
 
-    # ── Row 11: colored section-group headers (merged) ────────
+    # â”€â”€ Row 11: colored section-group headers (merged) â”€â”€â”€â”€â”€â”€â”€â”€
     section_groups = [
-        (2,  5,  "📅  Day-by-Day Breakdown (IST dates)", C_DARK_BLUE),
+        (2,  5,  "ðŸ“…  Day-by-Day Breakdown (IST dates)", C_DARK_BLUE),
         (6,  9,  "UNIQUE SET",                           C_GREEN),
         (10, 14, "ROWS AGAINST - UNIQUE SET",            C_AMBER),
         (15, 19, "% Data of TOTAL",                      C_PURPLE),
@@ -543,7 +593,7 @@ def write_overview_excel(
         cell.border = _thin_border()           
         cell.alignment = _align("center")
 
-    # ── Row 12: column labels (match section colors) ──────────
+    # â”€â”€ Row 12: column labels (match section colors) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     col_labels = [
         (COL_DATE,       "Date (IST)",                      C_DARK_BLUE),
         (COL_BYTES,      "Total Bytes (GiB)",                C_DARK_BLUE),
@@ -569,7 +619,7 @@ def write_overview_excel(
                fill_hex=color, font_color=C_WHITE, bold=True,
                h_align="center", wrap=True)
 
-    # ── Rows 13+: data rows ────────────────────────────────────
+    # â”€â”€ Rows 13+: data rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     e_ltr = get_column_letter(COL_IP_ROWS)   # E
     j_ltr = get_column_letter(COL_UNIQ_IP)   # J
     k_ltr = get_column_letter(COL_UNIQ_IP_UA) # K
@@ -589,14 +639,14 @@ def write_overview_excel(
         _write(ws, r, COL_DIST_IP_UA, d["dist_ip_ua"],bg, C_BLACK, h_align="right", num_fmt="#,##0")
         _write(ws, r, COL_DIST_DEV,   d["dist_dev"],   bg, C_BLACK, h_align="right", num_fmt="#,##0")
         _write(ws, r, COL_DIST_SESS,  d["dist_sess"],  bg, C_BLACK, h_align="right", num_fmt="#,##0")
-        # UNIQUE SET – mirrors cliIP rows (col E)
+        # UNIQUE SET â€“ mirrors cliIP rows (col E)
         _write(ws, r, COL_UNIQ_IP,    f"={e_ltr}{r}",  bg, C_BLACK, h_align="right", num_fmt="#,##0")
         _write(ws, r, COL_UNIQ_IP_UA, f"={e_ltr}{r}",  bg, C_BLACK, h_align="right", num_fmt="#,##0")
         # ROWS AGAINST
         _write(ws, r, COL_SESS_AVAIL, d["sess_avail"], bg, C_BLACK, h_align="right", num_fmt="#,##0")
         _write(ws, r, COL_SESS_NA,    d["sess_na"],     bg, C_BLACK, h_align="right", num_fmt="#,##0")
         _write(ws, r, COL_SESS_NONE,  d["sess_none"],   bg, C_BLACK, h_align="right", num_fmt="#,##0")
-        # % Data of TOTAL – formula /{E locked}
+        # % Data of TOTAL â€“ formula /{E locked}
         cur_e = f"${e_ltr}{r}"
         _write(ws, r, COL_PCT_IP,     f"={j_ltr}{r}/{cur_e}", bg, C_BLACK, h_align="right", num_fmt="0.00%")
         _write(ws, r, COL_PCT_IP_UA,  f"={k_ltr}{r}/{cur_e}", bg, C_BLACK, h_align="right", num_fmt="0.00%")
@@ -608,7 +658,7 @@ def write_overview_excel(
     data_end_row = r - 1   # last data row (1-indexed)
     total_row    = r        # TOTAL is immediately after last data row
 
-    # ── TOTAL row (orange) ─────────────────────────────────────
+    # â”€â”€ TOTAL row (orange) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _write(ws, total_row, COL_DATE, "TOTAL*",
            fill_hex=C_ORANGE, font_color=C_WHITE, bold=True, h_align="left")
     sum_cols = [
@@ -625,7 +675,7 @@ def write_overview_excel(
                fill_hex=C_ORANGE, font_color=C_WHITE, bold=True,
                h_align="right", num_fmt=nfmt)
 
-    # ── % Drop/Gain row (2 rows below TOTAL) ──────────────────
+    # â”€â”€ % Drop/Gain row (2 rows below TOTAL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     drop_row = total_row + 2
     ws.merge_cells(start_row=drop_row, start_column=1,
                    end_row=drop_row, end_column=2)
@@ -652,79 +702,92 @@ def write_overview_excel(
                    f"=({ltr}{last_full}/AVERAGE({ltr}{avg_start}:{ltr}{avg_end}))-1",
                    font_color=C_BLACK, h_align="right", num_fmt="0.00%")
 
-    # ── Footnote ───────────────────────────────────────────────
+    # â”€â”€ Footnote â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     fn_row = drop_row + 2
     c = ws.cell(row=fn_row, column=COL_DATE,
                 value="* Total Rows sourced from Parquet file metadata (zero-scan). "
                       "All other columns via DuckDB aggregation.")
     c.font = _font(C_BLACK, bold=False)
 
-    # ── Freeze top rows and date column ───────────────────────
+    # â”€â”€ Freeze top rows and date column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.freeze_panes = ws.cell(row=DATA_START_ROW, column=COL_DATE + 1)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(output_path))
 
 
-# ══════════════════════════════════════════════════════════════
-# SECTION G – Main run
-# ══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION G â€“ Main run
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-def run(lake_root: Path) -> None:
-    print("\n" + "═" * 60)
-    print("  Overview Generator  –  append-aware")
-    print("═" * 60 + "\n")
+def run(
+    lake_root: Path,
+    out_dir: Path | None = None,
+    year_pref: str | None = None,
+    month_pref: str | None = None,
+    auto_confirm: bool = False,
+) -> None:
+    print("\n" + "â•" * 60)
+    print("  Overview Generator  â€“  append-aware")
+    print("â•" * 60 + "\n")
 
-    # ── Output directory ──────────────────────────────────────
-    print("💾  Output folder (Excel will be saved / updated here):")
-    out_dir     = prompt_path("  Output folder path: ")
+    # â”€â”€ Output directory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if out_dir is None:
+        print("  Output folder (Excel will be saved / updated here):")
+        out_dir = prompt_path("  Output folder path: ")
+    else:
+        out_dir = out_dir.expanduser().resolve()
+        if not out_dir.exists():
+            out_dir.mkdir(parents=True, exist_ok=True)
     output_file = out_dir / OVERVIEW_FILENAME
     is_first    = not output_file.exists()
 
     existing_dates = get_existing_dates(output_file)
+    existing_row_counts = get_existing_row_counts(output_file)
     if is_first:
-        print("\n  📋  No existing file — will create fresh.")
+        print("\n  ðŸ“‹  No existing file â€” will create fresh.")
     else:
         sorted_d = sorted(existing_dates)
-        print(f"\n  📋  Found existing file with {len(existing_dates)} date(s) loaded.")
+        print(f"\n  ðŸ“‹  Found existing file with {len(existing_dates)} date(s) loaded.")
         if sorted_d:
             print(f"      Earliest: {sorted_d[0]}   Latest: {sorted_d[-1]}")
 
-    # ── Date filter ───────────────────────────────────────────
-    year_filter, month_filter = prompt_year_month(lake_root)
+    # â”€â”€ Date filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    year_filter, month_filter = prompt_year_month(lake_root, year_pref, month_pref)
 
-    # ── Confirm ───────────────────────────────────────────────
-    print("\n" + "─" * 60)
+    # â”€â”€ Confirm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    print("\n" + "â”€" * 60)
     print(f"  Lake        : {lake_root}")
     print(f"  Output file : {output_file}")
     print(f"  Filter      : " + (
         f"year={year_filter}" + (f", month={month_filter}" if month_filter else "")
         if year_filter else "none (full lake)"
     ))
-    print(f"  Mode        : {'CREATE (first run)' if is_first else 'APPEND (new dates only)'}")
-    print("─" * 60)
-    if input("\n  Proceed? (y/n): ").strip().lower() != "y":
-        print("  Cancelled.")
-        return
+    print(f"  Mode        : {'CREATE (first run)' if is_first else 'APPEND/REFRESH (new or changed dates)'}")
+    print("â”€" * 60)
+    if not auto_confirm:
+        if input("\n  Proceed? (y/n): ").strip().lower() != "y":
+            print("  Cancelled.")
+            return
 
-    # ── Parquet metadata (zero-scan) ──────────────────────────
-    log.info("Reading Parquet metadata (zero-scan) …")
+    # â”€â”€ Parquet metadata (zero-scan) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    log.info("Reading Parquet metadata (zero-scan) â€¦")
     day_counts  = pa_row_counts_by_day(lake_root, year_filter, month_filter)
     total_rows  = sum(day_counts.values())
     scan_root   = lake_root / f"year={year_filter}" if year_filter else lake_root
     total_files = pa_total_file_count(scan_root)
     log.info(f"  {total_rows:,} rows across {total_files:,} parquet files")
 
-    # ── Schema detection ──────────────────────────────────────
-    log.info("Detecting schema …")
+    # â”€â”€ Schema detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    log.info("Detecting schema â€¦")
     cols = pa_schema(lake_root, year_filter, month_filter)
     log.info(f"  {len(cols)} columns detected")
 
-    # ── DuckDB connection ─────────────────────────────────────
-    log.info("Connecting to DuckDB …")
+    # â”€â”€ DuckDB connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    log.info("Connecting to DuckDB â€¦")
     con = get_conn()
 
-    # ── Date range metadata ───────────────────────────────────
+    # â”€â”€ Date range metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     date_range_ist = time_range_ist = "N/A"
     ts = "reqTimeSec"
     if ts in cols:
@@ -740,35 +803,35 @@ def run(lake_root: Path) -> None:
         if not meta.empty:
             row = meta.iloc[0]
             date_range_ist = (
-                f"{(row['min_d']  + IST_OFFSET).strftime('%Y-%m-%d')} → "
+                f"{(row['min_d']  + IST_OFFSET).strftime('%Y-%m-%d')} â†’ "
                 f"{(row['max_d']  + IST_OFFSET).strftime('%Y-%m-%d')}"
             )
             time_range_ist = (
-                f"{(row['min_ts'] + IST_OFFSET).strftime('%Y-%m-%d %H:%M:%S')} → "
+                f"{(row['min_ts'] + IST_OFFSET).strftime('%Y-%m-%d %H:%M:%S')} â†’ "
                 f"{(row['max_ts'] + IST_OFFSET).strftime('%Y-%m-%d %H:%M:%S')}"
             )
 
-    # ── Query new dates ───────────────────────────────────────
-    log.info("Querying day-by-day breakdown …")
+    # â”€â”€ Query new dates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    log.info("Querying day-by-day breakdown â€¦")
     new_rows = query_new_dates(
         con, lake_root, year_filter, month_filter,
-        cols, existing_dates, day_counts,
+        cols, existing_row_counts, day_counts,
     )
     con.close()
 
     if not new_rows:
-        print("\n  ✅  Nothing new to add — your file is already up to date.")
+        print("\n  âœ…  Nothing new to add â€” your file is already up to date.")
         return
 
-    skipped = len(existing_dates)
-    print(f"\n  ➕  {len(new_rows)} new date(s) to add."
-          + (f" ({skipped} already existed, skipped)" if skipped else ""))
+    unchanged = sum(1 for date, count in existing_row_counts.items() if day_counts.get(datetime.strptime(date, "%d/%m/%y").strftime("%Y-%m-%d")) == count)
+    print(f"\n  âž•  {len(new_rows)} date(s) to add/refresh."
+          + (f" ({unchanged} existing date(s) unchanged)" if unchanged else ""))
 
-    # ── Merge with existing ───────────────────────────────────
+    # â”€â”€ Merge with existing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if is_first:
         all_rows = new_rows
     else:
-        log.info("Loading existing data rows …")
+        log.info("Loading existing data rows â€¦")
         old_rows = load_existing_rows(output_file)
         # Remove overlap (safety) then combine
         new_dates_set = {r["ist_date"] for r in new_rows}
@@ -776,8 +839,8 @@ def run(lake_root: Path) -> None:
         all_rows = old_rows + new_rows
         all_rows.sort(key=lambda x: datetime.strptime(x["ist_date"], "%d/%m/%y"))
 
-    # ── Write Excel ───────────────────────────────────────────
-    log.info(f"Writing {len(all_rows)} total rows to Excel …")
+    # â”€â”€ Write Excel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    log.info(f"Writing {len(all_rows)} total rows to Excel â€¦")
     write_overview_excel(
         output_path    = output_file,
         data_rows      = all_rows,
@@ -790,33 +853,65 @@ def run(lake_root: Path) -> None:
         time_range_ist = time_range_ist,
     )
 
-    print(f"\n{'═' * 60}")
-    print(f"  ✅  Overview saved: {output_file}")
-    print(f"{'═' * 60}\n")
+    print(f"\n{'â•' * 60}")
+    print(f"  âœ…  Overview saved: {output_file}")
+    print(f"{'â•' * 60}\n")
 
 
 def main() -> None:
-    print("\n" + "═" * 60)
-    print("  Overview Report Generator")
-    print("═" * 60)
+    parser = argparse.ArgumentParser(description="Overview report generator")
+    parser.add_argument("lake_root", nargs="?", default=None, help="Lake folder path (year=/month=/day=/... partitions)")
+    parser.add_argument("--lake-root", dest="lake_root_opt", default=None)
+    parser.add_argument("--out-dir", default=None, help="Folder to write overview_report.xlsx")
+    parser.add_argument("--year", default=None, help="Filter YYYY (e.g. 2026)")
+    parser.add_argument("--month", default=None, help="Filter MM (01-12)")
+    parser.add_argument("--yes", action="store_true", help="Run without interactive confirmation")
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Compatibility alias for --yes",
+    )
 
-    if len(sys.argv) > 1:
-        lake_root = Path(sys.argv[1]).resolve()
-        if not lake_root.is_dir():
-            log.error(f"Lake folder not found: {lake_root}")
-            sys.exit(1)
-        log.info(f"Lake folder (from CLI): {lake_root}")
-    else:
-        print("\n📁  Lake folder – must contain year=* partitions")
+    args = parser.parse_args()
+    lake_root = Path(args.lake_root_opt or args.lake_root or "").expanduser() if (args.lake_root_opt or args.lake_root) else None
+
+    if lake_root is None or not lake_root.is_dir():
+        env_lake = os.getenv("VG_DASH_LAKE_ROOT")
+        if env_lake:
+            lake_root = Path(env_lake).expanduser()
+        else:
+            candidate = Path(
+                os.getenv(
+                    "VG_ETL_BASE",
+                    str(Path.home() / "Veto Stream Logs"),
+                )
+            ).expanduser()
+            lake_root = candidate / "lake"
+
+    if not lake_root.is_dir():
+        print("\nðŸ“  Lake folder â€“ must contain year=* partitions")
         lake_root = prompt_path("  Lake folder path: ")
-        year_dirs = [d for d in lake_root.iterdir() if d.is_dir() and d.name.startswith("year=")]
-        if not year_dirs:
-            print(f"  ⚠️  No year= partitions found in {lake_root}. Continue? (y/n): ", end="")
-            if input().strip().lower() != "y":
-                sys.exit(0)
 
-    run(lake_root)
+    if args.out_dir:
+        out_dir = Path(args.out_dir).expanduser().resolve()
+    else:
+        out_dir = Path(
+            os.getenv(
+                "VG_DASH_OVERVIEW_BASE",
+                str(Path(__file__).resolve().parent),
+            )
+        ).resolve()
+
+    run(
+        lake_root=lake_root,
+        out_dir=out_dir,
+        year_pref=args.year,
+        month_pref=args.month,
+        auto_confirm=args.yes or args.auto,
+    )
 
 
 if __name__ == "__main__":
     main()
+
+
