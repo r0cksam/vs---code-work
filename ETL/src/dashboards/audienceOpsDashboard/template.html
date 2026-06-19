@@ -516,6 +516,29 @@ function uniqueIpMetricForScope(){
         note:days>1?("STREAM content platform daily cliIP sum across "+days+" days"):"STREAM content platform distinct cliIP"
       };
     }
+    if(state.channel!=="all"){
+      return {
+        available:false,
+        value:0,
+        rows:platformChannelRows(),
+        kind:"fast_platform_channel_unique_ip_unavailable",
+        note:"FAST platform+channel total distinct cliIP is not available. Host-level IP is platform-wide and would overstate this channel."
+      };
+    }
+    const hostRows=latencyRowsForScope("ts");
+    const hostIps=sum(hostRows,"approx_unique_ips");
+    if(hostRows.length&&hostIps>0){
+      const hostCount=selectedFastReqHosts().length;
+      const days=selectedDayCount(hostRows);
+      const hostScope=hostCount>1?("across "+hostCount+" selected FAST hosts"):"for selected FAST host";
+      return {
+        available:true,
+        value:hostIps,
+        rows:hostRows,
+        kind:"fast_host_cliip_sum",
+        note:days>1?("Host-level .ts approx cliIP daily sum "+hostScope+" across "+days+" days"):"Host-level .ts approx cliIP from latency mart "+hostScope
+      };
+    }
     const rows=platformChannelRows();
     const days=selectedDayCount(rows);
     const peak=max(rows,"peak_unique_viewers");
@@ -642,13 +665,14 @@ function latencyRowsForScope(extension){
 function scopedManifestViews(){
   const content=streamContentRows();
   if((state.platform!=="all"||state.channel!=="all")&&content.length)return sum(content,"m3u8_rows");
-  if(state.platform!=="all"&&state.channel!=="all")return null;
+  if(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all")return null;
   const rows=latencyRowsForScope("m3u8");
   if(rows.length)return sum(rows,"rows");
   if(state.platform==="all"&&state.channel==="all")return sum(filterRows(DATA.daily||[],{channel:false,platform:false}),"m3u8_rows");
   return null;
 }
 function scopedVideoBandwidthBytes(){
+  if(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all")return null;
   const rows=latencyRowsForScope("ts");
   if(!rows.length)return null;
   return rows.reduce(function(a,r){return a+n(r.rows)*n(r.avg_total_bytes)},0);
@@ -712,11 +736,13 @@ function renderStakeholderKpis(){
   const ipHint=ipMetric.value;
   const reqHours=requestHours(rows);
   const ident=identityTotals();
-  const channelManifestNote=views==null?"Platform + channel master manifest split is not available":(canUseDailyScope?"Master manifest requests from daily mart":"Master manifest requests from latency profile mart");
+  const channelManifestNote=views==null
+    ?(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all"?"FAST platform+channel manifest split is not available; host m3u8 is platform-wide":"Platform + channel master manifest split is not available")
+    :(canUseDailyScope?"Master manifest requests from daily mart":"Master manifest requests from latency profile mart");
   const notAvailable="Not Available";
   const identityMissingNote=state.source==="fast"?"FAST CDN queryStr has no device_id/session_id evidence":"Identity mart has no rows for this selected filter/date";
-  const avgWatchNote=ipMetric.kind==="fast_active_peak"?"Request hours / peak active cliIP estimate":(ipMetric.available?"Request hours / selected Unique IP denominator":"Unique IP denominator is not available for this scope");
-  const ipSessionNote=ipMetric.kind==="fast_active_peak"?"Peak active IP estimate; FAST session_id unavailable":(ipMetric.available?(ident.hasIdentity?"IP from selected watch mart; session_id from identity mart":"Distinct sessions are not available for this source/filter"):"Unique IP + distinct session mart is not available");
+  const avgWatchNote=ipMetric.kind==="fast_active_peak"?"Request hours / peak active cliIP estimate":(ipMetric.available?"Request hours / selected Unique IP denominator":ipMetric.note||"Unique IP denominator is not available for this scope");
+  const ipSessionNote=ipMetric.kind==="fast_active_peak"?"Peak active IP estimate; FAST session_id unavailable":(ipMetric.available?(ident.hasIdentity?"IP from selected watch mart; session_id from identity mart":"Distinct sessions are not available for this source/filter"):(ipMetric.note||"Unique IP + distinct session mart is not available"));
   const sessionText=ident.hasIdentity?fmtInt(ident.sessions):notAvailable;
   const deviceText=ident.hasIdentity?fmtInt(ident.devices):notAvailable;
   el("stakeholderKpis").innerHTML=[
@@ -741,9 +767,9 @@ function renderViewershipTrend(){
   const bandwidth=scopedVideoBandwidthBytes();
   el("viewershipKpis").innerHTML=[
     kpi("Total Viewership (Hours)",fmt(hours,1)+" h","Request-hour basis: .ts segments * 6 sec",""),
-    kpi("Avg Watch Time/User",ipMetric.available&&ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipMetric.kind==="fast_active_peak"?"Based on peak active cliIP estimate":(ipMetric.available?"Based on selected Unique IP denominator":"Unique IP denominator unavailable for this scope"),ipMetric.available?"gold":"wip-box"),
+    kpi("Avg Watch Time/User",ipMetric.available&&ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipMetric.kind==="fast_active_peak"?"Based on peak active cliIP estimate":(ipMetric.available?"Based on selected Unique IP denominator":ipMetric.note||"Unique IP denominator unavailable for this scope"),ipMetric.available?"gold":"wip-box"),
     kpi("Total Segments Played",fmtInt(segments),"Total .ts segment request rows","green"),
-    kpi("Total Bandwidth (Video)",bandwidth!=null?fmtBytes(bandwidth):"Not Available",bandwidth!=null?".ts rows * avg_total_bytes from latency mart":"Bandwidth unavailable for platform + channel combined split","gold")
+    kpi("Total Bandwidth (Video)",bandwidth!=null?fmtBytes(bandwidth):"Not Available",bandwidth!=null?".ts rows * avg_total_bytes from latency mart":(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all"?"FAST platform+channel bandwidth split is not available; host traffic is platform-wide":"Bandwidth unavailable for platform + channel combined split"),bandwidth!=null?"gold":"wip-box")
   ].join("");
   const byDay=new Map();
   rows.forEach(function(r){
@@ -926,22 +952,30 @@ function renderPieWithTable(chartId,tableId,rows,labelFn,metric,valueLabel,decim
   renderTable(tableId,["Value",valueLabel,"Share"],ranked.map(function(r){return [r.key,fmt(n(r[metric]),decimals==null?1:decimals),pct(total?n(r[metric])*100/total:0)]}),[1,2]);
 }
 function renderPlaytimePies(){
-  const splitSelected=state.platform!=="all"||state.channel!=="all";
-  if(splitSelected){
+  if(state.platform!=="all"){
     [["playGeoChart","playGeoTable"],["playPlatformChart","playPlatformTable"],["playOsChart","playOsTable"],["ipGeoChart","ipGeoTable"],["ipPlatformChart","ipPlatformTable"],["ipOsChart","ipOsTable"],["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
       clearChart(pair[0],"Not Available for selected platform/channel split in current source-level marts");
       renderTable(pair[1],["Metric","Status"],[["Platform/channel split","Not Available"]],[]);
     });
     return;
   }
-  const geo=filterRows(DATA.geo_daily||[],{channel:false,platform:false});
+  const geo=state.channel==="all"
+    ?filterRows(DATA.geo_daily||[],{channel:false,platform:false})
+    :filterRows(DATA.channel_geo_daily||[],{channel:true,platform:false});
+  renderPieWithTable("playGeoChart","playGeoTable",geo,geoLabel,"raw_watch_hours","Hours",1);
+  renderPieWithTable("ipGeoChart","ipGeoTable",geo,geoLabel,"approx_unique_ips","Approx IPs",0);
+  if(state.channel!=="all"){
+    [["playPlatformChart","playPlatformTable"],["playOsChart","playOsTable"],["ipPlatformChart","ipPlatformTable"],["ipOsChart","ipOsTable"],["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
+      clearChart(pair[0],"Channel-level UA/device split is Not Available in current processed marts");
+      renderTable(pair[1],["Metric","Status"],[["Channel-level UA/device split","Not Available"]],[]);
+    });
+    return;
+  }
   const uaPlatform=filterRows(DATA.ua_platform_daily||[],{channel:false,platform:false});
   const uaOs=filterRows(DATA.ua_os_daily||[],{channel:false,platform:false});
   const uaBrand=filterRows(DATA.ua_brand_daily||[],{channel:false,platform:false});
   const uaForm=filterRows(DATA.ua_form_factor_daily||[],{channel:false,platform:false});
   const uaQuality=filterRows(DATA.ua_decode_quality_daily||[],{channel:false,platform:false});
-  renderPieWithTable("playGeoChart","playGeoTable",geo,geoLabel,"raw_watch_hours","Hours",1);
-  renderPieWithTable("ipGeoChart","ipGeoTable",geo,geoLabel,"approx_unique_ips","Approx IPs",0);
   renderPieWithTable("playPlatformChart","playPlatformTable",uaPlatform,function(r){return r.ua_platform||"Others"},"playtime_hours","Hours",1);
   renderPieWithTable("ipPlatformChart","ipPlatformTable",uaPlatform,function(r){return r.ua_platform||"Others"},"approx_unique_ips","Approx IPs",0);
   renderPieWithTable("playOsChart","playOsTable",uaOs,function(r){return r.ua_os||"Others"},"playtime_hours","Hours",1);
@@ -995,16 +1029,19 @@ function renderReliability(){
 
 function renderGeoDevice(){
   if(state.platform!=="all"){
-    clearChart("geoChart","Platform-level geo mart is Not Available in current FAST data.");
+    clearChart("geoChart","Platform-level geo mart is Not Available in current processed data.");
     renderTable("geoTable",["Geo","Status"],[["Platform-level geography","Not Available"]],[]);
     clearChart("deviceChart","Platform-level device decode mart is Not Available in current FAST data.");
     renderTable("deviceTable",["Device / Platform","Status"],[["Platform-level device decode","Not Available"]],[]);
     return;
   }
-  const geo=filterRows(DATA.geo_daily||[],{channel:false});
+  const geo=state.channel==="all"
+    ?filterRows(DATA.geo_daily||[],{channel:false})
+    :filterRows(DATA.channel_geo_daily||[],{channel:true,platform:false});
   const ranked=topBy(geo,function(r){return [r.country||"Unknown",r.state||"Unknown",r.city||"Unknown"].join(" / ")}, "raw_watch_hours", 15);
   draw("geoChart",barConfig(ranked.map(function(r){return r.key}),ranked.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[2],"y"));
-  renderTable("geoTable",["Geo","Raw Hours","Status 200 Hours","Approx IPs"],ranked.map(function(r){return [r.key,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips)]}),[1,2,3]);
+  const scopeLabel=state.channel==="all"?"All channels":"Channel: "+state.channel;
+  renderTable("geoTable",["Geo","Scope","Raw Hours","Status 200 Hours","Approx IPs"],ranked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips)]}),[2,3,4]);
   const devRows=filterRows(DATA.ua_device_detail_daily||[],{channel:false,platform:false});
   const dev=topBy(devRows,function(r){return r.device_identity||r.brand_label||r.form_factor_label||"Unknown / Needs Review"}, "playtime_hours", 15);
   const samples=new Map();

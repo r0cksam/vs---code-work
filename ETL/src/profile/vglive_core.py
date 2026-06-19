@@ -49,6 +49,7 @@ PATH_MAP = {
     "vglive-sk-479089": "India TV SpeedNews",
     "vglive-sk-912213": "India TV Adalat",
     "vglive-sk-699286": "India TV Yoga",
+    "speednews": "India TV SpeedNews",
 
     # High-confidence path IDs observed in the lake.
     "national": "NewsNation",

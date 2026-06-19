@@ -392,6 +392,18 @@ def build_geo(watch_dir: Path) -> pd.DataFrame:
     return geo.sort_values(["log_date", "source", "raw_watch_hours"], ascending=[True, True, False])
 
 
+def build_channel_geo(watch_dir: Path) -> pd.DataFrame:
+    channel_geo = read_parquet(watch_dir / "channel_geo_daily.parquet")
+    if channel_geo.empty:
+        return channel_geo
+    channel_geo = numeric(
+        channel_geo,
+        ["raw_watch_hours", "status_200_watch_hours", "raw_ts_rows", "status_200_ts_rows", "approx_unique_ips"],
+    )
+    channel_geo["log_date"] = date_string(channel_geo["log_date"])
+    return channel_geo.sort_values(["log_date", "source", "channel_name", "raw_watch_hours"], ascending=[True, True, True, False])
+
+
 def normalize_ua(value: Any) -> str:
     text = str(value or "").strip()
     for _ in range(5):
@@ -961,6 +973,7 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     overview_daily = build_overview_daily(output_root)
     channel = build_channel(watch_dir)
     geo = build_geo(watch_dir)
+    channel_geo = build_channel_geo(watch_dir)
     ua_playtime = build_ua_playtime(watch_dir, device_dir)
     latency = build_latency(latency_dir)
     concurrency = build_concurrency(concurrency_dir)
@@ -973,6 +986,7 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     overview_daily = filter_source(overview_daily, source)
     channel = filter_source(channel, source)
     geo = filter_source(geo, source)
+    channel_geo = filter_source(channel_geo, source)
     ua_playtime = filter_frame_dict(ua_playtime, source)
     latency = filter_frame_dict(latency, source)
     concurrency = filter_frame_dict(concurrency, source)
@@ -986,13 +1000,14 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
 
     min_date, max_date = completed_date_window(
         daily,
-        [channel, geo, latency["daily"], concurrency["summary"], identity["daily"], content],
+        [channel, geo, channel_geo, latency["daily"], concurrency["summary"], identity["daily"], content],
     )
 
     daily = filter_date_window(daily, min_date, max_date)
     overview_daily = filter_date_window(overview_daily, min_date, max_date, "date")
     channel = filter_date_window(channel, min_date, max_date)
     geo = filter_date_window(geo, min_date, max_date)
+    channel_geo = filter_date_window(channel_geo, min_date, max_date)
     ua_playtime = filter_frame_dict_dates(ua_playtime, min_date, max_date)
     latency = filter_frame_dict_dates(latency, min_date, max_date)
     concurrency = filter_frame_dict_dates(concurrency, min_date, max_date)
@@ -1100,6 +1115,7 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "watch_by_source": source_ranges(daily),
             "channel": range_info(channel),
             "geo": range_info(geo),
+            "channel_geo": range_info(channel_geo),
             "ua_platform": range_info(ua_playtime["platform"]),
             "ua_os": range_info(ua_playtime["os"]),
             "ua_brand": range_info(ua_playtime["brand"]),
@@ -1118,6 +1134,7 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "overview_daily": records(overview_daily, 5000),
             "channel_daily": records(channel, 6000),
             "geo_daily": records(geo, 25000),
+            "channel_geo_daily": records(channel_geo),
             "channel_top": records(channel_top, 80),
             "geo_top": records(geo_top, 100),
             "ua_platform_daily": records(ua_playtime["platform"], 5000),

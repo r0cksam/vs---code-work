@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>STREAM Watch Hours Showcase</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #5d6678;
+      --line: #dfe5ef;
+      --blue: #2563eb;
+      --green: #059669;
+      --amber: #d97706;
+      --soft-blue: #eef5ff;
+      --soft-green: #ecfdf5;
+      --shadow: 0 10px 24px rgba(20, 30, 50, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }
+    .bar {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(22px, 2.2vw, 34px); line-height: 1.1; }
+    h2 { font-size: 18px; margin-bottom: 10px; }
+    h3 { font-size: 14px; margin-bottom: 6px; }
+    .subtitle { color: var(--muted); margin-top: 6px; font-size: 13px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    button, .download {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+      min-height: 36px;
+    }
+    button:hover, .download:hover { border-color: var(--blue); color: var(--blue); }
+    button.primary, .download.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    main {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      padding: 18px 20px 40px;
+    }
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px 11px;
+      font: inherit;
+      color: var(--ink);
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .hint-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .hint-card {
+      border: 1px solid var(--line);
+      background: var(--soft-blue);
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .hint-card strong { font-size: 13px; }
+    .hint-card .big { font-size: 20px; font-weight: 900; }
+    .hint-card small { color: var(--muted); line-height: 1.35; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .impact {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .impact-card {
+      background: linear-gradient(135deg, #eef5ff 0%, #ffffff 58%, #ecfdf5 100%);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+    .impact-card .number {
+      font-size: clamp(38px, 5vw, 72px);
+      line-height: 0.95;
+      font-weight: 950;
+      color: var(--blue);
+      overflow-wrap: anywhere;
+    }
+    .impact-card:nth-child(2) .number { color: var(--green); }
+    .impact-card .text {
+      margin-top: 10px;
+      font-size: clamp(18px, 2vw, 28px);
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    .impact-card .note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .kpi {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+    .kpi .label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      line-height: 1.25;
+    }
+    .kpi .value {
+      margin-top: 8px;
+      font-size: clamp(22px, 2.1vw, 30px);
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+    .kpi .note {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .chart-box {
+      position: relative;
+      height: 330px;
+      min-height: 280px;
+    }
+    .chart-box.tall { height: 420px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 13px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 8px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      background: #fafcff;
+    }
+    td.num, th.num { text-align: right; }
+    details {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    summary {
+      padding: 12px 14px;
+      cursor: pointer;
+      font-weight: 900;
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    details table { margin: 0; }
+    .message {
+      background: var(--soft-green);
+      border-color: #b7ebce;
+      display: grid;
+      gap: 10px;
+      line-height: 1.5;
+    }
+    .message p { color: #164e36; }
+    .muted { color: var(--muted); }
+    .footnote {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      margin-top: 10px;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: var(--soft-green);
+      color: #166534;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .bar, .filters, .grid-2 { grid-template-columns: 1fr; }
+      .impact { grid-template-columns: 1fr; }
+      .actions { justify-content: flex-start; }
+      main { padding: 14px 12px 28px; }
+      .panel { padding: 12px; }
+      .chart-box, .chart-box.tall { height: 300px; }
+      table { font-size: 12px; }
+      th, td { padding: 8px 6px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1 id="title">STREAM Watch Hours Showcase</h1>
+        <p class="subtitle" id="rangeText"></p>
+      </div>
+      <div class="actions">
+        <a class="download primary" id="excelLink" href="stream_watch_hours_showcase.xlsx" download>Download Excel</a>
+        <button id="resetBtn">All Completed</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="filters">
+        <label>Date From
+          <input type="date" id="startDate">
+        </label>
+        <label>Date To
+          <input type="date" id="endDate">
+        </label>
+        <label>Best Range Hint
+          <button class="primary" id="bestMaxBtn">Use Max Total</button>
+        </label>
+        <label>Current Selection
+          <span class="status" id="selectionStatus">Ready</span>
+        </label>
+      </div>
+      <h2>Which Date Range Gives Maximum Output?</h2>
+      <p class="muted">Use the full completed range for the biggest PR number. Use Best 7D/15D/30D when you want a strong campaign-style window.</p>
+      <div class="hint-grid" id="hintGrid"></div>
+    </section>
+
+    <section class="impact" id="impactGrid"></section>
+    <section class="kpis" id="kpiGrid"></section>
+
+    <section class="panel">
+      <h2>India State Ranking</h2>
+      <table id="stateTable"></table>
+      <details id="stateRestWrap">
+        <summary id="stateRestSummary">Show remaining states</summary>
+        <table id="stateRestTable"></table>
+      </details>
+    </section>
+  </main>
+
+  <script>__CHARTJS__</script>
+  <script>
+    const DATA = __DATA_BLOB__;
+    const INR = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 });
+    const INT = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+
+    function parseDate(value) {
+      return new Date(value + 'T00:00:00');
+    }
+
+    function fmtDate(value) {
+      const d = parseDate(value);
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yy = String(d.getFullYear()).slice(-2);
+      return `${dd}/${mm}/${yy}`;
+    }
+
+    function fmtRange(start, end) {
+      return `${fmtDate(start)} to ${fmtDate(end)}`;
+    }
+
+    function fmtHours(value) {
+      return `${INR.format(value || 0)} hrs`;
+    }
+
+    function floorTwo(value) {
+      return Math.floor(Number(value || 0) * 100) / 100;
+    }
+
+    function compactIndianPlus(value) {
+      const n = Number(value || 0);
+      if (n >= 10000000) return `${floorTwo(n / 10000000).toFixed(2)} Crore+`;
+      if (n >= 100000) return `${floorTwo(n / 100000).toFixed(2)} Lakh+`;
+      if (n >= 1000) return `${INT.format(Math.floor(n))}+`;
+      return `${INT.format(Math.floor(n))}+`;
+    }
+
+    function inRange(row) {
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      return row.date >= start && row.date <= end;
+    }
+
+    function sumRows(rows, fields) {
+      const out = {};
+      fields.forEach((field) => out[field] = 0);
+      rows.forEach((row) => {
+        fields.forEach((field) => out[field] += Number(row[field] || 0));
+      });
+      return out;
+    }
+
+    function groupRows(rows, key, fields) {
+      const map = new Map();
+      rows.forEach((row) => {
+        const k = row[key] || 'Unknown / NA';
+        if (!map.has(k)) {
+          const base = { name: k };
+          fields.forEach((field) => base[field] = 0);
+          map.set(k, base);
+        }
+        const item = map.get(k);
+        fields.forEach((field) => item[field] += Number(row[field] || 0));
+      });
+      return Array.from(map.values()).sort((a, b) => (b.rawHours || 0) - (a.rawHours || 0));
+    }
+
+    function setRange(start, end) {
+      document.getElementById('startDate').value = start;
+      document.getElementById('endDate').value = end;
+      render();
+    }
+
+    function renderHints() {
+      const grid = document.getElementById('hintGrid');
+      grid.innerHTML = DATA.rangeHints.map((hint, index) => `
+        <div class="hint-card">
+          <strong>${hint.label}</strong>
+          <div class="big">${fmtHours(hint.rawHours)}</div>
+          <small>${fmtRange(hint.start, hint.end)} | ${hint.days} day${hint.days === 1 ? '' : 's'}</small>
+          <small>${hint.note}</small>
+          <button data-start="${hint.start}" data-end="${hint.end}" class="${index === 0 ? 'primary' : ''}">Apply Range</button>
+        </div>
+      `).join('');
+      grid.querySelectorAll('button').forEach((button) => {
+        button.addEventListener('click', () => setRange(button.dataset.start, button.dataset.end));
+      });
+    }
+
+    function renderKpis(dailyRows) {
+      const totals = sumRows(dailyRows, ['rawHours', 'userDays']);
+      const peak = dailyRows.reduce((best, row) => Number(row.userDays || 0) > Number(best.userDays || 0) ? row : best, dailyRows[0] || {});
+      const avgMin = totals.userDays ? totals.rawHours * 60 / totals.userDays : 0;
+      const avgDailyUsers = dailyRows.length ? totals.userDays / dailyRows.length : 0;
+      document.getElementById('impactGrid').innerHTML = `
+        <div class="impact-card">
+          <div class="number">${compactIndianPlus(totals.rawHours * 60)}</div>
+          <div class="text">minutes of content streamed</div>
+        </div>
+      `;
+      const kpis = [
+        ['Avg Daily Active Users', INT.format(avgDailyUsers)],
+        ['Peak Daily Active Users', `${INT.format(peak.userDays || 0)}`],
+        ['Avg Watch / User-Day', `${INR.format(avgMin)} min`],
+      ];
+      document.getElementById('kpiGrid').innerHTML = kpis.map(([label, value]) => `
+        <div class="kpi">
+          <div class="label">${label}</div>
+          <div class="value">${value}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderTable(id, headers, rows) {
+      const head = `<thead><tr>${headers.map((h) => `<th class="${h.num ? 'num' : ''}">${h.label}</th>`).join('')}</tr></thead>`;
+      const body = `<tbody>${rows.map((row) => `<tr>${headers.map((h) => `<td class="${h.num ? 'num' : ''}">${h.render(row)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+      document.getElementById(id).innerHTML = head + body;
+    }
+
+    function renderTables(states, dayCount) {
+      const avgUsers = (value) => INT.format(dayCount ? Number(value || 0) / dayCount : 0);
+      const totalStateHours = states.reduce((sum, row) => sum + Number(row.rawHours || 0), 0);
+      const rankedStates = states.map((row, idx) => ({
+        ...row,
+        rank: idx + 1,
+        share: totalStateHours ? Number(row.rawHours || 0) * 100 / totalStateHours : 0
+      }));
+      const headers = [
+        { label: '#', num: true, render: (r) => INT.format(r.rank) },
+        { label: 'State', render: (r) => r.name },
+        { label: 'Share', num: true, render: (r) => `${INR.format(r.share)}%` },
+        { label: 'Watch Hours', num: true, render: (r) => fmtHours(r.rawHours) },
+        { label: 'Avg Daily Users', num: true, render: (r) => avgUsers(r.userDays) }
+      ];
+      const topStates = rankedStates.slice(0, 10);
+      const restStates = rankedStates.slice(10);
+      renderTable('stateTable', headers, topStates);
+      const restWrap = document.getElementById('stateRestWrap');
+      if (restStates.length) {
+        document.getElementById('stateRestSummary').textContent = `Show remaining ${restStates.length} states`;
+        restWrap.style.display = '';
+        renderTable('stateRestTable', headers, restStates);
+      } else {
+        restWrap.style.display = 'none';
+      }
+    }
+
+    function render() {
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      if (!start || !end || start > end) {
+        document.getElementById('selectionStatus').textContent = 'Invalid range';
+        return;
+      }
+      const dailyRows = DATA.daily.filter(inRange);
+      const states = groupRows(DATA.statesDaily.filter(inRange), 'state', ['rawHours', 'userDays']);
+      document.getElementById('selectionStatus').textContent = `${fmtRange(start, end)} | ${dailyRows.length} days`;
+      renderKpis(dailyRows);
+      renderTables(states, dailyRows.length);
+    }
+
+    function boot() {
+      document.getElementById('title').textContent = DATA.title;
+      document.getElementById('excelLink').href = DATA.excelFile;
+      document.getElementById('rangeText').textContent =
+        `Source: ${DATA.source} | Completed data range: ${fmtRange(DATA.range.start, DATA.range.end)} | Last updated ${DATA.generatedAt} IST`;
+      document.getElementById('startDate').min = DATA.range.start;
+      document.getElementById('startDate').max = DATA.range.end;
+      document.getElementById('endDate').min = DATA.range.start;
+      document.getElementById('endDate').max = DATA.range.end;
+      document.getElementById('startDate').value = DATA.defaultRange.start;
+      document.getElementById('endDate').value = DATA.defaultRange.end;
+      renderHints();
+      document.getElementById('resetBtn').addEventListener('click', () => setRange(DATA.range.start, DATA.range.end));
+      document.getElementById('bestMaxBtn').addEventListener('click', () => setRange(DATA.range.start, DATA.range.end));
+      document.getElementById('startDate').addEventListener('change', render);
+      document.getElementById('endDate').addEventListener('change', render);
+      render();
+    }
+
+    boot();
+  </script>
+</body>
+</html>
