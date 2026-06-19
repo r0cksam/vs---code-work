@@ -25,6 +25,10 @@ param(
     [switch]$StrictPipeline,
     [switch]$SingleSourceMode,
     [int]$Etl1Workers = 2,
+    [int]$DeepProfileThreads = 4,
+    [string]$DeepProfileMemory = "20GB",
+    [string]$DeepProfileMaxTempSize = "40GB",
+    [string]$DeepProfileTempDir = "",
     [ValidateSet("zstd", "snappy", "lz4", "gzip", "brotli", "none")]
     [string]$Etl1Compression = "zstd"
 )
@@ -55,6 +59,22 @@ $DefaultVenvPython = if ($VenvPython) {
     "python"
 }
 $env:VG_ETL_BASE = $DefaultLocalRoot
+$DefaultDeepProfileTempDir = if ($DeepProfileTempDir) {
+    $DeepProfileTempDir
+} elseif ($env:LOCALAPPDATA) {
+    Join-Path $env:LOCALAPPDATA "VetoETL\duckdb_temp\deep_profile"
+} else {
+    Join-Path $WorkspaceRoot "output\cache\duckdb_temp\deep_profile"
+}
+$env:VG_DUCKDB_TEMP_DIR = $DefaultDeepProfileTempDir
+try {
+    New-Item -ItemType Directory -Path $DefaultDeepProfileTempDir -Force | Out-Null
+    $TempProbe = Join-Path $DefaultDeepProfileTempDir ".etl_temp_probe.tmp"
+    Set-Content -LiteralPath $TempProbe -Value "ok" -Encoding ASCII
+    Remove-Item -LiteralPath $TempProbe -Force
+} catch {
+    throw "DuckDB temp folder is not writable: $DefaultDeepProfileTempDir. $($_.Exception.Message)"
+}
 if (($DefaultVenvPython -ne "python") -and (-not (Test-Path $DefaultVenvPython))) { $DefaultVenvPython = "python" }
 $BundledRclone = Join-Path $WorkspaceRoot "tools\rclone\rclone.exe"
 $RcloneExe = if (Test-Path $BundledRclone) { $BundledRclone } else { "rclone" }
@@ -322,6 +342,12 @@ try {
     if ($Etl1Compression) {
         $pipelineArgs += @("--etl1-compression", $Etl1Compression)
     }
+    $pipelineArgs += @(
+        "--deep-profile-threads", $DeepProfileThreads.ToString(),
+        "--deep-profile-memory", $DeepProfileMemory,
+        "--deep-profile-temp-dir", $DefaultDeepProfileTempDir,
+        "--deep-profile-max-temp-size", $DeepProfileMaxTempSize
+    )
     $pipelineArgs += $watchArgs
 
     $cmd = @($DefaultVenvPython, $pipeline) + $pipelineArgs

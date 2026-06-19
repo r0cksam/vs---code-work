@@ -216,6 +216,8 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
             any_value(reqHost ORDER BY reqHost) AS reqHost,
             statusCode AS status_code,
             COUNT(*)::BIGINT AS status_ts_rows,
+            COUNT(DISTINCT cliIP)::BIGINT AS status_unique_viewers,
+            COUNT(DISTINCT UA)::BIGINT AS status_unique_ua_viewers,
             ROUND(COUNT(*) / {SEGMENTS_PER_MINUTE}, 3) AS status_segment_viewers_estimate
         FROM concurrency_resolved_new
         GROUP BY 1,2,3,4,5,6,7,8,10
@@ -225,33 +227,63 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
     con.execute(
         """
         CREATE OR REPLACE TEMP TABLE concurrency_summary_new AS
+        WITH minute_summary AS (
+            SELECT
+                log_date,
+                source,
+                platform_key,
+                platform_name,
+                candidate_id,
+                channel_name,
+                any_value(reqHost ORDER BY reqHost) AS reqHost,
+                MAX(distinct_hosts)::BIGINT AS distinct_hosts,
+                COUNT(*)::BIGINT AS minute_count,
+                SUM(raw_ts_rows)::BIGINT AS raw_ts_rows,
+                SUM(status_200_ts_rows)::BIGINT AS status_200_ts_rows,
+                ROUND(AVG(unique_viewers), 3) AS avg_unique_viewers,
+                MAX(unique_viewers)::BIGINT AS peak_unique_viewers,
+                any_value(minute_ist ORDER BY unique_viewers DESC, minute_ist) AS peak_unique_viewers_minute_ist,
+                ROUND(quantile_cont(unique_viewers, 0.95), 3) AS p95_unique_viewers,
+                ROUND(AVG(unique_ua_viewers), 3) AS avg_unique_ua_viewers,
+                MAX(unique_ua_viewers)::BIGINT AS peak_unique_ua_viewers,
+                any_value(minute_ist ORDER BY unique_ua_viewers DESC, minute_ist) AS peak_unique_ua_minute_ist,
+                ROUND(quantile_cont(unique_ua_viewers, 0.95), 3) AS p95_unique_ua_viewers,
+                ROUND(AVG(segment_viewers_estimate), 3) AS avg_segment_viewers_estimate,
+                ROUND(MAX(segment_viewers_estimate), 3) AS peak_segment_viewers_estimate,
+                any_value(minute_ist ORDER BY segment_viewers_estimate DESC, minute_ist) AS peak_segment_minute_ist,
+                ROUND(AVG(status_200_segment_viewers_estimate), 3) AS avg_status_200_segment_viewers_estimate,
+                ROUND(MAX(status_200_segment_viewers_estimate), 3) AS peak_status_200_segment_viewers_estimate
+            FROM concurrency_minute_new
+            GROUP BY 1,2,3,4,5,6
+        ),
+        daily_identity AS (
+            SELECT
+                log_date,
+                source,
+                platform_key,
+                platform_name,
+                candidate_id,
+                channel_name,
+                COUNT(DISTINCT cliIP)::BIGINT AS distinct_cliips,
+                COUNT(DISTINCT UA)::BIGINT AS distinct_uas,
+                COUNT(DISTINCT COALESCE(cliIP, '') || '|' || COALESCE(UA, ''))::BIGINT AS distinct_ipua_pairs
+            FROM concurrency_resolved_new
+            GROUP BY 1,2,3,4,5,6
+        )
         SELECT
+            m.*,
+            COALESCE(d.distinct_cliips, 0)::BIGINT AS distinct_cliips,
+            COALESCE(d.distinct_uas, 0)::BIGINT AS distinct_uas,
+            COALESCE(d.distinct_ipua_pairs, 0)::BIGINT AS distinct_ipua_pairs
+        FROM minute_summary m
+        LEFT JOIN daily_identity d USING (
             log_date,
             source,
             platform_key,
             platform_name,
             candidate_id,
-            channel_name,
-            any_value(reqHost ORDER BY reqHost) AS reqHost,
-            MAX(distinct_hosts)::BIGINT AS distinct_hosts,
-            COUNT(*)::BIGINT AS minute_count,
-            SUM(raw_ts_rows)::BIGINT AS raw_ts_rows,
-            SUM(status_200_ts_rows)::BIGINT AS status_200_ts_rows,
-            ROUND(AVG(unique_viewers), 3) AS avg_unique_viewers,
-            MAX(unique_viewers)::BIGINT AS peak_unique_viewers,
-            any_value(minute_ist ORDER BY unique_viewers DESC, minute_ist) AS peak_unique_viewers_minute_ist,
-            ROUND(quantile_cont(unique_viewers, 0.95), 3) AS p95_unique_viewers,
-            ROUND(AVG(unique_ua_viewers), 3) AS avg_unique_ua_viewers,
-            MAX(unique_ua_viewers)::BIGINT AS peak_unique_ua_viewers,
-            any_value(minute_ist ORDER BY unique_ua_viewers DESC, minute_ist) AS peak_unique_ua_minute_ist,
-            ROUND(quantile_cont(unique_ua_viewers, 0.95), 3) AS p95_unique_ua_viewers,
-            ROUND(AVG(segment_viewers_estimate), 3) AS avg_segment_viewers_estimate,
-            ROUND(MAX(segment_viewers_estimate), 3) AS peak_segment_viewers_estimate,
-            any_value(minute_ist ORDER BY segment_viewers_estimate DESC, minute_ist) AS peak_segment_minute_ist,
-            ROUND(AVG(status_200_segment_viewers_estimate), 3) AS avg_status_200_segment_viewers_estimate,
-            ROUND(MAX(status_200_segment_viewers_estimate), 3) AS peak_status_200_segment_viewers_estimate
-        FROM concurrency_minute_new
-        GROUP BY 1,2,3,4,5,6
+            channel_name
+        )
         """
     )
 
@@ -329,6 +361,18 @@ def summarize_output(
     ).fetchdf().iloc[0].to_dict() | {
         "summary_rows": table_count_from_path(con, summary_path),
     }
+    if summary_path.exists():
+        summary_stats = con.execute(
+            f"""
+            SELECT
+                MAX(distinct_cliips) AS peak_daily_distinct_cliips,
+                SUM(distinct_cliips) AS daily_distinct_cliip_sum,
+                MAX(distinct_uas) AS peak_daily_distinct_uas,
+                SUM(distinct_uas) AS daily_distinct_ua_sum
+            FROM read_parquet('{q(summary_path)}')
+            """
+        ).fetchdf().iloc[0].to_dict()
+        stats |= summary_stats
     if status_minute_path.exists():
         status_stats = con.execute(
             f"""
@@ -370,9 +414,14 @@ def write_manifest(
         "metric_notes": {
             "unique_viewers": "Exact distinct cliIP count per minute.",
             "unique_ua_viewers": "Exact distinct normalized User-Agent string count per minute.",
+            "distinct_cliips": "Exact daily distinct cliIP count for each FAST platform/channel on .ts rows.",
+            "distinct_uas": "Exact daily distinct normalized User-Agent count for each FAST platform/channel on .ts rows.",
+            "distinct_ipua_pairs": "Exact daily distinct cliIP + User-Agent pair count for each FAST platform/channel on .ts rows.",
             "segment_viewers_estimate": "raw .ts rows divided by 10 six-second segments per minute.",
             "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute.",
             "status_code_segment_viewers_estimate": "Selected HTTP status .ts rows divided by 10 six-second segments per minute.",
+            "status_unique_viewers": "Exact distinct cliIP count per minute for a selected HTTP status code.",
+            "status_unique_ua_viewers": "Exact distinct normalized User-Agent count per minute for a selected HTTP status code.",
         },
         "files": {
             "minute": str(minute_path.resolve()),

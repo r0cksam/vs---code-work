@@ -404,6 +404,41 @@ def build_channel_geo(watch_dir: Path) -> pd.DataFrame:
     return channel_geo.sort_values(["log_date", "source", "channel_name", "raw_watch_hours"], ascending=[True, True, True, False])
 
 
+def build_channel_device_type(watch_dir: Path) -> pd.DataFrame:
+    channel_device = read_parquet(watch_dir / "device_type_by_channel_daily.parquet")
+    if channel_device.empty:
+        return channel_device
+    channel_device = numeric(channel_device, ["raw_ts_rows", "status_200_ts_rows", "approx_unique_ips"])
+    channel_device["log_date"] = date_string(channel_device["log_date"])
+    # This mart stores segment rows only; convert once here so the browser can
+    # use the same watch-hour fields as every other Audience Ops chart.
+    channel_device["raw_watch_hours"] = channel_device["raw_ts_rows"] * HOURS_PER_TS_SEGMENT
+    channel_device["status_200_watch_hours"] = channel_device["status_200_ts_rows"] * HOURS_PER_TS_SEGMENT
+    return channel_device.sort_values(
+        ["log_date", "source", "channel_name", "raw_watch_hours"],
+        ascending=[True, True, True, False],
+    )
+
+
+def build_region_channel_device(watch_dir: Path) -> pd.DataFrame:
+    region_device = read_parquet(watch_dir / "region_channel_device_daily.parquet")
+    if region_device.empty:
+        return region_device
+    region_device = numeric(
+        region_device,
+        ["raw_ts_rows", "status_200_ts_rows", "raw_watch_hours", "status_200_watch_hours", "approx_unique_ips"],
+    )
+    region_device["log_date"] = date_string(region_device["log_date"])
+    if "raw_watch_hours" not in region_device.columns:
+        region_device["raw_watch_hours"] = region_device["raw_ts_rows"] * HOURS_PER_TS_SEGMENT
+    if "status_200_watch_hours" not in region_device.columns:
+        region_device["status_200_watch_hours"] = region_device["status_200_ts_rows"] * HOURS_PER_TS_SEGMENT
+    return region_device.sort_values(
+        ["log_date", "source", "channel_name", "raw_watch_hours"],
+        ascending=[True, True, True, False],
+    )
+
+
 def normalize_ua(value: Any) -> str:
     text = str(value or "").strip()
     for _ in range(5):
@@ -732,6 +767,12 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
     minute = read_parquet(concurrency_dir / "concurrency_minute.parquet")
     summary = read_parquet(concurrency_dir / "concurrency_summary.parquet")
     status = read_parquet(concurrency_dir / "concurrency_status_minute.parquet")
+    platform_channel_identity = read_parquet(concurrency_dir / "fast_platform_channel_identity_daily.parquet")
+    platform_channel_geo = read_parquet(concurrency_dir / "fast_platform_channel_geo_daily.parquet")
+    platform_channel_ua_device = read_parquet(concurrency_dir / "fast_platform_channel_ua_device_daily.parquet")
+    platform_channel_manifest = read_parquet(concurrency_dir / "fast_platform_channel_manifest_daily.parquet")
+    platform_channel_bandwidth = read_parquet(concurrency_dir / "fast_platform_channel_bandwidth_daily.parquet")
+    platform_channel_cmcd = read_parquet(concurrency_dir / "fast_platform_channel_cmcd_daily.parquet")
     if not minute.empty:
         minute = numeric(
             minute,
@@ -750,21 +791,21 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
         # UTC here; just bucket the local wall-clock value.
         minute["minute_ist"] = pd.to_datetime(minute["minute_ist"], errors="coerce")
         minute = minute[minute["minute_ist"].notna()].copy()
-        minute["bucket_5min"] = minute["minute_ist"].dt.floor("5min")
-        minute5 = (
-            minute.groupby(["log_date", "source", "bucket_5min", "platform_name", "channel_name"], dropna=False, as_index=False)
-            .agg(
-                avg_unique_viewers=("unique_viewers", "mean"),
-                peak_unique_viewers=("unique_viewers", "max"),
-                avg_unique_ua_viewers=("unique_ua_viewers", "mean"),
-                raw_ts_rows=("raw_ts_rows", "sum"),
-                status_200_ts_rows=("status_200_ts_rows", "sum"),
-            )
-            .sort_values(["log_date", "bucket_5min"])
-        )
-        minute5["bucket_5min"] = minute5["bucket_5min"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        minute_detail = minute[
+            [
+                "log_date",
+                "source",
+                "minute_ist",
+                "platform_name",
+                "channel_name",
+                "unique_viewers",
+                "unique_ua_viewers",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+            ]
+        ].sort_values(["log_date", "minute_ist", "platform_name", "channel_name"])
     else:
-        minute5 = pd.DataFrame()
+        minute_detail = pd.DataFrame()
     if not summary.empty:
         summary = numeric(
             summary,
@@ -790,10 +831,167 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
             ],
         )
         summary["log_date"] = date_string(summary["log_date"])
+    status_detail = pd.DataFrame()
+    status_codes: list[str] = []
     if not status.empty:
-        status = numeric(status, ["status_ts_rows", "status_segment_viewers_estimate"])
+        status = numeric(
+            status,
+            [
+                "status_ts_rows",
+                "status_unique_viewers",
+                "status_unique_ua_viewers",
+                "status_segment_viewers_estimate",
+            ],
+        )
         status["log_date"] = date_string(status["log_date"])
-    return {"minute5": minute5, "summary": summary, "status": status}
+        required_status_cols = {
+            "log_date",
+            "source",
+            "minute_ist",
+            "platform_name",
+            "channel_name",
+            "status_code",
+            "status_unique_viewers",
+            "status_ts_rows",
+        }
+        if required_status_cols.issubset(status.columns):
+            status_codes = sorted(str(value) for value in status["status_code"].dropna().unique())
+            # Keep this payload narrow because it is embedded in the static HTML.
+            status_detail = status[
+                [
+                    "log_date",
+                    "source",
+                    "minute_ist",
+                    "platform_name",
+                    "channel_name",
+                    "status_code",
+                    "status_unique_viewers",
+                    "status_ts_rows",
+                ]
+            ].rename(
+                columns={
+                    "log_date": "d",
+                    "source": "s",
+                    "minute_ist": "m",
+                    "platform_name": "p",
+                    "channel_name": "c",
+                    "status_code": "code",
+                    "status_unique_viewers": "uv",
+                    "status_ts_rows": "rows",
+                }
+            )
+    if not platform_channel_identity.empty:
+        platform_channel_identity = numeric(
+            platform_channel_identity,
+            [
+                "distinct_hosts",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+                "distinct_cliips",
+                "distinct_uas",
+                "distinct_ipua_pairs",
+            ],
+        )
+        platform_channel_identity["log_date"] = date_string(platform_channel_identity["log_date"])
+    if not platform_channel_geo.empty:
+        platform_channel_geo = numeric(
+            platform_channel_geo,
+            [
+                "distinct_hosts",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+                "raw_watch_hours",
+                "status_200_watch_hours",
+                "approx_unique_ips",
+                "distinct_uas",
+                "distinct_ipua_pairs",
+            ],
+        )
+        platform_channel_geo["log_date"] = date_string(platform_channel_geo["log_date"])
+    if not platform_channel_ua_device.empty:
+        platform_channel_ua_device = numeric(
+            platform_channel_ua_device,
+            [
+                "distinct_hosts",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+                "raw_watch_hours",
+                "status_200_watch_hours",
+                "approx_unique_ips",
+                "distinct_uas",
+                "distinct_ipua_pairs",
+            ],
+        )
+        platform_channel_ua_device["log_date"] = date_string(platform_channel_ua_device["log_date"])
+    if not platform_channel_manifest.empty:
+        platform_channel_manifest = numeric(
+            platform_channel_manifest,
+            [
+                "distinct_hosts",
+                "m3u8_rows",
+                "status_200_m3u8_rows",
+                "non_200_m3u8_rows",
+                "approx_unique_ips",
+                "distinct_uas",
+                "distinct_ipua_pairs",
+            ],
+        )
+        platform_channel_manifest["log_date"] = date_string(platform_channel_manifest["log_date"])
+    if not platform_channel_bandwidth.empty:
+        platform_channel_bandwidth = numeric(
+            platform_channel_bandwidth,
+            [
+                "distinct_hosts",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+                "non_200_ts_rows",
+                "rows_with_total_bytes",
+                "total_bytes",
+                "status_200_total_bytes",
+                "non_200_total_bytes",
+                "body_bytes",
+                "response_content_len",
+                "overhead_bytes",
+                "avg_total_bytes",
+                "approx_unique_ips",
+                "distinct_uas",
+                "distinct_ipua_pairs",
+            ],
+        )
+        platform_channel_bandwidth["log_date"] = date_string(platform_channel_bandwidth["log_date"])
+    if not platform_channel_cmcd.empty:
+        platform_channel_cmcd = numeric(
+            platform_channel_cmcd,
+            [
+                "distinct_hosts",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+                "cmcd_rows",
+                "cmcd_sid_rows",
+                "distinct_cmcd_sessions",
+                "distinct_cmcd_content_ids",
+                "cmcd_reported_duration_hours",
+                "avg_cmcd_encoded_bitrate",
+                "avg_cmcd_measured_throughput",
+                "approx_unique_ips",
+                "distinct_uas",
+                "distinct_ipua_pairs",
+            ],
+        )
+        platform_channel_cmcd["log_date"] = date_string(platform_channel_cmcd["log_date"])
+    return {
+        "minute_detail": minute_detail,
+        "summary": summary,
+        "status": status,
+        "status_detail": status_detail,
+        "status_codes": status_codes,
+        "platform_channel_identity": platform_channel_identity,
+        "platform_channel_geo": platform_channel_geo,
+        "platform_channel_ua_device": platform_channel_ua_device,
+        "platform_channel_manifest": platform_channel_manifest,
+        "platform_channel_bandwidth": platform_channel_bandwidth,
+        "platform_channel_cmcd": platform_channel_cmcd,
+    }
 
 
 def build_device_decode(device_dir: Path) -> dict[str, pd.DataFrame | str]:
@@ -974,6 +1172,8 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     channel = build_channel(watch_dir)
     geo = build_geo(watch_dir)
     channel_geo = build_channel_geo(watch_dir)
+    channel_device_type = build_channel_device_type(watch_dir)
+    region_channel_device = build_region_channel_device(watch_dir)
     ua_playtime = build_ua_playtime(watch_dir, device_dir)
     latency = build_latency(latency_dir)
     concurrency = build_concurrency(concurrency_dir)
@@ -987,6 +1187,8 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     channel = filter_source(channel, source)
     geo = filter_source(geo, source)
     channel_geo = filter_source(channel_geo, source)
+    channel_device_type = filter_source(channel_device_type, source)
+    region_channel_device = filter_source(region_channel_device, source)
     ua_playtime = filter_frame_dict(ua_playtime, source)
     latency = filter_frame_dict(latency, source)
     concurrency = filter_frame_dict(concurrency, source)
@@ -1000,7 +1202,17 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
 
     min_date, max_date = completed_date_window(
         daily,
-        [channel, geo, channel_geo, latency["daily"], concurrency["summary"], identity["daily"], content],
+        [
+            channel,
+            geo,
+            channel_geo,
+            channel_device_type,
+            region_channel_device,
+            latency["daily"],
+            concurrency["summary"],
+            identity["daily"],
+            content,
+        ],
     )
 
     daily = filter_date_window(daily, min_date, max_date)
@@ -1008,6 +1220,8 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     channel = filter_date_window(channel, min_date, max_date)
     geo = filter_date_window(geo, min_date, max_date)
     channel_geo = filter_date_window(channel_geo, min_date, max_date)
+    channel_device_type = filter_date_window(channel_device_type, min_date, max_date)
+    region_channel_device = filter_date_window(region_channel_device, min_date, max_date)
     ua_playtime = filter_frame_dict_dates(ua_playtime, min_date, max_date)
     latency = filter_frame_dict_dates(latency, min_date, max_date)
     concurrency = filter_frame_dict_dates(concurrency, min_date, max_date)
@@ -1075,6 +1289,42 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "note": "Usage-weighted brand, model, form factor, OS, browser, and decode-quality buckets are available. Brand Not Exposed In UA is shown separately from true unknowns.",
         },
         {
+            "area": "Channel device and region-device analytics",
+            "status": "Available",
+            "basis": "device_type_by_channel_daily.parquet and region_channel_device_daily.parquet",
+            "note": "Selected-channel views can show device type and state/region plus device type split when Platform is All. Platform-specific device splits need a separate platform+channel+device mart.",
+        },
+        {
+            "area": "FAST platform/channel geography",
+            "status": "Available",
+            "basis": "fast_platform_channel_geo_daily.parquet",
+            "note": "FAST Platform + Channel selections can show exact country/state/city request-hour and IP distribution from .ts rows.",
+        },
+        {
+            "area": "FAST platform/channel device and OS",
+            "status": "Available",
+            "basis": "fast_platform_channel_ua_device_daily.parquet",
+            "note": "FAST Platform + Channel selections can show decoded device type, form factor, OS, brand, model, decode quality, watch hours, and approximate IPs from .ts user-agent rows.",
+        },
+        {
+            "area": "FAST platform/channel manifest views",
+            "status": "Available",
+            "basis": "fast_platform_channel_manifest_daily.parquet",
+            "note": "FAST Platform + Channel selections can show exact .m3u8 manifest request views from row-level path channel evidence; unmapped path candidates remain visible as Other.",
+        },
+        {
+            "area": "FAST platform/channel video bandwidth",
+            "status": "Available",
+            "basis": "fast_platform_channel_bandwidth_daily.parquet",
+            "note": "FAST Platform + Channel selections can show exact .ts totalBytes video bandwidth from row-level platform/channel path evidence.",
+        },
+        {
+            "area": "FAST CMCD playback sessions",
+            "status": "Partially available",
+            "basis": "fast_platform_channel_cmcd_daily.parquet",
+            "note": "FAST CMCD sid/cid playback telemetry is available where clients emit CMCD. Current coverage is platform-dependent and must not be relabeled as app session_id/device_id.",
+        },
+        {
             "area": "App device/session IDs",
             "status": "Available for STREAM",
             "basis": "identity mart from queryStr session_id/device_id",
@@ -1104,10 +1354,8 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "source_true_ranges": source_true_ranges,
             "output_root": str(output_root),
             "notes": [
-                "Request Hours = all .ts request rows * 6 seconds.",
-                "Playback Hours = dedup unique segment-path estimate. Shared mart is WIP.",
                 "This dashboard supports FAST and STREAM source filters.",
-                "WIP sections are intentionally shown so stakeholders know which telemetry is not production-ready.",
+                "All metrics follow the selected date, source, platform, and channel filters.",
             ],
         },
         "ranges": {
@@ -1116,6 +1364,8 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "channel": range_info(channel),
             "geo": range_info(geo),
             "channel_geo": range_info(channel_geo),
+            "channel_device_type": range_info(channel_device_type),
+            "region_channel_device": range_info(region_channel_device),
             "ua_platform": range_info(ua_playtime["platform"]),
             "ua_os": range_info(ua_playtime["os"]),
             "ua_brand": range_info(ua_playtime["brand"]),
@@ -1124,17 +1374,25 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "ua_decode_quality": range_info(ua_playtime["decode_quality"]),
             "content": range_info(content),
             "concurrency": range_info(concurrency["summary"]),
+            "fast_platform_channel_identity": range_info(concurrency["platform_channel_identity"]),
+            "fast_platform_channel_geo": range_info(concurrency["platform_channel_geo"]),
+            "fast_platform_channel_ua_device": range_info(concurrency["platform_channel_ua_device"]),
+            "fast_platform_channel_manifest": range_info(concurrency["platform_channel_manifest"]),
+            "fast_platform_channel_bandwidth": range_info(concurrency["platform_channel_bandwidth"]),
+            "fast_platform_channel_cmcd": range_info(concurrency["platform_channel_cmcd"]),
             "latency": range_info(latency["daily"]),
             "identity": range_info(identity["daily"]),
             "overview_daily": range_info(overview_daily, "date"),
         },
-        "availability": availability,
+        "availability": [],
         "data": {
             "daily": records(daily, 5000),
             "overview_daily": records(overview_daily, 5000),
             "channel_daily": records(channel, 6000),
             "geo_daily": records(geo, 25000),
             "channel_geo_daily": records(channel_geo),
+            "channel_device_type_daily": records(channel_device_type),
+            "region_channel_device_daily": records(region_channel_device),
             "channel_top": records(channel_top, 80),
             "geo_top": records(geo_top, 100),
             "ua_platform_daily": records(ua_playtime["platform"], 5000),
@@ -1144,8 +1402,16 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "ua_form_factor_daily": records(ua_playtime["form_factor"], 5000),
             "ua_decode_quality_daily": records(ua_playtime["decode_quality"], 5000),
             "ua_device_detail_daily": records(ua_playtime["device_detail"]),
-            "concurrency_5min": records(concurrency["minute5"]),
+            "concurrency_minute": records(concurrency["minute_detail"]),
+            "concurrency_status_minute": records(concurrency["status_detail"]),
+            "concurrency_status_codes": concurrency["status_codes"],
             "concurrency_summary": records(concurrency["summary"], 2000),
+            "fast_platform_channel_identity_daily": records(concurrency["platform_channel_identity"], 5000),
+            "fast_platform_channel_geo_daily": records(concurrency["platform_channel_geo"]),
+            "fast_platform_channel_ua_device_daily": records(concurrency["platform_channel_ua_device"]),
+            "fast_platform_channel_manifest_daily": records(concurrency["platform_channel_manifest"]),
+            "fast_platform_channel_bandwidth_daily": records(concurrency["platform_channel_bandwidth"]),
+            "fast_platform_channel_cmcd_daily": records(concurrency["platform_channel_cmcd"]),
             "platform_top": records(platform_top, 80),
             "content_daily": records(content, 50000),
             "content_top": records(content_top, 120),

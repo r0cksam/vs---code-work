@@ -21,6 +21,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 input[type="date"],select{width:100%;background:#fff;border:1px solid #c8d4e3;color:var(--ink);border-radius:6px;padding:7px 8px;font:inherit;font-size:12px;font-weight:750;outline:none}
 input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 0 2px rgba(31,120,151,.14)}
 .preset-row,.action-row{display:flex;gap:6px;flex-wrap:wrap}
+.mini-controls{display:flex;align-items:end;gap:7px;flex-wrap:wrap;padding:10px 12px 0}
+.mini-controls .btn{padding:6px 9px}
+.mini-field{display:flex;flex-direction:column;gap:3px}
+.mini-field label{font-size:9px;text-transform:uppercase;letter-spacing:.04em;font-weight:850;color:var(--muted)}
+.mini-field input{width:96px;background:#fff;border:1px solid #c8d4e3;color:var(--ink);border-radius:6px;padding:6px 8px;font:inherit;font-size:12px;font-weight:750;outline:none}
+.mini-field select{width:160px;background:#fff;border:1px solid #c8d4e3;color:var(--ink);border-radius:6px;padding:6px 8px;font:inherit;font-size:12px;font-weight:750;outline:none}
+.mini-field.date input{width:136px}
+.mini-field.wide select{width:210px}
+.chart-note{font-size:11px;color:#64748b;line-height:1.35;margin:0 10px 10px}
 .btn{border:1px solid #c8d4e3;background:#fff;color:var(--ink);border-radius:6px;padding:7px 10px;font-size:12px;font-weight:850;cursor:pointer}
 .btn:hover{background:#f8fafc;border-color:#94a3b8}
 .btn.active{background:var(--brand);border-color:var(--brand);color:#fff}
@@ -59,6 +68,13 @@ input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 
 .empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:#738197;font-size:12px;font-weight:750;background:#fbfdff;border-radius:6px;padding:18px}
 canvas{width:100%!important;height:100%!important}
 .table-wrap{overflow:auto;max-height:420px;border-top:1px solid var(--line)}
+.pie-breakdown{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px;padding:9px 10px 11px;border-top:1px solid var(--line);background:#fbfdff}
+.pie-item{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:7px;border:1px solid #e4ebf3;border-radius:7px;background:#fff;padding:7px 8px;min-width:0}
+.pie-dot{width:10px;height:10px;border-radius:999px}
+.pie-name{font-size:11px;font-weight:850;color:#243044;overflow-wrap:anywhere;line-height:1.2}
+.pie-value{text-align:right;font-size:11px;font-weight:900;color:var(--brand);font-variant-numeric:tabular-nums;line-height:1.2}
+.pie-value small{display:block;font-size:10px;font-weight:800;color:#64748b;margin-top:2px}
+.pie-total{grid-column:1/-1;color:#64748b;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.03em}
 table{width:100%;border-collapse:collapse;font-size:11px}
 th{position:sticky;top:0;background:#f1f5f9;color:#344256;text-align:left;padding:8px;border-bottom:1px solid #d7e0eb;z-index:2;white-space:nowrap}
 td{padding:7px 8px;border-bottom:1px solid #edf2f7;vertical-align:top;color:#243044}
@@ -68,7 +84,7 @@ tr:hover td{background:#f8fafc}
 .ok{background:#e8f7ef;color:#116945}.partial{background:#fff3d6;color:#865b00}.wip{background:#fee9e7;color:#9a2d20}
 .wip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
 .wip-card{border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:8px;background:#fff;padding:11px;min-width:0}
-.wip-card[data-status="Available"]{border-left-color:var(--green)}.wip-card[data-status="Data Pipeline WIP"],.wip-card[data-status="Not Available"]{border-left-color:var(--red)}
+.wip-card[data-status="Available"]{border-left-color:var(--green)}.wip-card[data-status="Not Available"]{border-left-color:var(--red)}
 .wip-card h3{font-size:12px;margin-bottom:6px;color:var(--ink);overflow-wrap:anywhere}
 .wip-card p{font-size:11px;color:#5f6f83;line-height:1.4;margin-top:6px}
 .range-table{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:10px}
@@ -78,7 +94,7 @@ tr:hover td{background:#f8fafc}
 .modal.open{display:flex}
 .modal-panel{background:#fff;border-radius:8px;width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden}
 .modal-head{background:var(--brand);color:#fff;border-bottom:4px solid var(--gold);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.modal-head b{font-size:14px}.modal-body{flex:1;min-height:0;padding:12px}.modal-body .chart-box{height:100%}
+.modal-head b{font-size:14px}.modal-body{flex:1;min-height:0;padding:12px;display:flex;flex-direction:column}.modal-body .chart-box{flex:1;height:auto;min-height:0}.modal-controls:empty{display:none}.modal-controls .mini-controls{padding:0 0 10px}
 .footer{text-align:center;color:#7d8999;font-size:10px;padding:8px 0 0}
 @media(max-width:1500px){.stakeholder-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.viewership-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1050px){.filters{grid-template-columns:repeat(6,minmax(0,1fr))}.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 3}.topbar .sub{text-align:left}.chart-box{height:320px}}
@@ -139,22 +155,18 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="context" id="selectionContext"></div>
   </div>
 
-  <div class="note">
-    <b>Source-aware dashboard:</b> choose FAST or STREAM from the Source filter. Request Hours are based on all .ts request rows multiplied by 6 seconds. Playback Hours need deduped segment/session logic; that shared mart is marked as <b>Data Pipeline WIP</b> wherever it is not available yet.
-  </div>
-
   <div class="stakeholder-kpis" id="stakeholderKpis"></div>
 
   <section class="section">
     <div class="section-head">
       <div>
         <h2>Viewership Trend</h2>
-        <div class="desc">Viewership trend using the selected source and filters. Metrics missing from the selected source are marked Not Available.</div>
+        <div class="desc">Selected viewership performance across the chosen date range.</div>
       </div>
     </div>
     <div class="viewership-kpis" id="viewershipKpis"></div>
     <div class="panel">
-      <div class="panel-head"><div class="panel-title">Total Viewership Trend<small>Request-hour trend from .ts segments</small></div><button class="btn" onclick="expandChart('viewershipTrendChart','Total Viewership Trend')">Expand</button></div>
+      <div class="panel-head"><div class="panel-title">Total Viewership Trend<small>Daily trend for selected filters</small></div><button class="btn" onclick="expandChart('viewershipTrendChart','Total Viewership Trend')">Expand</button></div>
       <div class="chart-box"><canvas id="viewershipTrendChart"></canvas></div>
     </div>
   </section>
@@ -163,7 +175,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Content Title Analytics</h2>
-        <div class="desc">STREAM queryStr content_title analytics from manifest requests. Content watch-hours require a separate session attribution mart.</div>
+        <div class="desc">Content title performance where available.</div>
       </div>
     </div>
     <div class="grid-2">
@@ -186,12 +198,12 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Audience And Traffic</h2>
-        <div class="desc">Daily request volume, successful request hours, approximate IP reach, and manifest starts from the watch-hour marts.</div>
+        <div class="desc">Daily viewership, successful playback, audience reach, and playback starts.</div>
       </div>
     </div>
     <div class="grid-2">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Request Hours Trend<small>Raw .ts vs status 200 request hours</small></div><button class="btn" onclick="expandChart('trafficChart','Request Hours Trend')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Request Hours Trend<small>Total vs successful playback hours</small></div><button class="btn" onclick="expandChart('trafficChart','Request Hours Trend')">Expand</button></div>
         <div class="chart-box"><canvas id="trafficChart"></canvas></div>
       </div>
       <div class="panel">
@@ -205,22 +217,27 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Playtime</h2>
-        <div class="desc">Source-level playtime and IP distribution. Platform, OS, brand, model, and form factor are joined from the decoded UA lookup. Brand Not Exposed In UA means the UA was decoded but did not reveal manufacturer.</div>
+        <div class="desc">Playtime, geography, platform, OS, brand, model, and device distribution.</div>
       </div>
     </div>
     <div class="grid-3">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Playtime by GEO<small>Raw watch hours by country / state / city</small></div><button class="btn" onclick="expandChart('playGeoChart','Playtime by GEO')">Expand</button></div>
-        <div class="chart-box compact"><canvas id="playGeoChart"></canvas></div>
-        <div id="playGeoTable"></div>
+        <div class="panel-head"><div class="panel-title">Playtime by State / Region<small>Raw watch hours by country and region</small></div><button class="btn" onclick="expandChart('playStateChart','Playtime by State / Region')">Expand</button></div>
+        <div class="chart-box compact"><canvas id="playStateChart"></canvas></div>
+        <div id="playStateTable"></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Playtime by Platform<small>UA-derived device/platform bucket</small></div><button class="btn" onclick="expandChart('playPlatformChart','Playtime by Platform')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Playtime by City<small>Raw watch hours by city</small></div><button class="btn" onclick="expandChart('playCityChart','Playtime by City')">Expand</button></div>
+        <div class="chart-box compact"><canvas id="playCityChart"></canvas></div>
+        <div id="playCityTable"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Playtime by Platform / Device Type<small>Platform or device type split</small></div><button class="btn" onclick="expandChart('playPlatformChart','Playtime by Platform / Device Type')">Expand</button></div>
         <div class="chart-box compact"><canvas id="playPlatformChart"></canvas></div>
         <div id="playPlatformTable"></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Playtime by OS<small>UA-derived operating system bucket</small></div><button class="btn" onclick="expandChart('playOsChart','Playtime by OS')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Playtime by OS / Region Device<small>OS and device distribution</small></div><button class="btn" onclick="expandChart('playOsChart','Playtime by OS / Region Device')">Expand</button></div>
         <div class="chart-box compact"><canvas id="playOsChart"></canvas></div>
         <div id="playOsTable"></div>
       </div>
@@ -230,12 +247,12 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
         <div id="ipGeoTable"></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">IP by Platform<small>Approx IPs by UA-derived platform</small></div><button class="btn" onclick="expandChart('ipPlatformChart','IP by Platform')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">IP by Platform / Device Type<small>Approx IPs by UA platform or channel device type</small></div><button class="btn" onclick="expandChart('ipPlatformChart','IP by Platform / Device Type')">Expand</button></div>
         <div class="chart-box compact"><canvas id="ipPlatformChart"></canvas></div>
         <div id="ipPlatformTable"></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">IP by OS<small>Approx IPs by UA-derived OS</small></div><button class="btn" onclick="expandChart('ipOsChart','IP by OS')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">IP by OS / Region Device<small>Approx IPs by UA OS or channel region-device</small></div><button class="btn" onclick="expandChart('ipOsChart','IP by OS / Region Device')">Expand</button></div>
         <div class="chart-box compact"><canvas id="ipOsChart"></canvas></div>
         <div id="ipOsTable"></div>
       </div>
@@ -261,16 +278,31 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Concurrency</h2>
-        <div class="desc">Minute-level concurrency exists for FAST. STREAM concurrency is shown as Not Available until the same mart is generated.</div>
+        <div class="desc">Minute-level active viewer movement for FAST.</div>
       </div>
     </div>
     <div class="grid-2">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">5-Minute Active Viewer Estimate<small>Available for FAST source</small></div><button class="btn" onclick="expandChart('concurrencyChart','5-Minute Active Viewer Estimate')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Active Viewer Minute Sum<small>FAST cliIP count summed inside selected interval</small></div><button class="btn" onclick="expandChart('concurrencyChart','Active Viewer Minute Sum')">Expand</button></div>
+        <div class="mini-controls">
+          <button class="btn" id="concInterval1" onclick="setConcurrencyInterval(1)">1 min</button>
+          <button class="btn" id="concInterval5" onclick="setConcurrencyInterval(5)">5 min</button>
+          <button class="btn" id="concInterval15" onclick="setConcurrencyInterval(15)">15 min</button>
+          <button class="btn" id="concInterval30" onclick="setConcurrencyInterval(30)">30 min</button>
+          <div class="mini-field">
+            <label>Custom min</label>
+            <input id="concCustomMinutes" type="number" min="1" max="240" step="1" value="5" onchange="setCustomConcurrencyInterval(this.value)"/>
+          </div>
+          <div class="mini-field">
+            <label>HTTP Status</label>
+            <select id="concStatusSelect" onchange="setConcurrencyStatus(this.value)"></select>
+          </div>
+        </div>
         <div class="chart-box tall" id="concurrencyBox"><canvas id="concurrencyChart"></canvas></div>
+        <div class="chart-note" id="concurrencyNote"></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Platform Leaders<small>Available where platform mart exists</small></div></div>
+        <div class="panel-head"><div class="panel-title">Platform Leaders<small>Top platforms by selected activity</small></div></div>
         <div id="platformTable"></div>
       </div>
     </div>
@@ -280,7 +312,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Channels</h2>
-        <div class="desc">Channel watch-hour ranking and selected channel trends from the daily channel mart.</div>
+        <div class="desc">Channel watch-hour ranking and selected channel trends.</div>
       </div>
     </div>
     <div class="grid-2">
@@ -300,7 +332,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Reliability And Latency</h2>
-        <div class="desc">CDN latency, cache, and HTTP status health from the latency profile marts.</div>
+        <div class="desc">Latency, cache, and HTTP status health.</div>
       </div>
     </div>
     <div class="grid-3">
@@ -324,7 +356,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Geo And Devices</h2>
-        <div class="desc">Geography is production-ready from the watch-hour mart. Device intelligence is usage-weighted from decoded UA lookup joined to daily UA playtime.</div>
+        <div class="desc">Top regions and device intelligence for the selected filters.</div>
       </div>
     </div>
     <div class="grid-2">
@@ -334,31 +366,20 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
         <div id="geoTable"></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Device / OS Decode<small>usage-weighted decoded UA identity</small></div><button class="btn" onclick="expandChart('deviceChart','Device / OS Decode')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Device / Region Evidence<small>decoded UA identity or channel device type</small></div><button class="btn" onclick="expandChart('deviceChart','Device / Region Evidence')">Expand</button></div>
         <div class="chart-box tall"><canvas id="deviceChart"></canvas></div>
         <div id="deviceTable"></div>
       </div>
     </div>
   </section>
 
-  <section class="section">
-    <div class="section-head">
-      <div>
-        <h2>Data Pipeline WIP</h2>
-        <div class="desc">What is available now versus what still needs a reusable parquet mart before it becomes a dashboard metric.</div>
-      </div>
-    </div>
-    <div class="wip-grid" id="wipGrid"></div>
-    <div class="range-table" id="rangeCards"></div>
-  </section>
-
-  <div class="footer">Generated by ETL from existing parquet outputs. Missing telemetry is intentionally marked as Data Pipeline WIP.</div>
+  <div class="footer">Generated for Veto Audience Operations.</div>
 </main>
 
 <div class="modal" id="chartModal">
   <div class="modal-panel">
     <div class="modal-head"><b id="modalTitle">Chart</b><button class="btn" onclick="closeModal()">Close</button></div>
-    <div class="modal-body"><div class="chart-box"><canvas id="modalCanvas"></canvas></div></div>
+    <div class="modal-body"><div id="modalControls" class="modal-controls"></div><div class="chart-box"><canvas id="modalCanvas"></canvas></div></div>
   </div>
 </div>
 
@@ -366,10 +387,11 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 const D = $DATA_BLOB;
 const DATA = D.data || {};
 const COLORS = ["#1f7897","#b88416","#12805c","#6057b1","#d65f18","#b42318","#0f6b4d","#2d5b9a","#9f5a00","#7c3aed","#0891b2","#dc2626"];
-const state = {start:D.meta.max_date,end:D.meta.max_date,source:"fast",platform:"all",channel:"all",preset:"yesterday"};
+const state = {start:D.meta.max_date,end:D.meta.max_date,source:"fast",platform:"all",channel:"all",preset:"yesterday",concurrencyInterval:5,concurrencyStatus:"all"};
 const charts = {};
 const configs = {};
 let modalChart = null;
+let modalSourceChartId = "";
 
 function el(id){return document.getElementById(id)}
 function n(v){const x=Number(v);return Number.isFinite(x)?x:0}
@@ -432,6 +454,96 @@ function addIsoDays(dateText,delta){
   d.setUTCDate(d.getUTCDate()+Number(delta||0));
   return d.toISOString().slice(0,10);
 }
+function parseMinuteIndex(text){
+  const raw=String(text||"").replace("T"," ");
+  const parts=raw.split(" ");
+  if(parts.length<2)return null;
+  const d=parts[0].split("-").map(Number);
+  const t=parts[1].slice(0,8).split(":").map(Number);
+  if(d.length!==3||t.length<2||!d[0]||!d[1]||!d[2])return null;
+  return Math.floor(Date.UTC(d[0],d[1]-1,d[2],t[0]||0,t[1]||0,0)/60000);
+}
+function minuteIndexLabel(index){
+  const d=new Date(Number(index)*60000);
+  return d.toISOString().slice(0,16).replace("T"," ")+":00";
+}
+function concurrencyIntervalMinutes(){
+  const raw=Number(state.concurrencyInterval||5);
+  if(!Number.isFinite(raw))return 5;
+  return Math.max(1,Math.min(240,Math.round(raw)));
+}
+function concurrencyIntervalLabel(){
+  const m=concurrencyIntervalMinutes();
+  return m===1?"1 minute":m+" minutes";
+}
+function setConcurrencyInterval(value){
+  state.concurrencyInterval=Number(value)||5;
+  syncConcurrencyControls();
+  renderConcurrency();
+  refreshModalChart();
+}
+function setCustomConcurrencyInterval(value){
+  state.concurrencyInterval=Number(value)||5;
+  syncConcurrencyControls();
+  renderConcurrency();
+  refreshModalChart();
+}
+function setConcurrencyStatus(value){
+  state.concurrencyStatus=String(value||"all");
+  syncConcurrencyControls();
+  renderConcurrency();
+  refreshModalChart();
+}
+function concurrencyStatusOptionsHtml(){
+  const codes=(DATA.concurrency_status_codes||[]).map(function(v){return String(v)}).filter(Boolean).sort();
+  return ["<option value='all'>All HTTP statuses</option>"].concat(codes.map(function(code){return "<option value='"+esc(code)+"'>Status "+esc(code)+"</option>"})).join("");
+}
+function rebuildConcurrencyStatusOptions(){
+  const html=concurrencyStatusOptionsHtml();
+  ["concStatusSelect","modalConcStatusSelect"].forEach(function(id){const select=el(id);if(select)select.innerHTML=html;});
+}
+function concurrencyModalControlsHtml(){
+  return "<div class='mini-controls'>"
+    +"<button class='btn' id='modalConcInterval1' onclick='setConcurrencyInterval(1)'>1 min</button>"
+    +"<button class='btn' id='modalConcInterval5' onclick='setConcurrencyInterval(5)'>5 min</button>"
+    +"<button class='btn' id='modalConcInterval15' onclick='setConcurrencyInterval(15)'>15 min</button>"
+    +"<button class='btn' id='modalConcInterval30' onclick='setConcurrencyInterval(30)'>30 min</button>"
+    +"<div class='mini-field'><label>Custom min</label><input id='modalConcCustomMinutes' type='number' min='1' max='240' step='1' value='"+esc(concurrencyIntervalMinutes())+"' onchange='setCustomConcurrencyInterval(this.value)'/></div>"
+    +"<div class='mini-field'><label>HTTP Status</label><select id='modalConcStatusSelect' onchange='setConcurrencyStatus(this.value)'></select></div>"
+    +"</div>";
+}
+function modalBaseControlsHtml(){
+  return "<div class='mini-controls'>"
+    +"<div class='mini-field date'><label>Date From</label><input id='modalStartDate' type='date' onchange='setModalDateInputs()'/></div>"
+    +"<div class='mini-field date'><label>Date To</label><input id='modalEndDate' type='date' onchange='setModalDateInputs()'/></div>"
+    +"<div class='mini-field'><label>Source</label><select id='modalSourceSelect' onchange='setSource(this.value)'></select></div>"
+    +"<div class='mini-field wide'><label>Platform</label><select id='modalPlatformSelect' onchange='setPlatform(this.value)'></select></div>"
+    +"<div class='mini-field wide'><label>Channel</label><select id='modalChannelSelect' onchange='setChannel(this.value)'></select></div>"
+    +"<button class='btn' id='modalPresetYesterday' onclick=\"setPreset('yesterday')\">Yesterday</button>"
+    +"<button class='btn' id='modalPreset7' onclick='setPreset(7)'>7D</button>"
+    +"<button class='btn' id='modalPreset15' onclick='setPreset(15)'>15D</button>"
+    +"<button class='btn' id='modalPreset30' onclick='setPreset(30)'>30D</button>"
+    +"<button class='btn' id='modalPresetAll' onclick=\"setPreset('all')\">All</button>"
+    +"</div>";
+}
+function syncConcurrencyControls(){
+  const interval=concurrencyIntervalMinutes();
+  state.concurrencyInterval=interval;
+  const input=el("concCustomMinutes");
+  if(input)input.value=interval;
+  const modalInput=el("modalConcCustomMinutes");
+  if(modalInput)modalInput.value=interval;
+  [1,5,15,30].forEach(function(v){
+    const btn=el("concInterval"+v);
+    if(btn)btn.classList.toggle("active",interval===v);
+    const modalBtn=el("modalConcInterval"+v);
+    if(modalBtn)modalBtn.classList.toggle("active",interval===v);
+  });
+  const select=el("concStatusSelect");
+  if(select)select.value=state.concurrencyStatus;
+  const modalSelect=el("modalConcStatusSelect");
+  if(modalSelect)modalSelect.value=state.concurrencyStatus;
+}
 function applyPresetRange(p){
   const r=sourceRange();
   if(p==="all"){state.start=r.min;state.end=r.max;return}
@@ -464,6 +576,30 @@ function platformChannelRows(){
       approx_unique_ips:n(r.peak_unique_viewers)
     });
   });
+}
+function fastPlatformChannelIdentityRows(){
+  return filterRows(DATA.fast_platform_channel_identity_daily||[],{channel:true,platform:true});
+}
+function fastPlatformChannelGeoRows(){
+  return filterRows(DATA.fast_platform_channel_geo_daily||[],{channel:true,platform:true});
+}
+function fastPlatformChannelUaDeviceRows(){
+  return filterRows(DATA.fast_platform_channel_ua_device_daily||[],{channel:true,platform:true});
+}
+function fastPlatformChannelManifestRows(){
+  return filterRows(DATA.fast_platform_channel_manifest_daily||[],{channel:true,platform:true});
+}
+function fastPlatformChannelBandwidthRows(){
+  return filterRows(DATA.fast_platform_channel_bandwidth_daily||[],{channel:true,platform:true});
+}
+function fastPlatformChannelCmcdRows(){
+  return filterRows(DATA.fast_platform_channel_cmcd_daily||[],{channel:true,platform:true});
+}
+function channelDeviceTypeRows(){
+  return filterRows(DATA.channel_device_type_daily||[],{channel:true,platform:false});
+}
+function regionChannelDeviceRows(){
+  return filterRows(DATA.region_channel_device_daily||[],{channel:true,platform:false});
 }
 function streamContentRows(){
   return filterRows(DATA.content_daily||[],{channel:true,platform:true});
@@ -517,12 +653,24 @@ function uniqueIpMetricForScope(){
       };
     }
     if(state.channel!=="all"){
+      const rows=fastPlatformChannelIdentityRows();
+      const days=selectedDayCount(rows);
+      const dailyDistinct=sum(rows,"distinct_cliips");
+      if(dailyDistinct>0){
+        return {
+          available:true,
+          value:dailyDistinct,
+          rows:rows,
+          kind:"fast_platform_channel_daily_cliip_sum",
+          note:days>1?("Daily user sum across "+days+" days"):"Unique users for selected day"
+        };
+      }
       return {
         available:false,
         value:0,
-        rows:platformChannelRows(),
+        rows:rows,
         kind:"fast_platform_channel_unique_ip_unavailable",
-        note:"FAST platform+channel total distinct cliIP is not available. Host-level IP is platform-wide and would overstate this channel."
+        note:"Not available for this filter combination"
       };
     }
     const hostRows=latencyRowsForScope("ts");
@@ -536,7 +684,7 @@ function uniqueIpMetricForScope(){
         value:hostIps,
         rows:hostRows,
         kind:"fast_host_cliip_sum",
-        note:days>1?("Host-level .ts approx cliIP daily sum "+hostScope+" across "+days+" days"):"Host-level .ts approx cliIP from latency mart "+hostScope
+        note:days>1?("Daily user sum "+hostScope+" across "+days+" days"):"Estimated users "+hostScope
       };
     }
     const rows=platformChannelRows();
@@ -557,7 +705,7 @@ function uniqueIpMetricForScope(){
       available:rows.length>0,
       value:sum(rows,"approx_unique_ips"),
       rows:rows,
-      note:days>1?("Selected range daily channel cliIP sum across "+days+" days"):"Selected day channel distinct cliIP"
+      note:days>1?("Daily user sum across "+days+" days"):"Unique users for selected day"
     };
   }
   const overviewRows=overviewDailyRowsForScope();
@@ -567,7 +715,7 @@ function uniqueIpMetricForScope(){
       available:true,
       value:sum(overviewRows,"dist_ip"),
       rows:overviewRows,
-      note:days>1?("Selected range daily distinct cliIP sum across "+days+" days; same basis as Overview"):"Selected day distinct cliIP; same basis as Overview"
+      note:days>1?("Daily user sum across "+days+" days"):"Unique users for selected day"
     };
   }
   const rows=filterRows(DATA.daily||[],{channel:false,platform:false});
@@ -576,10 +724,23 @@ function uniqueIpMetricForScope(){
     available:rows.length>0,
     value:sum(rows,"approx_unique_ips"),
     rows:rows,
-    note:days>1?("Fallback selected range daily approx cliIP sum across "+days+" days"):"Fallback selected day approx cliIP"
+    note:days>1?("Daily user sum across "+days+" days"):"Unique users for selected day"
   };
 }
 function uniqueIpForScope(){return uniqueIpMetricForScope().value}
+function fastIpUaMetricForScope(){
+  if(state.source!=="fast"||state.platform==="all"||state.channel==="all")return null;
+  const rows=fastPlatformChannelIdentityRows();
+  const days=selectedDayCount(rows);
+  const value=sum(rows,"distinct_ipua_pairs");
+  if(value<=0)return null;
+  return {
+    available:true,
+    value:value,
+    rows:rows,
+    note:days>1?("Daily user-device signature sum across "+days+" days"):"User-device signatures for selected day"
+  };
+}
 function peakAudienceMetricForScope(){
   if(state.platform!=="all"){
     if(state.source==="stream"){
@@ -587,14 +748,14 @@ function peakAudienceMetricForScope(){
       return {
         label:"Peak Daily Unique IPs",
         value:max(rows,"approx_unique_ips"),
-        note:"STREAM platform/content daily approx cliIP peak"
+        note:"Peak users for selected content"
       };
     }
     const rows=filterRows(DATA.concurrency_summary||[],{channel:true});
     return {
       label:"Peak Active Viewers",
       value:max(rows,"peak_unique_viewers"),
-      note:"FAST platform/channel concurrency peak"
+      note:"Peak active users for selected filters"
     };
   }
   if(state.channel!=="all"){
@@ -602,7 +763,7 @@ function peakAudienceMetricForScope(){
     return {
       label:"Peak Daily Unique IPs",
       value:max(rows,"approx_unique_ips"),
-      note:"Channel daily approx cliIP peak"
+      note:"Peak daily users for selected channel"
     };
   }
   const overviewRows=overviewDailyRowsForScope();
@@ -610,14 +771,14 @@ function peakAudienceMetricForScope(){
     return {
       label:"Peak Daily Unique IPs",
       value:max(overviewRows,"dist_ip"),
-      note:"Daily distinct cliIP peak; same basis as Overview"
+      note:"Peak daily users"
     };
   }
   const rows=filterRows(DATA.daily||[],{channel:false,platform:false});
   return {
     label:"Peak Daily Unique IPs",
     value:max(rows,"approx_unique_ips"),
-    note:"Fallback daily approx cliIP peak"
+    note:"Peak daily users"
   };
 }
 function identityRowsForScope(){
@@ -639,7 +800,7 @@ function identityTotals(){
     returningDevices:sum(rows,"returning_devices"),
     identityRows:sum(rows,"device_identity_rows")||sum(rows,"session_identity_rows"),
     hasIdentity:rows.length>0&&sum(rows,"total_devices")+sum(rows,"total_sessions")>0,
-    note:days>1?("STREAM queryStr identity; daily distinct sum across "+days+" days"):"STREAM queryStr identity; exact for selected day/scope"
+    note:days>1?("Daily identity sum across "+days+" days"):"Identity totals for selected day"
   };
 }
 function selectedFastReqHosts(){
@@ -663,19 +824,42 @@ function latencyRowsForScope(extension){
   return rows.filter(function(r){return String(r.extension||"").toLowerCase()===ext});
 }
 function scopedManifestViews(){
+  if(state.source==="fast"){
+    const fastManifest=fastPlatformChannelManifestRows();
+    if(fastManifest.length)return sum(fastManifest,"m3u8_rows");
+  }
   const content=streamContentRows();
   if((state.platform!=="all"||state.channel!=="all")&&content.length)return sum(content,"m3u8_rows");
-  if(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all")return null;
   const rows=latencyRowsForScope("m3u8");
   if(rows.length)return sum(rows,"rows");
   if(state.platform==="all"&&state.channel==="all")return sum(filterRows(DATA.daily||[],{channel:false,platform:false}),"m3u8_rows");
   return null;
 }
 function scopedVideoBandwidthBytes(){
-  if(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all")return null;
+  if(state.source==="fast"){
+    const fastBandwidth=fastPlatformChannelBandwidthRows();
+    if(fastBandwidth.length)return sum(fastBandwidth,"total_bytes");
+  }
   const rows=latencyRowsForScope("ts");
   if(!rows.length)return null;
   return rows.reduce(function(a,r){return a+n(r.rows)*n(r.avg_total_bytes)},0);
+}
+function cmcdPlaybackMetricForScope(){
+  if(state.source!=="fast")return null;
+  const rows=fastPlatformChannelCmcdRows();
+  if(!rows.length)return null;
+  const sessions=sum(rows,"distinct_cmcd_sessions");
+  const sidRows=sum(rows,"cmcd_sid_rows");
+  const tsRows=sum(rows,"raw_ts_rows");
+  return {
+    available:sessions>0,
+    sessions:sessions,
+    sidRows:sidRows,
+    tsRows:tsRows,
+    coverage:tsRows?sidRows*100/tsRows:0,
+    durationHours:sum(rows,"cmcd_reported_duration_hours"),
+    days:selectedDayCount(rows)
+  };
 }
 
 function setupFilters(){
@@ -686,13 +870,15 @@ function setupFilters(){
   el("sourceSelect").innerHTML=sources.map(function(s){return "<option value='"+esc(s)+"'>"+s.toUpperCase()+"</option>"}).join("");
   rebuildPlatformOptions();
   rebuildChannelOptions();
+  rebuildConcurrencyStatusOptions();
   setPreset("yesterday");
 }
-function setPreset(p){state.preset=p;applyPresetRange(p);syncFilters();renderAll()}
-function setDateInputs(){const r=sourceRange();state.start=el("startDate").value||r.min;state.end=el("endDate").value||r.max;if(state.start>state.end){const t=state.start;state.start=state.end;state.end=t}state.preset="custom";syncFilters();renderAll()}
-function setSource(v){state.source=v;state.platform="all";state.channel="all";rebuildPlatformOptions();rebuildChannelOptions();if(state.preset==="custom"){clampDateRange()}else{applyPresetRange(state.preset)}syncFilters();renderAll()}
-function setPlatform(v){state.platform=v;rebuildChannelOptions();syncFilters();renderAll()}
-function setChannel(v){state.channel=v;syncFilters();renderAll()}
+function setPreset(p){state.preset=p;applyPresetRange(p);syncFilters();renderAll();refreshModalChart()}
+function setDateInputs(){const r=sourceRange();state.start=el("startDate").value||r.min;state.end=el("endDate").value||r.max;if(state.start>state.end){const t=state.start;state.start=state.end;state.end=t}state.preset="custom";syncFilters();renderAll();refreshModalChart()}
+function setModalDateInputs(){const r=sourceRange();state.start=el("modalStartDate").value||r.min;state.end=el("modalEndDate").value||r.max;if(state.start>state.end){const t=state.start;state.start=state.end;state.end=t}state.preset="custom";syncFilters();renderAll();refreshModalChart()}
+function setSource(v){state.source=v;state.platform="all";state.channel="all";rebuildPlatformOptions();rebuildChannelOptions();if(state.preset==="custom"){clampDateRange()}else{applyPresetRange(state.preset)}syncFilters();renderAll();refreshModalChart()}
+function setPlatform(v){state.platform=v;rebuildChannelOptions();syncFilters();renderAll();refreshModalChart()}
+function setChannel(v){state.channel=v;syncFilters();renderAll();refreshModalChart()}
 function rebuildPlatformOptions(){
   let platforms=["all"];
   if(state.source==="fast"){
@@ -724,6 +910,27 @@ function syncFilters(){
   el("startDate").value=state.start;el("endDate").value=state.end;el("sourceSelect").value=state.source;el("platformSelect").value=state.platform;el("channelSelect").value=state.channel;
   ["presetYesterday","preset7","preset15","preset30","presetAll"].forEach(function(id){el(id).classList.remove("active")});
   if(state.preset==="yesterday")el("presetYesterday").classList.add("active");if(state.preset===7)el("preset7").classList.add("active");if(state.preset===15)el("preset15").classList.add("active");if(state.preset===30)el("preset30").classList.add("active");if(state.preset==="all")el("presetAll").classList.add("active");
+  syncModalFilterControls();
+}
+function syncModalFilterControls(){
+  const start=el("modalStartDate");
+  if(!start)return;
+  const end=el("modalEndDate");
+  const r=sourceRange();
+  start.min=r.min;start.max=r.max;start.value=state.start;
+  end.min=r.min;end.max=r.max;end.value=state.end;
+  const source=el("modalSourceSelect");
+  const platform=el("modalPlatformSelect");
+  const channel=el("modalChannelSelect");
+  if(source){source.innerHTML=el("sourceSelect").innerHTML;source.value=state.source}
+  if(platform){platform.innerHTML=el("platformSelect").innerHTML;platform.value=state.platform;platform.disabled=el("platformSelect").disabled}
+  if(channel){channel.innerHTML=el("channelSelect").innerHTML;channel.value=state.channel}
+  ["modalPresetYesterday","modalPreset7","modalPreset15","modalPreset30","modalPresetAll"].forEach(function(id){const b=el(id);if(b)b.classList.remove("active")});
+  if(state.preset==="yesterday"&&el("modalPresetYesterday"))el("modalPresetYesterday").classList.add("active");
+  if(state.preset===7&&el("modalPreset7"))el("modalPreset7").classList.add("active");
+  if(state.preset===15&&el("modalPreset15"))el("modalPreset15").classList.add("active");
+  if(state.preset===30&&el("modalPreset30"))el("modalPreset30").classList.add("active");
+  if(state.preset==="all"&&el("modalPresetAll"))el("modalPresetAll").classList.add("active");
 }
 
 function kpi(label,value,sub,cls){return "<div class='kpi "+(cls||"")+"'><b>"+esc(label)+"</b><span>"+value+"</span><small>"+esc(sub||"")+"</small></div>"}
@@ -736,26 +943,30 @@ function renderStakeholderKpis(){
   const ipHint=ipMetric.value;
   const reqHours=requestHours(rows);
   const ident=identityTotals();
+  const fastIpUa=fastIpUaMetricForScope();
+  const cmcdMetric=cmcdPlaybackMetricForScope();
   const channelManifestNote=views==null
-    ?(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all"?"FAST platform+channel manifest split is not available; host m3u8 is platform-wide":"Platform + channel master manifest split is not available")
-    :(canUseDailyScope?"Master manifest requests from daily mart":"Master manifest requests from latency profile mart");
+    ?"Not available for this selection"
+    :"Playback start requests";
   const notAvailable="Not Available";
-  const identityMissingNote=state.source==="fast"?"FAST CDN queryStr has no device_id/session_id evidence":"Identity mart has no rows for this selected filter/date";
-  const avgWatchNote=ipMetric.kind==="fast_active_peak"?"Request hours / peak active cliIP estimate":(ipMetric.available?"Request hours / selected Unique IP denominator":ipMetric.note||"Unique IP denominator is not available for this scope");
-  const ipSessionNote=ipMetric.kind==="fast_active_peak"?"Peak active IP estimate; FAST session_id unavailable":(ipMetric.available?(ident.hasIdentity?"IP from selected watch mart; session_id from identity mart":"Distinct sessions are not available for this source/filter"):(ipMetric.note||"Unique IP + distinct session mart is not available"));
+  const identityMissingNote="Not available for this selection";
+  const avgWatchNote=ipMetric.available?"Watch hours divided by users":"Not available for this selection";
+  const ipSessionNote=ipMetric.available?"Selected user and session summary":"Not available for this selection";
   const sessionText=ident.hasIdentity?fmtInt(ident.sessions):notAvailable;
+  const ipuaSessionText=ident.hasIdentity?fmtInt(ident.ipua):(fastIpUa?fmtInt(fastIpUa.value):notAvailable);
   const deviceText=ident.hasIdentity?fmtInt(ident.devices):notAvailable;
+  const manifestNote=channelManifestNote;
   el("stakeholderKpis").innerHTML=[
     stakeholderKpi("Total Users (Based on Device ID - APP DATA)",deviceText,ident.hasIdentity?ident.note:identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Sessions (Based on Session ID in query String - APP DATA)",sessionText,ident.hasIdentity?ident.note:identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Users (Based on Uniq IP)",ipMetric.available?fmtInt(ipHint):notAvailable,ipMetric.note,ipMetric.available?"gold":"wip-box"),
-    stakeholderKpi("Total New Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.newDevices):notAvailable,ident.hasIdentity?"First seen in selected identity scope":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Returning Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.returningDevices):notAvailable,ident.hasIdentity?"Known device_id seen before in selected identity scope":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Sessions (Based on Uniq IP & UA)",ident.hasIdentity?fmtInt(ident.ipua):notAvailable,ident.hasIdentity?ident.note:"Distinct cliIP + UA identity mart is not available for this selection",ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Views (Total Master Manifest Requests)",views!=null?fmtInt(views):notAvailable,channelManifestNote,views!=null?"gold":"wip-box"),
-    stakeholderKpi("Total Session Duration (Hours)",notAvailable,"True app session duration is not present in current "+sourceLabel()+" data","wip-box"),
+    stakeholderKpi("Total New Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.newDevices):notAvailable,ident.hasIdentity?"First seen users":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
+    stakeholderKpi("Total Returning Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.returningDevices):notAvailable,ident.hasIdentity?"Returning users":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
+    stakeholderKpi("Total Sessions (Based on Uniq IP & UA)",ipuaSessionText,ident.hasIdentity?ident.note:(fastIpUa?fastIpUa.note:"Not available for this selection"),(ident.hasIdentity||fastIpUa)?"gold":"wip-box"),
+    stakeholderKpi("Total Views (Total Master Manifest Requests)",views!=null?fmtInt(views):notAvailable,manifestNote,views!=null?"gold":"wip-box"),
+    stakeholderKpi("Total Session Duration (Hours)",notAvailable,"Not available for this selection","wip-box"),
     stakeholderKpi("Avg Watch Time per user (Based on Unique IP)",ipMetric.available&&ipHint?fmt(reqHours*60/ipHint,1)+" min":notAvailable,avgWatchNote,ipMetric.available?"gold":"wip-box"),
-    stakeholderKpi("Total Unique IPs & Sessions (Distinct)",ipMetric.available?("IPs "+fmtInt(ipHint)+" / Sessions "+(ident.hasIdentity?fmtInt(ident.sessions):"NA")):notAvailable,ipSessionNote,ipMetric.available?"gold":"wip-box")
+    stakeholderKpi("Total Unique IPs & Sessions (Distinct)",ipMetric.available?("IPs "+fmtInt(ipHint)+" / Sessions "+(ident.hasIdentity?fmtInt(ident.sessions):(fastIpUa?fmtInt(fastIpUa.value):"NA"))):notAvailable,ipSessionNote,ipMetric.available?"gold":"wip-box")
   ].join("");
 }
 function renderViewershipTrend(){
@@ -765,12 +976,23 @@ function renderViewershipTrend(){
   const ipMetric=uniqueIpMetricForScope();
   const ipHint=ipMetric.value;
   const bandwidth=scopedVideoBandwidthBytes();
-  el("viewershipKpis").innerHTML=[
-    kpi("Total Viewership (Hours)",fmt(hours,1)+" h","Request-hour basis: .ts segments * 6 sec",""),
-    kpi("Avg Watch Time/User",ipMetric.available&&ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipMetric.kind==="fast_active_peak"?"Based on peak active cliIP estimate":(ipMetric.available?"Based on selected Unique IP denominator":ipMetric.note||"Unique IP denominator unavailable for this scope"),ipMetric.available?"gold":"wip-box"),
-    kpi("Total Segments Played",fmtInt(segments),"Total .ts segment request rows","green"),
-    kpi("Total Bandwidth (Video)",bandwidth!=null?fmtBytes(bandwidth):"Not Available",bandwidth!=null?".ts rows * avg_total_bytes from latency mart":(state.source==="fast"&&state.platform!=="all"&&state.channel!=="all"?"FAST platform+channel bandwidth split is not available; host traffic is platform-wide":"Bandwidth unavailable for platform + channel combined split"),bandwidth!=null?"gold":"wip-box")
-  ].join("");
+  const cmcdMetric=cmcdPlaybackMetricForScope();
+  const bandwidthNote=bandwidth!=null?"Selected range video bandwidth":"Not available for this selection";
+  const cards=[
+    kpi("Total Viewership (Hours)",fmt(hours,1)+" h","Selected range watch hours",""),
+    kpi("Avg Watch Time/User",ipMetric.available&&ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipMetric.available?"Watch hours divided by users":"Not available for this selection",ipMetric.available?"gold":"wip-box"),
+    kpi("Total Segments Played",fmtInt(segments),"Video segment plays","green"),
+    kpi("Total Bandwidth (Video)",bandwidth!=null?fmtBytes(bandwidth):"Not Available",bandwidthNote,bandwidth!=null?"gold":"wip-box")
+  ];
+  if(state.source==="fast"){
+    cards.push(kpi(
+      "CMCD Playback Sessions",
+      cmcdMetric&&cmcdMetric.available?fmtInt(cmcdMetric.sessions):"Not Available",
+      cmcdMetric?"Playback sessions reported by supported devices":"Not available for selected filters",
+      cmcdMetric&&cmcdMetric.available?"gold":"wip-box"
+    ));
+  }
+  el("viewershipKpis").innerHTML=cards.join("");
   const byDay=new Map();
   rows.forEach(function(r){
     const d=String(r.log_date||"").slice(0,10);if(!d)return;
@@ -803,9 +1025,9 @@ function contentRollup(rows,keyFn,limit){
 function renderContent(){
   const rows=contentRows();
   if(!rows.length){
-    clearChart("contentRankChart",state.source==="fast"?"FAST current logs have no content_title parameter.":"No content-title rows for selected date/channel.");
+    clearChart("contentRankChart","No content title data for selected filters.");
     clearChart("contentTrendChart","No content-title trend for selected filters");
-    renderTable("contentTable",["Content Title","Status"],[[state.source==="fast"?"FAST content_title":"Content title rows","Not Available"]],[]);
+    renderTable("contentTable",["Content Title","Status"],[["Selected filters","Not Available"]],[]);
     return;
   }
   const ranked=contentRollup(rows,function(r){return r.content_title||"Unknown / NA"},15);
@@ -847,14 +1069,14 @@ function renderKpis(){
   const cache=sum(latency,"rows")?sum(latency,"cache_hit_rows")*100/sum(latency,"rows"):0;
   const sourcePeak=max(conc,"peak_unique_viewers");
   el("kpis").innerHTML=[
-    kpi("Request Hours",fmt(reqHours,1)+" h","All .ts request rows * 6 sec",""),
-    kpi("Status 200 Hours",fmt(okHours,1)+" h","Successful .ts request rows only","green"),
+    kpi("Request Hours",fmt(reqHours,1)+" h","Selected range watch hours",""),
+    kpi("Status 200 Hours",fmt(okHours,1)+" h","Successful playback hours","green"),
     kpi(peakAudience.label,peakAudience.value?fmtInt(peakAudience.value):"Not Available",peakAudience.note,"gold"),
-    kpi("Manifest Requests",manifest!=null?fmtInt(manifest):"Not Available",manifest!=null?"Master manifest requests from processed mart":"Platform + channel manifest split is not available","violet"),
+    kpi("Manifest Requests",manifest!=null?fmtInt(manifest):"Not Available",manifest!=null?"Playback start requests":"Not available for this selection","violet"),
     kpi("Non-200 Response Rate",pct(non200),"HTTP rows outside status 200",non200>5?"red":""),
     kpi("TTFB p95",ttfb?fmt(ttfb,1)+" ms":"No data","Weighted by latency rows",""),
     kpi("Cache Hit Rate",cache?pct(cache):"No data","cacheStatus = 1","green"),
-    kpi("Peak Active Viewers",sourcePeak?fmt(sourcePeak,1):"Not Available",state.source==="fast"?"Peak cliIP active viewers in selected FAST scope":"STREAM concurrency mart is not available","gold")
+    kpi("Peak Active Viewers",sourcePeak?fmt(sourcePeak,1):"Not Available",state.source==="fast"?"Peak active users for selected filters":"Not available for this selection","gold")
   ].join("");
 }
 
@@ -865,10 +1087,10 @@ function barConfig(labels,data,label,color,axis){
   return {type:"bar",data:{labels:labels,datasets:[{label:label,data:data,backgroundColor:color||COLORS[0],borderRadius:4,borderSkipped:false}]},options:{indexAxis:axis||"x",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return label+": "+fmt(ctx.raw,1)}}}},scales:{x:{beginAtZero:true,ticks:{color:"#667085",font:{size:10}},grid:{color:"#edf2f7"}},y:{ticks:{color:"#334155",font:{size:10}},grid:{display:false}}}}}
 }
 function doughnutConfig(labels,data){
-  return {type:"doughnut",data:{labels:labels,datasets:[{data:data,backgroundColor:COLORS,borderColor:"#fff",borderWidth:2,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:"58%",plugins:{legend:{position:"bottom",labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:{label:function(ctx){const total=ctx.dataset.data.reduce(function(a,b){return a+n(b)},0);const share=total?n(ctx.raw)*100/total:0;return ctx.label+": "+fmtInt(ctx.raw)+" rows ("+pct(share)+")"}}}}}}
+  return {type:"doughnut",data:{labels:labels,datasets:[{data:data,backgroundColor:COLORS,borderColor:"#fff",borderWidth:2,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:"58%",plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){const total=ctx.dataset.data.reduce(function(a,b){return a+n(b)},0);const share=total?n(ctx.raw)*100/total:0;return ctx.label+": "+fmtInt(ctx.raw)+" rows ("+pct(share)+")"}}}}}}
 }
 function doughnutValueConfig(labels,data,valueLabel,decimals){
-  return {type:"doughnut",data:{labels:labels,datasets:[{data:data,backgroundColor:COLORS,borderColor:"#fff",borderWidth:2,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:"58%",plugins:{legend:{position:"bottom",labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:{label:function(ctx){const total=ctx.dataset.data.reduce(function(a,b){return a+n(b)},0);const share=total?n(ctx.raw)*100/total:0;return ctx.label+": "+fmt(ctx.raw,decimals==null?1:decimals)+" "+valueLabel+" ("+pct(share)+")"}}}}}}
+  return {type:"doughnut",data:{labels:labels,datasets:[{data:data,backgroundColor:COLORS,borderColor:"#fff",borderWidth:2,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:"58%",plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){const total=ctx.dataset.data.reduce(function(a,b){return a+n(b)},0);const share=total?n(ctx.raw)*100/total:0;return ctx.label+": "+fmt(ctx.raw,decimals==null?1:decimals)+" "+valueLabel+" ("+pct(share)+")"}}}}}}
 }
 function draw(id,config){
   configs[id]=JSON.parse(JSON.stringify(config));
@@ -890,6 +1112,7 @@ function clearChart(id,msg){
 function renderTraffic(){
   const scoped=state.platform!=="all"||state.channel!=="all";
   const base=scopedWatchRows();
+  const manifestRows=state.source==="fast"?fastPlatformChannelManifestRows():[];
   const map=new Map();
   base.forEach(function(r){
     const d=String(r.log_date||"").slice(0,10);if(!d)return;
@@ -901,6 +1124,11 @@ function renderTraffic(){
     o.m3u8_rows+=n(r.m3u8_rows);
     o.peak_unique_viewers=Math.max(o.peak_unique_viewers,n(r.peak_unique_viewers));
     if(n(r.avg_unique_viewers)){o.avg_unique_viewers_sum+=n(r.avg_unique_viewers);o.avg_unique_viewers_count+=1}
+  });
+  manifestRows.forEach(function(r){
+    const d=String(r.log_date||"").slice(0,10);if(!d)return;
+    if(!map.has(d))map.set(d,{key:d,request_watch_hours:0,status_200_request_hours:0,approx_unique_ips:0,m3u8_rows:0,peak_unique_viewers:0,avg_unique_viewers_sum:0,avg_unique_viewers_count:0});
+    map.get(d).m3u8_rows+=n(r.m3u8_rows);
   });
   const rows=Array.from(map.values()).sort(function(a,b){return a.key.localeCompare(b.key)}).map(function(r){r.avg_unique_viewers=r.avg_unique_viewers_count?r.avg_unique_viewers_sum/r.avg_unique_viewers_count:0;return r});
   const labels=rows.map(function(r){return fmtDate(r.key)});
@@ -916,23 +1144,59 @@ function renderTraffic(){
 }
 
 function renderConcurrency(){
+  syncConcurrencyControls();
   const box=el("concurrencyBox");box.innerHTML="<canvas id='concurrencyChart'></canvas>";
-  if(state.source==="stream"){clearChart("concurrencyChart","STREAM concurrency is Not Available. FAST minute-level concurrency is available.");return}
-  const rows=filterRows(DATA.concurrency_5min||[],{dateKey:"log_date",channel:true}).filter(function(r){return state.source==="all"||String(r.source||"").toLowerCase()===state.source});
-  if(!rows.length){clearChart("concurrencyChart","No embedded 5-minute concurrency rows for this selection. Daily FAST summary is still available.");return}
-  const grouped=groupSum(rows,function(r){return r.bucket_5min},["avg_unique_viewers","peak_unique_viewers","raw_ts_rows"]).sort(function(a,b){return a.key.localeCompare(b.key)});
-  const avg=grouped.length?sum(grouped,"avg_unique_viewers")/grouped.length:0;
+  const note=el("concurrencyNote");
+  if(note)note.textContent="";
+  if(state.source==="stream"){clearChart("concurrencyChart","Active viewer minute trend is available for FAST only.");return}
+  let rows=[];
+  if(state.concurrencyStatus==="all"){
+    rows=filterRows(DATA.concurrency_minute||[],{dateKey:"log_date",channel:true})
+      .filter(function(r){return state.source==="all"||String(r.source||"").toLowerCase()===state.source})
+      .map(function(r){return {minute:String(r.minute_ist||""),value:n(r.unique_viewers)}});
+  }else{
+    rows=(DATA.concurrency_status_minute||[]).filter(function(r){
+      const d=String(r.d||"").slice(0,10);
+      if(d<state.start||d>state.end)return false;
+      if(state.source!=="all"&&String(r.s||"").toLowerCase()!==state.source)return false;
+      if(state.platform!=="all"&&String(r.p||"")!==state.platform)return false;
+      if(state.channel!=="all"&&String(r.c||"")!==state.channel)return false;
+      return String(r.code||"")===state.concurrencyStatus;
+    }).map(function(r){return {minute:String(r.m||""),value:n(r.uv)}});
+  }
+  if(!rows.length){clearChart("concurrencyChart","No embedded minute-level concurrency rows for this selection. Daily FAST summary is still available.");return}
+  const interval=concurrencyIntervalMinutes();
+  const minuteTotals=new Map();
+  rows.forEach(function(r){
+    const minute=String(r.minute||"");
+    if(!minute)return;
+    minuteTotals.set(minute,(minuteTotals.get(minute)||0)+n(r.value));
+  });
+  const buckets=new Map();
+  Array.from(minuteTotals.keys()).sort().forEach(function(minute){
+    const idx=parseMinuteIndex(minute);
+    if(idx==null)return;
+    const bucket=minuteIndexLabel(Math.floor(idx/interval)*interval);
+    if(!buckets.has(bucket))buckets.set(bucket,{key:bucket,active_cliip_minute_count:0,minute_count:0});
+    const item=buckets.get(bucket);
+    const value=n(minuteTotals.get(minute));
+    item.active_cliip_minute_count+=value;
+    item.minute_count+=1;
+  });
+  const grouped=Array.from(buckets.values()).sort(function(a,b){return a.key.localeCompare(b.key)});
+  if(!grouped.length){clearChart("concurrencyChart","No valid minute timestamps for this selection.");return}
+  const statusText=state.concurrencyStatus==="all"?"all HTTP statuses":"HTTP status "+state.concurrencyStatus+" only";
+  if(note)note.textContent="Each point is the sum of distinct cliIP active-viewer counts for every minute inside the "+concurrencyIntervalLabel()+" bucket, using "+statusText+". Example: 12:00 to 12:04 equals five one-minute cliIP counts added together.";
   draw("concurrencyChart",lineConfig(grouped.map(function(r){return fmtDateTime(r.key)}),[
-    {label:"Active viewer estimate",data:grouped.map(function(r){return n(r.avg_unique_viewers)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.12)",tension:.22,pointRadius:0},
-    {label:"Average",data:grouped.map(function(){return avg}),borderColor:COLORS[1],borderDash:[6,5],pointRadius:0,tension:0}
-  ],"Viewers"));
+    {label:"Total cliIP viewer-minute count - "+statusText,data:grouped.map(function(r){return n(r.active_cliip_minute_count)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.12)",tension:.22,pointRadius:0}
+  ],"cliIP minute-sum"));
 }
 
 function renderPlatforms(){
   const rows=state.source==="fast"?platformChannelRows():streamContentWatchRows();
   const ranked=rollupTop(rows,function(r){return r.platform_name||"Unknown"}, "raw_ts_rows", 20);
   if(!ranked.length){
-    renderTable("platformTable",["Platform","Status"],[[sourceLabel()+" platform split","Not Available for selected date/channel"]],[]);
+    renderTable("platformTable",["Platform","Status"],[["Selected filters","Not Available"]],[]);
     return;
   }
   const audienceLabel=state.source==="fast"?"Peak Active Viewers":"Approx IPs";
@@ -942,32 +1206,102 @@ function renderPlatforms(){
 function geoLabel(r){
   return [r.country||"Unknown",r.state||"",r.city||""].filter(function(x){return String(x).trim()!==""}).join(" / ");
 }
+function stateRegionLabel(r){
+  return [r.country||"Unknown",r.state||"Unknown / NA"].filter(function(x){return String(x).trim()!==""}).join(" / ");
+}
+function cityGeoLabel(r){
+  return [r.country||"Unknown",r.state||"Unknown / NA",r.city||"Unknown / NA"].filter(function(x){return String(x).trim()!==""}).join(" / ");
+}
+function regionDeviceLabel(r){
+  const geo=[r.country||"Unknown",r.state||"Unknown"].filter(function(x){return String(x).trim()!==""}).join(" / ");
+  return geo+" / "+(r.device_type||"Unknown / NA");
+}
+function meaningfulLabel(v){
+  const s=String(v||"").trim();
+  if(!s||s==="Unknown / Needs Review"||s==="Unknown Device"||s==="Unknown Form Factor"||s==="Brand Not Exposed In UA")return "";
+  return s;
+}
+function fastDeviceIdentityLabel(r){
+  const brand=meaningfulLabel(r.brand_label);
+  const model=meaningfulLabel(r.model_label);
+  const form=meaningfulLabel(r.form_factor_label);
+  const type=meaningfulLabel(r.device_type_label);
+  const os=meaningfulLabel(r.os_label);
+  if(brand&&model)return brand+" / "+model;
+  if(model)return model;
+  if(brand)return brand;
+  if(form&&type)return form+" / "+type;
+  if(type)return type;
+  if(form)return form;
+  if(os)return os;
+  return "Unknown / Needs Review";
+}
+function renderPieBreakdown(tableId,ranked,metric,valueLabel,decimals,totalOverride){
+  const d=decimals==null?1:decimals;
+  const total=totalOverride==null?sum(ranked,metric):n(totalOverride);
+  const items=ranked.map(function(r,i){
+    const value=n(r[metric]);
+    const share=total?value*100/total:0;
+    return "<div class='pie-item'>"
+      +"<span class='pie-dot' style='background:"+esc(COLORS[i%COLORS.length])+"'></span>"
+      +"<span class='pie-name'>"+esc(r.key)+"</span>"
+      +"<span class='pie-value'>"+fmt(value,d)+" "+esc(valueLabel)+"<small>"+pct(share)+"</small></span>"
+      +"</div>";
+  }).join("");
+  el(tableId).innerHTML="<div class='pie-breakdown'><div class='pie-total'>Total "+esc(valueLabel)+": "+fmt(total,d)+"</div>"+items+"</div>";
+}
 function renderPieWithTable(chartId,tableId,rows,labelFn,metric,valueLabel,decimals){
-  const ranked=topBy(rows,labelFn,metric,12);
-  if(!ranked.length){clearChart(chartId,"No data for selected filters");renderTable(tableId,["Value","Metric"],[],[1]);return}
+  const all=groupSum(rows,labelFn,[metric]).filter(function(r){return n(r[metric])>0}).sort(function(a,b){return n(b[metric])-n(a[metric])});
+  if(!all.length){clearChart(chartId,"No data for selected filters");el(tableId).innerHTML="";return}
+  const total=sum(all,metric);
+  let ranked=all.slice(0,10);
+  if(all.length>10){
+    ranked=ranked.concat([{key:"Others",sample:{},[metric]:sum(all.slice(10),metric)}]);
+  }
   const labels=ranked.map(function(r){return r.key});
   const values=ranked.map(function(r){return n(r[metric])});
   draw(chartId,doughnutValueConfig(labels,values,valueLabel,decimals));
-  const total=sum(ranked,metric);
-  renderTable(tableId,["Value",valueLabel,"Share"],ranked.map(function(r){return [r.key,fmt(n(r[metric]),decimals==null?1:decimals),pct(total?n(r[metric])*100/total:0)]}),[1,2]);
+  renderPieBreakdown(tableId,ranked,metric,valueLabel,decimals,total);
 }
 function renderPlaytimePies(){
   if(state.platform!=="all"){
-    [["playGeoChart","playGeoTable"],["playPlatformChart","playPlatformTable"],["playOsChart","playOsTable"],["ipGeoChart","ipGeoTable"],["ipPlatformChart","ipPlatformTable"],["ipOsChart","ipOsTable"],["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
-      clearChart(pair[0],"Not Available for selected platform/channel split in current source-level marts");
-      renderTable(pair[1],["Metric","Status"],[["Platform/channel split","Not Available"]],[]);
+    if(state.source==="fast"){
+      const fastGeo=fastPlatformChannelGeoRows();
+      const fastDevices=fastPlatformChannelUaDeviceRows();
+      renderPieWithTable("playStateChart","playStateTable",fastGeo,stateRegionLabel,"raw_watch_hours","Hours",1);
+      renderPieWithTable("playCityChart","playCityTable",fastGeo,cityGeoLabel,"raw_watch_hours","Hours",1);
+      renderPieWithTable("ipGeoChart","ipGeoTable",fastGeo,geoLabel,"approx_unique_ips","Approx IPs",0);
+      renderPieWithTable("playPlatformChart","playPlatformTable",fastDevices,function(r){return r.device_type_label||"Unknown / Needs Review"},"raw_watch_hours","Hours",1);
+      renderPieWithTable("ipPlatformChart","ipPlatformTable",fastDevices,function(r){return r.device_type_label||"Unknown / Needs Review"},"approx_unique_ips","Approx IPs",0);
+      renderPieWithTable("playOsChart","playOsTable",fastDevices,function(r){return r.os_label||"Unknown / Needs Review"},"raw_watch_hours","Hours",1);
+      renderPieWithTable("ipOsChart","ipOsTable",fastDevices,function(r){return r.os_label||"Unknown / Needs Review"},"approx_unique_ips","Approx IPs",0);
+      renderPieWithTable("playBrandChart","playBrandTable",fastDevices,function(r){return r.brand_label||"Brand Not Exposed In UA"},"raw_watch_hours","Hours",1);
+      renderPieWithTable("playFormChart","playFormTable",fastDevices,function(r){return r.form_factor_label||"Unknown Form Factor"},"raw_watch_hours","Hours",1);
+      renderPieWithTable("decodeQualityChart","decodeQualityTable",fastDevices,function(r){return r.decode_quality||"Unknown / Needs Review"},"raw_watch_hours","Hours",1);
+      return;
+    }
+    [["playStateChart","playStateTable"],["playCityChart","playCityTable"],["playPlatformChart","playPlatformTable"],["playOsChart","playOsTable"],["ipGeoChart","ipGeoTable"],["ipPlatformChart","ipPlatformTable"],["ipOsChart","ipOsTable"],["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
+      clearChart(pair[0],"Not available for selected filters");
+      renderTable(pair[1],["Metric","Status"],[["Selected filters","Not Available"]],[]);
     });
     return;
   }
   const geo=state.channel==="all"
     ?filterRows(DATA.geo_daily||[],{channel:false,platform:false})
     :filterRows(DATA.channel_geo_daily||[],{channel:true,platform:false});
-  renderPieWithTable("playGeoChart","playGeoTable",geo,geoLabel,"raw_watch_hours","Hours",1);
+  renderPieWithTable("playStateChart","playStateTable",geo,stateRegionLabel,"raw_watch_hours","Hours",1);
+  renderPieWithTable("playCityChart","playCityTable",geo,cityGeoLabel,"raw_watch_hours","Hours",1);
   renderPieWithTable("ipGeoChart","ipGeoTable",geo,geoLabel,"approx_unique_ips","Approx IPs",0);
   if(state.channel!=="all"){
-    [["playPlatformChart","playPlatformTable"],["playOsChart","playOsTable"],["ipPlatformChart","ipPlatformTable"],["ipOsChart","ipOsTable"],["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
-      clearChart(pair[0],"Channel-level UA/device split is Not Available in current processed marts");
-      renderTable(pair[1],["Metric","Status"],[["Channel-level UA/device split","Not Available"]],[]);
+    const channelDevices=channelDeviceTypeRows();
+    const regionDevices=regionChannelDeviceRows();
+    renderPieWithTable("playPlatformChart","playPlatformTable",channelDevices,function(r){return r.device_type||"Unknown / NA"},"raw_watch_hours","Hours",1);
+    renderPieWithTable("ipPlatformChart","ipPlatformTable",channelDevices,function(r){return r.device_type||"Unknown / NA"},"approx_unique_ips","Approx IPs",0);
+    renderPieWithTable("playOsChart","playOsTable",regionDevices,regionDeviceLabel,"raw_watch_hours","Hours",1);
+    renderPieWithTable("ipOsChart","ipOsTable",regionDevices,regionDeviceLabel,"approx_unique_ips","Approx IPs",0);
+    [["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
+      clearChart(pair[0],"Not available for selected channel");
+      renderTable(pair[1],["Metric","Status"],[["Selected channel","Not Available"]],[]);
     });
     return;
   }
@@ -1022,17 +1356,34 @@ function renderReliability(){
   const statuses=filterRows(DATA.latency_status||[],{channel:false});
   const ranked=topBy(statuses,function(r){return String(r.status_code||"Unknown")}, "rows", 12);
   draw("statusChart",doughnutConfig(ranked.map(function(r){return r.key}),ranked.map(function(r){return n(r.rows)})));
-  renderTable("statusTable",["Status","Rows","Share"],ranked.map(function(r){const total=sum(ranked,"rows");return [r.key,fmtInt(r.rows),pct(total?n(r.rows)*100/total:0)]}),[1,2]);
+  renderPieBreakdown("statusTable",ranked,"rows","Rows",0,sum(ranked,"rows"));
   const hosts=filterRows(DATA.latency_host_top||[],{channel:false}).slice(0,20);
   renderTable("hostTable",["Host / Platform","Rows","TTFB p95","Cache Hit","5xx"],hosts.map(function(r){return [(r.reqHost||"Unknown")+" / "+(r.platform_name||"Unknown"),fmtInt(r.rows),fmt(n(r.ttfb_p95_ms),1)+" ms",pct(n(r.cache_hit_pct)),pct(n(r.error_5xx_pct))]}),[1,2,3,4]);
 }
 
 function renderGeoDevice(){
   if(state.platform!=="all"){
-    clearChart("geoChart","Platform-level geo mart is Not Available in current processed data.");
-    renderTable("geoTable",["Geo","Status"],[["Platform-level geography","Not Available"]],[]);
-    clearChart("deviceChart","Platform-level device decode mart is Not Available in current FAST data.");
-    renderTable("deviceTable",["Device / Platform","Status"],[["Platform-level device decode","Not Available"]],[]);
+    if(state.source==="fast"){
+      const fastGeo=fastPlatformChannelGeoRows();
+      const ranked=topBy(fastGeo,function(r){return [r.country||"Unknown",r.state||"Unknown",r.city||"Unknown"].join(" / ")}, "raw_watch_hours", 20);
+      draw("geoChart",barConfig(ranked.map(function(r){return r.key}),ranked.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[2],"y"));
+      const scopeLabel=(state.platform==="all"?"All Platforms":state.platform)+" / "+(state.channel==="all"?"All Channels":state.channel);
+      renderTable("geoTable",["Geo","Scope","Raw Hours","Status 200 Hours","Approx IPs","Rows"],ranked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips),fmtInt(r.raw_ts_rows)]}),[2,3,4,5]);
+      const fastDevices=fastPlatformChannelUaDeviceRows();
+      const deviceRank=topBy(fastDevices,fastDeviceIdentityLabel,"raw_watch_hours",20);
+      draw("deviceChart",barConfig(deviceRank.map(function(r){return r.key}),deviceRank.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[3],"y"));
+      const samples=new Map();
+      fastDevices.forEach(function(r){const k=fastDeviceIdentityLabel(r);if(!samples.has(k))samples.set(k,r)});
+      renderTable("deviceTable",["Device Identity","Brand","Model","Form","OS","Quality","Raw Hours","Approx IPs","Rows"],deviceRank.map(function(r){
+        const s=samples.get(r.key)||{};
+        return [r.key,s.brand_label||"",s.model_label||"",s.form_factor_label||"",s.os_label||"",s.decode_quality||"",fmt(r.raw_watch_hours,1),fmtInt(r.approx_unique_ips),fmtInt(r.raw_ts_rows)];
+      }),[6,7,8]);
+      return;
+    }
+    clearChart("geoChart","Not available for selected platform");
+    renderTable("geoTable",["Geo","Status"],[["STREAM platform-level geography","Not Available"]],[]);
+    clearChart("deviceChart","Not available for selected platform");
+    renderTable("deviceTable",["Device / Platform","Status"],[["STREAM platform-level device decode","Not Available"]],[]);
     return;
   }
   const geo=state.channel==="all"
@@ -1042,6 +1393,14 @@ function renderGeoDevice(){
   draw("geoChart",barConfig(ranked.map(function(r){return r.key}),ranked.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[2],"y"));
   const scopeLabel=state.channel==="all"?"All channels":"Channel: "+state.channel;
   renderTable("geoTable",["Geo","Scope","Raw Hours","Status 200 Hours","Approx IPs"],ranked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips)]}),[2,3,4]);
+  if(state.channel!=="all"){
+    const channelDevices=channelDeviceTypeRows();
+    const deviceRank=topBy(channelDevices,function(r){return r.device_type||"Unknown / NA"}, "raw_watch_hours", 15);
+    draw("deviceChart",barConfig(deviceRank.map(function(r){return r.key}),deviceRank.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[3],"y"));
+    const regionDevices=topBy(regionChannelDeviceRows(),regionDeviceLabel,"raw_watch_hours",20);
+    renderTable("deviceTable",["Region / Device Type","Raw Hours","Status 200 Hours","Approx IPs","Rows"],regionDevices.map(function(r){return [r.key,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips),fmtInt(r.raw_ts_rows)]}),[1,2,3,4]);
+    return;
+  }
   const devRows=filterRows(DATA.ua_device_detail_daily||[],{channel:false,platform:false});
   const dev=topBy(devRows,function(r){return r.device_identity||r.brand_label||r.form_factor_label||"Unknown / Needs Review"}, "playtime_hours", 15);
   const samples=new Map();
@@ -1054,11 +1413,7 @@ function renderGeoDevice(){
   }),[6,7]);
 }
 
-function renderWip(){
-  el("wipGrid").innerHTML=(D.availability||[]).map(function(x){const cls=x.status==="Available"?"ok":(x.status==="Partially available"?"partial":"wip");return "<div class='wip-card' data-status='"+esc(x.status)+"'><h3>"+esc(x.area)+"</h3><span class='status "+cls+"'>"+esc(x.status)+"</span><p><b>Basis:</b> "+esc(x.basis)+"</p><p>"+esc(x.note)+"</p></div>"}).join("");
-  const ranges=D.ranges||{};
-  el("rangeCards").innerHTML=Object.keys(ranges).map(function(k){const r=ranges[k]||{};return "<div class='range-card'><b>"+esc(k.replace(/_/g," "))+"</b><span>"+fmtDate(r.min_date)+" to "+fmtDate(r.max_date)+"</span><small>"+fmtInt(r.rows||0)+" rows</small></div>"}).join("");
-}
+function renderWip(){}
 
 function renderTable(id,headers,rows,numCols){
   numCols=numCols||[];
@@ -1071,12 +1426,26 @@ function renderHeader(){
   el("rangeText").textContent="Source: "+sourceLabel()+" | True data range: "+fmtDateTime(trueRange.first)+" \u2192 "+fmtDateTime(trueRange.last)+" | Used range: "+fmtDayStart(state.start)+" to "+fmtDayEnd(state.end);
   el("sourceText").textContent="Platform: "+(state.platform==="all"?"All Platforms":state.platform)+" | Channel: "+(state.channel==="all"?"All Channels":state.channel);
   el("updatedText").textContent="Last updated "+fmtDateTime(D.meta.generated);
-  el("selectionContext").innerHTML="<span class='pill'><b>Used Range</b> "+fmtDayStart(state.start)+" to "+fmtDayEnd(state.end)+"</span><span class='pill'><b>Source</b> "+sourceLabel()+"</span><span class='pill'><b>Platform</b> "+esc(state.platform==="all"?"All Platforms":state.platform)+"</span><span class='pill'><b>Channel</b> "+esc(state.channel==="all"?"All Channels":state.channel)+"</span><span class='pill'><b>Output</b> Existing source parquet only; missing identity fields show Not Available</span>";
+  el("selectionContext").innerHTML="<span class='pill'><b>Used Range</b> "+fmtDayStart(state.start)+" to "+fmtDayEnd(state.end)+"</span><span class='pill'><b>Source</b> "+sourceLabel()+"</span><span class='pill'><b>Platform</b> "+esc(state.platform==="all"?"All Platforms":state.platform)+"</span><span class='pill'><b>Channel</b> "+esc(state.channel==="all"?"All Channels":state.channel)+"</span>";
 }
 
-function renderAll(){renderHeader();renderStakeholderKpis();renderViewershipTrend();renderContent();renderKpis();renderTraffic();renderConcurrency();renderPlatforms();renderPlaytimePies();renderChannels();renderReliability();renderGeoDevice();renderWip()}
-function expandChart(id,title){if(!configs[id])return;el("modalTitle").textContent=title;el("chartModal").classList.add("open");if(modalChart)modalChart.destroy();modalChart=new Chart(el("modalCanvas").getContext("2d"),JSON.parse(JSON.stringify(configs[id])));}
-function closeModal(){el("chartModal").classList.remove("open");if(modalChart){modalChart.destroy();modalChart=null}}
+function renderAll(){renderHeader();renderStakeholderKpis();renderViewershipTrend();renderContent();renderKpis();renderTraffic();renderConcurrency();renderPlatforms();renderPlaytimePies();renderChannels();renderReliability();renderGeoDevice()}
+function refreshModalChart(){
+  if(!modalSourceChartId||!configs[modalSourceChartId]||!el("chartModal").classList.contains("open"))return;
+  if(modalChart)modalChart.destroy();
+  modalChart=new Chart(el("modalCanvas").getContext("2d"),JSON.parse(JSON.stringify(configs[modalSourceChartId])));
+}
+function expandChart(id,title){
+  if(!configs[id])return;
+  modalSourceChartId=id;
+  el("modalTitle").textContent=title;
+  el("chartModal").classList.add("open");
+  el("modalControls").innerHTML=modalBaseControlsHtml()+(id==="concurrencyChart"?concurrencyModalControlsHtml():"");
+  syncModalFilterControls();
+  if(id==="concurrencyChart"){rebuildConcurrencyStatusOptions();syncConcurrencyControls()}
+  refreshModalChart();
+}
+function closeModal(){el("chartModal").classList.remove("open");modalSourceChartId="";el("modalControls").innerHTML="";if(modalChart){modalChart.destroy();modalChart=null}}
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal()});
 setupFilters();
 </script>

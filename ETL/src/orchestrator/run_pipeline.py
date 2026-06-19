@@ -1012,6 +1012,30 @@ def main() -> None:
         etl_root,
         str(Path("src") / "tools" / "build_concurrency.py"),
     )
+    fast_platform_channel_identity_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_fast_platform_channel_identity.py"),
+    )
+    fast_platform_channel_geo_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_fast_platform_channel_geo.py"),
+    )
+    fast_platform_channel_ua_device_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_fast_platform_channel_ua_device.py"),
+    )
+    fast_platform_channel_manifest_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_fast_platform_channel_manifest.py"),
+    )
+    fast_platform_channel_bandwidth_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_fast_platform_channel_bandwidth.py"),
+    )
+    fast_platform_channel_cmcd_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_fast_platform_channel_cmcd.py"),
+    )
     concurrency_dashboard_script = _local_script(
         etl_root,
         str(Path("src") / "dashboards" / "concurrencyDashboard" / "generate_concurrency.py"),
@@ -1446,6 +1470,150 @@ def main() -> None:
                 retry_on_memory=True,
             )
 
+            fast_identity_cmd = [
+                python,
+                str(fast_platform_channel_identity_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                fast_identity_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            fast_identity_ok = run(
+                fast_identity_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="fast_platform_channel_identity",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
+            fast_geo_cmd = [
+                python,
+                str(fast_platform_channel_geo_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                fast_geo_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            fast_geo_ok = run(
+                fast_geo_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="fast_platform_channel_geo",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
+            fast_ua_device_cmd = [
+                python,
+                str(fast_platform_channel_ua_device_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                fast_ua_device_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            fast_ua_device_ok = run(
+                fast_ua_device_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="fast_platform_channel_ua_device",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
+            fast_manifest_cmd = [
+                python,
+                str(fast_platform_channel_manifest_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                fast_manifest_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            fast_manifest_ok = run(
+                fast_manifest_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="fast_platform_channel_manifest",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
+            fast_bandwidth_cmd = [
+                python,
+                str(fast_platform_channel_bandwidth_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                fast_bandwidth_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            fast_bandwidth_ok = run(
+                fast_bandwidth_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="fast_platform_channel_bandwidth",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
+            fast_cmcd_cmd = [
+                python,
+                str(fast_platform_channel_cmcd_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                fast_cmcd_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            fast_cmcd_ok = run(
+                fast_cmcd_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="fast_platform_channel_cmcd",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
             concurrency_html_cmd = [
                 python,
                 str(concurrency_dashboard_script),
@@ -1456,7 +1624,7 @@ def main() -> None:
                 "--title",
                 "Veto Concurrency",
             ]
-            if concurrency_ok:
+            if concurrency_ok and fast_identity_ok and fast_geo_ok and fast_ua_device_ok and fast_manifest_ok and fast_bandwidth_ok and fast_cmcd_ok:
                 run(
                     concurrency_html_cmd,
                     cwd=concurrency_dashboard_dir,
@@ -1466,7 +1634,7 @@ def main() -> None:
                     allow_failure=args.continue_on_error,
                 )
             else:
-                reason = "watch_hours_fast_concurrency failed; skipped concurrency HTML refresh to avoid stale data"
+                reason = "FAST concurrency, platform/channel identity, platform/channel geo, platform/channel UA device, platform/channel manifest, platform/channel bandwidth, or platform/channel CMCD failed; skipped concurrency HTML refresh to avoid stale data"
                 print(f"\n[skip] concurrency_dashboard_html: {reason}")
                 record_skip("concurrency_dashboard_html", reason)
     else:

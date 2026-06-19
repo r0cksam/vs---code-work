@@ -1,0 +1,19 @@
+{
+  "generated_at_utc": "2026-06-19T11:18:40.194078+00:00",
+  "source": "fast",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\temp\\fast_platform_channel_bandwidth_test\\fast_platform_channel_bandwidth_daily.parquet",
+  "date_range_replaced": {
+    "start": "2026-06-18",
+    "end": "2026-06-18"
+  },
+  "metric_notes": {
+    "total_bytes": "Exact sum(totalBytes) on FAST .ts video segment rows at platform/channel grain.",
+    "status_200_total_bytes": "Exact sum(totalBytes) where HTTP status is 200.",
+    "body_bytes": "Exact sum(bytes), kept as body-byte debug evidence.",
+    "response_content_len": "Exact sum(rspContentLen), kept as response-length debug evidence.",
+    "rows_with_total_bytes": "Rows contributing a non-null totalBytes value.",
+    "channel_evidence": "path_map/host_map are mapped; unmapped_path_candidate stays visible as channel_name=Other."
+  },
+  "new_rows": 16
+}

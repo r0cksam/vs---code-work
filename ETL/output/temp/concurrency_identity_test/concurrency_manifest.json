@@ -1,10 +1,10 @@
 {
-  "generated_at_utc": "2026-06-19T10:44:14.195164+00:00",
+  "generated_at_utc": "2026-06-19T10:03:25.327401+00:00",
   "source": "fast",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "date_range_replaced": {
-    "start": "2026-06-11",
-    "end": "2026-06-16"
+    "start": "2026-06-18",
+    "end": "2026-06-18"
   },
   "metric_notes": {
     "unique_viewers": "Exact distinct cliIP count per minute.",
@@ -17,35 +17,35 @@
     "status_code_segment_viewers_estimate": "Selected HTTP status .ts rows divided by 10 six-second segments per minute."
   },
   "files": {
-    "minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_minute.parquet",
-    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_summary.parquet",
-    "status_minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_status_minute.parquet"
+    "minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\temp\\concurrency_identity_test\\concurrency_minute.parquet",
+    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\temp\\concurrency_identity_test\\concurrency_summary.parquet",
+    "status_minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\temp\\concurrency_identity_test\\concurrency_status_minute.parquet"
   },
   "new_counts": {
-    "minute_rows": 99053,
-    "status_minute_rows": 117345,
-    "summary_rows": 96
+    "minute_rows": 18916,
+    "status_minute_rows": 25796,
+    "summary_rows": 16
   },
   "output_stats": {
-    "minute_rows": 611809,
-    "first_date": "2026-05-13",
-    "last_date": "2026-06-19",
-    "dates": 38,
+    "minute_rows": 18916,
+    "first_date": "2026-06-18",
+    "last_date": "2026-06-18",
+    "dates": 1,
     "platforms": 4,
     "channels": 4,
     "platform_channel_candidates": 16,
-    "peak_unique_viewers": 9854,
-    "avg_unique_viewers": 71.855,
+    "peak_unique_viewers": 9351,
+    "avg_unique_viewers": 291.693,
     "peak_unique_ua_viewers": 240,
-    "avg_unique_ua_viewers": 9.505,
-    "peak_segment_viewers_estimate": 9192.3,
-    "summary_rows": 96,
-    "peak_daily_distinct_cliips": 148214.0,
-    "daily_distinct_cliip_sum": 967426.0,
-    "peak_daily_distinct_uas": 1655.0,
-    "daily_distinct_ua_sum": 16723.0,
-    "status_minute_rows": 743407,
-    "status_codes": 8,
-    "status_code_list": "000,200,206,304,400,500,503,504"
+    "avg_unique_ua_viewers": 21.876,
+    "peak_segment_viewers_estimate": 8851.0,
+    "summary_rows": 16,
+    "peak_daily_distinct_cliips": 219591.0,
+    "daily_distinct_cliip_sum": 471356.0,
+    "peak_daily_distinct_uas": 1351.0,
+    "daily_distinct_ua_sum": 4696.0,
+    "status_minute_rows": 25796,
+    "status_codes": 4,
+    "status_code_list": "200,206,503,504"
   }
 }

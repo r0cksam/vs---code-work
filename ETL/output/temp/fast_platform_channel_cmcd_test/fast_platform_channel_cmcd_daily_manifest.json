@@ -1,0 +1,18 @@
+{
+  "generated_at_utc": "2026-06-19T11:31:57.205761+00:00",
+  "source": "fast",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\temp\\fast_platform_channel_cmcd_test\\fast_platform_channel_cmcd_daily.parquet",
+  "date_range_replaced": {
+    "start": "2026-06-18",
+    "end": "2026-06-18"
+  },
+  "metric_notes": {
+    "distinct_cmcd_sessions": "Exact daily distinct CMCD sid values on FAST .ts rows. This is playback-session telemetry, not app queryStr session_id.",
+    "distinct_cmcd_content_ids": "Exact daily distinct CMCD cid values on FAST .ts rows.",
+    "cmcd_reported_duration_hours": "Sum of CMCD d= duration milliseconds converted to hours; only rows carrying CMCD contribute.",
+    "cmcd_sid_rows": "Rows carrying a parseable CMCD sid.",
+    "raw_ts_rows": "All FAST .ts rows for the platform/channel; use with cmcd_sid_rows for coverage."
+  },
+  "new_rows": 16
+}
