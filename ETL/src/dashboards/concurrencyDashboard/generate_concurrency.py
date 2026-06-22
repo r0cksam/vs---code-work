@@ -224,6 +224,21 @@ def records(df: pd.DataFrame, columns: list[str]) -> list[dict]:
     return out.to_dict(orient="records")
 
 
+def array_records(df: pd.DataFrame, columns: list[str]) -> list[list]:
+    """Return row arrays plus a separate schema to avoid repeating JSON keys millions of times."""
+    if df.empty:
+        return []
+    out = df[[col for col in columns if col in df.columns]].copy()
+    for col in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[col]):
+            if getattr(out[col].dt, "tz", None) is not None:
+                out[col] = out[col].dt.tz_convert(IST).dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                out[col] = out[col].dt.strftime("%Y-%m-%d %H:%M:%S")
+    out = out.astype(object).where(pd.notna(out), None)
+    return out.values.tolist()
+
+
 def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     """Return status-code filter metadata plus sparse non-200 minute values."""
     if status_minute.empty or "status_code" not in status_minute.columns:
@@ -287,7 +302,7 @@ def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[
             "status_segment_viewers_estimate": "v",
         }
     )
-    return options, records(extra, ["k", "m", "c", "r", "v"])
+    return options, array_records(extra, ["k", "m", "c", "r", "v"])
 
 
 def write_viewer_exports(
@@ -374,7 +389,7 @@ def _numeric_column(df: pd.DataFrame, column: str) -> pd.Series:
     return pd.to_numeric(df[column], errors="coerce").fillna(0)
 
 
-def build_data(data_dir: Path, title: str) -> tuple[dict, pd.DataFrame]:
+def build_data(data_dir: Path, title: str, embed_window_days: int = 30) -> tuple[dict, pd.DataFrame]:
     minute_path = data_dir / "concurrency_minute.parquet"
     status_minute_path = data_dir / "concurrency_status_minute.parquet"
     summary_path = data_dir / "concurrency_summary.parquet"
@@ -388,11 +403,23 @@ def build_data(data_dir: Path, title: str) -> tuple[dict, pd.DataFrame]:
         status_minute = status_minute.sort_values(
             ["log_date", "platform_name", "channel_name", "candidate_id", "status_code", "minute_ist"]
         )
-    status_code_options, status_extra = build_status_payload(status_minute)
     if not minute.empty:
         minute = minute.sort_values(["log_date", "platform_name", "channel_name", "candidate_id", "minute_ist"])
     if not summary.empty:
         summary = summary.sort_values(["log_date", "platform_name", "channel_name", "candidate_id"])
+    full_source_dates = (
+        sorted(str(day) for day in minute["log_date"].dropna().unique())
+        if not minute.empty and "log_date" in minute.columns
+        else []
+    )
+    if embed_window_days and embed_window_days > 0 and len(full_source_dates) > embed_window_days:
+        embedded_dates = set(full_source_dates[-embed_window_days:])
+        minute = minute[minute["log_date"].astype(str).isin(embedded_dates)]
+        if not status_minute.empty and "log_date" in status_minute.columns:
+            status_minute = status_minute[status_minute["log_date"].astype(str).isin(embedded_dates)]
+        if not summary.empty and "log_date" in summary.columns:
+            summary = summary[summary["log_date"].astype(str).isin(embedded_dates)]
+    status_code_options, status_extra = build_status_payload(status_minute)
 
     integrity_checks = []
     if not minute.empty and not status_minute.empty:
@@ -458,6 +485,9 @@ def build_data(data_dir: Path, title: str) -> tuple[dict, pd.DataFrame]:
         "integrity_status": integrity_status,
         "integrity_checks": integrity_checks,
         "manifest_read_error": manifest_error,
+        "full_first_date": full_source_dates[0] if full_source_dates else "",
+        "full_last_date": full_source_dates[-1] if full_source_dates else "",
+        "embed_window_days": int(embed_window_days or 0),
         "peak_unique_viewers": int(_numeric_column(minute, "unique_viewers").max() or 0)
         if not minute.empty
         else 0,
@@ -468,16 +498,13 @@ def build_data(data_dir: Path, title: str) -> tuple[dict, pd.DataFrame]:
     minute_columns = [
         "log_date",
         "source",
-        "minute_utc",
         "minute_ist",
-        "reqHost",
         "platform_key",
         "platform_name",
         "candidate_id",
         "channel_name",
         "raw_ts_rows",
         "status_200_ts_rows",
-        "distinct_hosts",
         "unique_viewers",
         "unique_ua_viewers",
         "segment_viewers_estimate",
@@ -499,11 +526,10 @@ def build_data(data_dir: Path, title: str) -> tuple[dict, pd.DataFrame]:
         "manifest": manifest,
         "status_meanings": STATUS_CODE_MEANINGS,
         "status_code_options": status_code_options,
+        "status_extra_schema": ["k", "m", "c", "r", "v"],
         "status_extra": status_extra,
-        "minute": records(
-            minute,
-            minute_columns,
-        ),
+        "minute_schema": minute_columns,
+        "minute": array_records(minute, minute_columns),
         "summary": records(
             summary,
             [
@@ -543,12 +569,13 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--title", default="Veto Concurrency")
+    parser.add_argument("--embed-window-days", type=int, default=30, help="Embed only the latest N days in HTML; use 0 for full history.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     data_dir = args.data_dir.expanduser().resolve()
     out_path = args.out.expanduser().resolve()
-    data, minute_for_export = build_data(data_dir, args.title)
+    data, minute_for_export = build_data(data_dir, args.title, args.embed_window_days)
     data["files"]["ua_viewers_export"] = write_ua_viewer_exports(
         data_dir,
         minute_for_export,

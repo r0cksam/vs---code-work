@@ -446,6 +446,17 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 <script>
 const D = $DATA_BLOB;
 const DATA = D.data || {};
+function inflateRows(rows,schema){
+  if(!Array.isArray(rows)||!rows.length)return [];
+  if(!Array.isArray(schema)||!schema.length||!Array.isArray(rows[0]))return rows;
+  return rows.map(function(row){
+    const out={};
+    schema.forEach(function(key,idx){out[key]=row[idx];});
+    return out;
+  });
+}
+DATA.concurrency_minute=inflateRows(DATA.concurrency_minute||[],DATA.concurrency_minute_schema||[]);
+DATA.concurrency_status_minute=inflateRows(DATA.concurrency_status_minute||[],DATA.concurrency_status_minute_schema||[]);
 const COLORS = ["#1f7897","#b88416","#12805c","#6057b1","#d65f18","#b42318","#0f6b4d","#2d5b9a","#9f5a00","#7c3aed","#0891b2","#dc2626"];
 const state = {start:D.meta.max_date,end:D.meta.max_date,source:"fast",platform:"all",channel:"all",preset:"yesterday",concurrencyInterval:5,concurrencyStatus:"all"};
 const charts = {};

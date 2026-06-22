@@ -1,10 +1,10 @@
 {
-  "generated_at_utc": "2026-06-22T12:27:22.782988+00:00",
+  "generated_at_utc": "2026-06-22T12:28:48.457290+00:00",
   "source": "stream",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "date_range_replaced": {
-    "start": "2026-06-10",
-    "end": "2026-06-16"
+    "start": "2026-06-17",
+    "end": "2026-06-20"
   },
   "metric_notes": {
     "unique_viewers": "Exact distinct cliIP count per minute.",
@@ -24,29 +24,29 @@
     "status_minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_status_minute.parquet"
   },
   "new_counts": {
-    "minute_rows": 197124,
-    "status_minute_rows": 290544,
-    "summary_rows": 190
+    "minute_rows": 118363,
+    "status_minute_rows": 175850,
+    "summary_rows": 118
   },
   "output_stats": {
-    "minute_rows": 2619555,
+    "minute_rows": 2737918,
     "first_date": "2026-03-26",
     "last_date": "2026-06-22",
     "dates": 89,
     "platforms": 5,
-    "channels": 28,
-    "platform_channel_candidates": 68,
+    "channels": 29,
+    "platform_channel_candidates": 69,
     "peak_unique_viewers": 10788,
-    "avg_unique_viewers": 48.314,
+    "avg_unique_viewers": 47.454,
     "peak_unique_ua_viewers": 353,
-    "avg_unique_ua_viewers": 12.528,
+    "avg_unique_ua_viewers": 12.483,
     "peak_segment_viewers_estimate": 10241.7,
-    "summary_rows": 2886,
+    "summary_rows": 3004,
     "peak_daily_distinct_cliips": 232861.0,
-    "daily_distinct_cliip_sum": 9930785.0,
+    "daily_distinct_cliip_sum": 10101842.0,
     "peak_daily_distinct_uas": 1655.0,
-    "daily_distinct_ua_sum": 390513.0,
-    "status_minute_rows": 2592289,
+    "daily_distinct_ua_sum": 404949.0,
+    "status_minute_rows": 2768139,
     "status_codes": 12,
     "status_code_list": "200,206,301,304,400,401,403,404,500,502,503,504"
   }

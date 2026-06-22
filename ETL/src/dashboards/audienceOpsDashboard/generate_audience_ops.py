@@ -114,6 +114,18 @@ def records(df: pd.DataFrame, limit: int | None = None, tail: bool = False) -> l
     return clean.to_dict(orient="records")
 
 
+def array_records(df: pd.DataFrame, columns: list[str]) -> list[list[Any]]:
+    """Store large embedded frames as row arrays to keep static HTML responsive."""
+    if df.empty:
+        return []
+    clean = df[[col for col in columns if col in df.columns]].copy()
+    for col in clean.columns:
+        if pd.api.types.is_datetime64_any_dtype(clean[col]):
+            clean[col] = clean[col].dt.strftime("%Y-%m-%d %H:%M:%S")
+    clean = clean.astype(object).where(pd.notna(clean), None)
+    return clean.values.tolist()
+
+
 def numeric(df: pd.DataFrame, cols: list[str], fill_value: float | None = 0) -> pd.DataFrame:
     if df.empty:
         return df
@@ -880,6 +892,12 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
                     "status_ts_rows": "rows",
                 }
             )
+    if not minute_detail.empty and "log_date" in minute_detail.columns:
+        embedded_dates = sorted(minute_detail["log_date"].dropna().astype(str).unique())[-15:]
+        embedded_date_set = set(embedded_dates)
+        minute_detail = minute_detail[minute_detail["log_date"].astype(str).isin(embedded_date_set)]
+        if not status_detail.empty and "d" in status_detail.columns:
+            status_detail = status_detail[status_detail["d"].astype(str).isin(embedded_date_set)]
     if not platform_channel_identity.empty:
         platform_channel_identity = numeric(
             platform_channel_identity,
@@ -1402,8 +1420,36 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "ua_form_factor_daily": records(ua_playtime["form_factor"], 5000),
             "ua_decode_quality_daily": records(ua_playtime["decode_quality"], 5000),
             "ua_device_detail_daily": records(ua_playtime["device_detail"]),
-            "concurrency_minute": records(concurrency["minute_detail"]),
-            "concurrency_status_minute": records(concurrency["status_detail"]),
+            "concurrency_minute_schema": [
+                "log_date",
+                "source",
+                "minute_ist",
+                "platform_name",
+                "channel_name",
+                "unique_viewers",
+                "unique_ua_viewers",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+            ],
+            "concurrency_minute": array_records(
+                concurrency["minute_detail"],
+                [
+                    "log_date",
+                    "source",
+                    "minute_ist",
+                    "platform_name",
+                    "channel_name",
+                    "unique_viewers",
+                    "unique_ua_viewers",
+                    "raw_ts_rows",
+                    "status_200_ts_rows",
+                ],
+            ),
+            "concurrency_status_minute_schema": ["d", "s", "m", "p", "c", "code", "uv", "rows"],
+            "concurrency_status_minute": array_records(
+                concurrency["status_detail"],
+                ["d", "s", "m", "p", "c", "code", "uv", "rows"],
+            ),
             "concurrency_status_codes": concurrency["status_codes"],
             "concurrency_summary": records(concurrency["summary"], 2000),
             "fast_platform_channel_identity_daily": records(concurrency["platform_channel_identity"], 5000),

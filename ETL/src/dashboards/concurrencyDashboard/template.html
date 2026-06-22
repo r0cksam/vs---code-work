@@ -430,11 +430,20 @@ let platformChannelTrendChart=null;
 let renderTimer=null;
 let renderHideTimer=null;
 
-const minute=(D.minute||[]).sort(function(a,b){return String(a.minute_ist||'').localeCompare(String(b.minute_ist||''));});
+function inflateRows(rows,schema){
+  if(!Array.isArray(rows)||!rows.length)return [];
+  if(!Array.isArray(schema)||!schema.length||!Array.isArray(rows[0]))return rows;
+  return rows.map(function(row){
+    const out={};
+    schema.forEach(function(key,idx){out[key]=row[idx];});
+    return out;
+  });
+}
+const minute=inflateRows(D.minute||[],D.minute_schema||[]).sort(function(a,b){return String(a.minute_ist||'').localeCompare(String(b.minute_ist||''));});
 const summary=D.summary||[];
 const STATUS_MEANINGS=D.status_meanings||{};
 const STATUS_OPTIONS=(D.status_code_options||[]).slice().sort(function(a,b){return String(a.code).localeCompare(String(b.code),undefined,{numeric:true});});
-const STATUS_EXTRA=D.status_extra||[];
+const STATUS_EXTRA=inflateRows(D.status_extra||[],D.status_extra_schema||[]);
 const STATUS_EXTRA_MAP=new Map();
 STATUS_EXTRA.forEach(function(item){STATUS_EXTRA_MAP.set(statusLookupKey(item.k,item.m,item.c),{rows:Number(item.r||0),value:Number(item.v||0)});});
 const fmt=function(n,d){if(n==null||isNaN(n))return '-';return Number(n).toLocaleString('en-IN',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});};
