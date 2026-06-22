@@ -39,6 +39,12 @@ DEFAULT_INPUT = ETL_ROOT / "distinct_UA_Both_All.csv"
 DEFAULT_MAP = ETL_ROOT / "config" / "device_decode" / "amazon_fire_tv_models.csv"
 DEFAULT_OUT_DIR = ETL_ROOT / "output" / "device_decode"
 DEFAULT_CACHE = ETL_ROOT / "data" / "cache" / "device_decode" / "whatmyuseragent_distinct_ua_cache.parquet"
+DEFAULT_LOCAL_VERIFIED_CROSSCHECK_CACHE = (
+    ETL_ROOT / "data" / "cache" / "device_decode" / "whatmyuseragent_local_verified_crosscheck_cache.parquet"
+)
+DEFAULT_ALL_DISTINCT_API_CACHE = (
+    ETL_ROOT / "data" / "cache" / "device_decode" / "whatmyuseragent_all_distinct_ua_cache.parquet"
+)
 DEFAULT_API_URL = "https://whatmyuseragent.com/api"
 
 OUTPUT_COLUMNS = [
@@ -244,10 +250,18 @@ def infer_android_brand(model: str, ua: str) -> str:
         return "Realme"
     if upper.startswith("ONEPLUS") or "oneplus" in lower:
         return "OnePlus"
-    if upper.startswith(("MIBOX", "MIBOX", "MI ", "M201", "M200", "M210", "M220")) or "xiaomi" in lower:
+    if upper.startswith(("MIBOX", "MITV", "MI ", "M201", "M200", "M210", "M220")) or "xiaomi" in lower:
         return "Xiaomi"
     if "bravia" in lower or "sony" in lower:
         return "Sony"
+    if upper.startswith(("SWTV", "SW-")) or "skyworth" in lower:
+        return "Skyworth"
+    if "beyondtv" in lower or "tcl" in lower:
+        return "TCL"
+    if upper.startswith("PATH_") or "kodak" in lower:
+        return "Kodak"
+    if upper in {"R3G", "R4G"} or "artel" in lower:
+        return "Artel"
     if "sharp" in lower:
         return "Sharp"
     if "hisense" in lower:
@@ -258,6 +272,74 @@ def infer_android_brand(model: str, ua: str) -> str:
         return "Haier"
     if "vu tv" in lower or "vutv" in lower:
         return "VU"
+    return ""
+
+
+def is_android_ctv_model(model: str, ua: str) -> bool:
+    """Identify Android TV / CTV UAs that do not say "mobile".
+
+    Many TV apps use Dalvik-style Android UAs and only expose a model/build
+    token. Without these model hints they get misclassified as smartphones.
+    """
+    text = f"{ua} {model}".lower()
+    ctv_tokens = [
+        "smart tv",
+        "smart-tv",
+        "android tv",
+        "bravia",
+        "mitv",
+        "mi tv",
+        "mibox",
+        "sw-tv",
+        "swtv",
+        "beyondtv",
+        "ai pont",
+        "aipont",
+        "matrixtv",
+        "nstv",
+        "vutv",
+        "vu tv",
+        "hisense",
+        "skyworth",
+        "path_",
+        "hidptandroid",
+    ]
+    if any(token in text for token in ctv_tokens):
+        return True
+    model_upper = model.upper().strip()
+    return bool(re.match(r"^(R3G|R4G|C00|D00|JHSD\d+|Y SERIES)\b", model_upper))
+
+
+def normalize_api_device_type(value: Any) -> str:
+    device_type = safe_text(value).strip().lower()
+    if device_type in {"tv", "smart tv", "smart-tv", "television"}:
+        return "smart_tv"
+    if device_type in {"phone", "mobile"}:
+        return "smartphone"
+    if device_type in {"tablet", "desktop", "bot"}:
+        return device_type
+    return device_type
+
+
+def os_family_from_api(os_name: str, api_family: str = "") -> str:
+    family = safe_text(api_family).strip()
+    if family:
+        return family
+    name = safe_text(os_name).lower()
+    if "fire" in name:
+        return "Android/FireOS"
+    if "android" in name:
+        return "Android"
+    if "tizen" in name:
+        return "Tizen"
+    if "webos" in name:
+        return "webOS"
+    if name in {"ios", "ipados", "tvos"}:
+        return "iOS"
+    if "mac" in name:
+        return "macOS"
+    if "windows" in name:
+        return "Windows"
     return ""
 
 
@@ -391,7 +473,7 @@ def local_decode_row(row: pd.Series, fire_map: dict[str, dict[str, str]]) -> dic
         model = extract_android_model(ua)
         brand = infer_android_brand(model, ua)
         version = android_match.group(1).replace("_", ".")
-        device_type = "smart_tv" if any(token in lower for token in ["tv", "bravia", "mitv", "webos", "tizen"]) else "smartphone"
+        device_type = "smart_tv" if is_android_ctv_model(model, ua) else "smartphone"
         if "tablet" in lower or "pad" in model.lower():
             device_type = "tablet"
         result.update(
@@ -431,6 +513,18 @@ def load_api_cache(path: Path) -> pd.DataFrame:
         if column not in cache.columns:
             cache[column] = ""
     return cache[API_COLUMNS].drop_duplicates("ua_hash", keep="last") if not cache.empty else cache[API_COLUMNS]
+
+
+def combine_api_caches(*frames: pd.DataFrame) -> pd.DataFrame:
+    non_empty = [frame for frame in frames if frame is not None and not frame.empty]
+    if not non_empty:
+        return pd.DataFrame(columns=API_COLUMNS)
+    combined = pd.concat(non_empty, ignore_index=True)
+    for column in API_COLUMNS:
+        if column not in combined.columns:
+            combined[column] = ""
+    # Later frames are more recent/specific evidence, so keep the last row.
+    return combined[API_COLUMNS].drop_duplicates("ua_hash", keep="last")
 
 
 def save_api_cache(cache: pd.DataFrame, path: Path) -> None:
@@ -633,6 +727,35 @@ def apply_api_to_local(local: pd.DataFrame, api_cache: pd.DataFrame) -> pd.DataF
         merged.loc[blank_target & has_api, target_col] = merged.loc[blank_target & has_api, source_col]
     has_good_api = merged.get("api_status", "").fillna("").eq("decoded_api") if "api_status" in merged else False
     if not isinstance(has_good_api, bool):
+        api_has_identity = has_good_api & (
+            merged["api_device_type"].fillna("").astype(str).str.strip().ne("")
+            | merged["api_brand"].fillna("").astype(str).str.strip().ne("")
+            | merged["api_model"].fillna("").astype(str).str.strip().ne("")
+            | merged["api_os_name"].fillna("").astype(str).str.strip().ne("")
+        )
+        for source_col, target_col in [
+            ("api_brand", "brand"),
+            ("api_model", "model"),
+            ("api_os_name", "os_name"),
+            ("api_os_version", "os_version"),
+            ("api_browser_name", "browser_name"),
+            ("api_browser_version", "browser_version"),
+            ("api_browser_engine", "browser_engine"),
+        ]:
+            has_api = merged[source_col].fillna("").astype(str).str.strip().ne("")
+            merged.loc[api_has_identity & has_api, target_col] = merged.loc[api_has_identity & has_api, source_col]
+        has_api_device = merged["api_device_type"].fillna("").astype(str).str.strip().ne("")
+        merged.loc[api_has_identity & has_api_device, "device_type"] = merged.loc[
+            api_has_identity & has_api_device, "api_device_type"
+        ].map(normalize_api_device_type)
+        if "api_os_family" in merged.columns:
+            merged.loc[api_has_identity, "os_family"] = merged.loc[api_has_identity].apply(
+                lambda row: os_family_from_api(safe_text(row.get("api_os_name")), safe_text(row.get("api_os_family"))),
+                axis=1,
+            )
+        merged.loc[api_has_identity, "decode_status"] = "decoded_api"
+        merged.loc[api_has_identity, "decoder_method"] = "local_rule+whatmyuseragent"
+        merged.loc[api_has_identity, "confidence"] = "high"
         unknown_or_low = merged["decode_status"].isin(["unknown"]) | merged["confidence"].eq("low")
         merged.loc[has_good_api & unknown_or_low, "decode_status"] = "decoded_api"
         merged.loc[has_good_api & unknown_or_low, "decoder_method"] = "local_rule+whatmyuseragent"
@@ -689,7 +812,18 @@ def main() -> None:
     local = pd.DataFrame([local_decode_row(row, fire_map) for _, row in distinct.iterrows()])
     api_cache = load_api_cache(args.api_cache)
     api_cache = enrich_with_api(local, api_cache, args)
-    decoded = apply_api_to_local(local, api_cache)
+    crosscheck_cache = (
+        load_api_cache(DEFAULT_LOCAL_VERIFIED_CROSSCHECK_CACHE)
+        if DEFAULT_LOCAL_VERIFIED_CROSSCHECK_CACHE.resolve() != args.api_cache.resolve()
+        else pd.DataFrame(columns=API_COLUMNS)
+    )
+    all_distinct_cache = (
+        load_api_cache(DEFAULT_ALL_DISTINCT_API_CACHE)
+        if DEFAULT_ALL_DISTINCT_API_CACHE.resolve() != args.api_cache.resolve()
+        else pd.DataFrame(columns=API_COLUMNS)
+    )
+    combined_api_cache = combine_api_caches(api_cache, crosscheck_cache, all_distinct_cache)
+    decoded = apply_api_to_local(local, combined_api_cache)
 
     for column in OUTPUT_COLUMNS:
         if column not in decoded.columns:
@@ -717,6 +851,9 @@ def main() -> None:
         "unknown_rows": int((decoded["decode_status"] == "unknown").sum()),
         "malformed_rows": int((decoded["decode_status"] == "malformed").sum()),
         "api_cache_rows": int(len(api_cache)),
+        "local_verified_api_crosscheck_rows": int(len(crosscheck_cache)),
+        "all_distinct_api_cache_rows": int(len(all_distinct_cache)),
+        "combined_api_cache_rows": int(len(combined_api_cache)),
         "elapsed_seconds": round(time.time() - started, 2),
     }
     manifest = {
@@ -731,6 +868,8 @@ def main() -> None:
             "summary": str(summary_path),
             "unknown_review": str(unknown_path),
             "api_cache": str(args.api_cache),
+            "local_verified_crosscheck_cache": str(DEFAULT_LOCAL_VERIFIED_CROSSCHECK_CACHE),
+            "all_distinct_api_cache": str(DEFAULT_ALL_DISTINCT_API_CACHE),
         },
         "stats": stats,
     }
