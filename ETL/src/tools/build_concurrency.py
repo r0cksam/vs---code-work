@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build FAST minute-level concurrency aggregates from the parquet lake."""
+"""Build minute-level concurrency aggregates from the parquet lake."""
 
 from __future__ import annotations
 
@@ -135,6 +135,18 @@ def date_filter_sql(start: date | None, end: date | None) -> str:
     return build_partition_filter(start, end) if start and end else "1=1"
 
 
+def resolved_platform_name_sql(source: str) -> str:
+    if source.lower() == "stream":
+        return "'STREAM'"
+    return platform_name_sql("b.reqHost")
+
+
+def resolved_platform_key_sql(source: str) -> str:
+    if source.lower() == "stream":
+        return "'stream'"
+    return platform_key_sql("b.reqHost")
+
+
 def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -> None:
     start, end = checked_dates(args)
     lake_glob = q(args.lake / "**" / "*.parquet")
@@ -165,8 +177,8 @@ def build_new_tables(con: duckdb.DuckDBPyConnection, args: argparse.Namespace) -
             SELECT
                 b.*,
                 COALESCE(h.host_channel_name, p.path_channel_name, 'Other') AS channel_name,
-                {platform_name_sql("b.reqHost")} AS platform_name,
-                {platform_key_sql("b.reqHost")} AS platform_key
+                {resolved_platform_name_sql(args.source)} AS platform_name,
+                {resolved_platform_key_sql(args.source)} AS platform_key
             FROM base b
             LEFT JOIN host_map h ON b.reqHost = h.reqHost
             LEFT JOIN path_map p ON b.candidate_id = p.candidate_id
@@ -414,9 +426,9 @@ def write_manifest(
         "metric_notes": {
             "unique_viewers": "Exact distinct cliIP count per minute.",
             "unique_ua_viewers": "Exact distinct normalized User-Agent string count per minute.",
-            "distinct_cliips": "Exact daily distinct cliIP count for each FAST platform/channel on .ts rows.",
-            "distinct_uas": "Exact daily distinct normalized User-Agent count for each FAST platform/channel on .ts rows.",
-            "distinct_ipua_pairs": "Exact daily distinct cliIP + User-Agent pair count for each FAST platform/channel on .ts rows.",
+            "distinct_cliips": "Exact daily distinct cliIP count for each source/platform/channel on .ts rows. STREAM platform is labelled STREAM because app platform is not present on .ts rows.",
+            "distinct_uas": "Exact daily distinct normalized User-Agent count for each source/platform/channel on .ts rows. STREAM platform is labelled STREAM because app platform is not present on .ts rows.",
+            "distinct_ipua_pairs": "Exact daily distinct cliIP + User-Agent pair count for each source/platform/channel on .ts rows. STREAM platform is labelled STREAM because app platform is not present on .ts rows.",
             "segment_viewers_estimate": "raw .ts rows divided by 10 six-second segments per minute.",
             "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute.",
             "status_code_segment_viewers_estimate": "Selected HTTP status .ts rows divided by 10 six-second segments per minute.",
@@ -436,10 +448,10 @@ def write_manifest(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build FAST minute-level concurrency parquet outputs.")
+    parser = argparse.ArgumentParser(description="Build minute-level concurrency parquet outputs.")
     parser.add_argument("--lake", type=Path, default=DEFAULT_LAKE_FOLDER)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
-    parser.add_argument("--source", choices=["fast"], default="fast")
+    parser.add_argument("--source", choices=["fast", "stream"], default="fast")
     parser.add_argument("--start", default=None, help="IST lake date start, YYYY-MM-DD.")
     parser.add_argument("--end", default=None, help="IST lake date end, YYYY-MM-DD.")
     parser.add_argument("--threads", type=int, default=6)
@@ -463,7 +475,7 @@ def main() -> None:
             "summary_rows": table_count(con, "concurrency_summary_new"),
         }
         if new_counts["minute_rows"] <= 0:
-            raise SystemExit("No FAST .ts rows found for the selected concurrency range.")
+            raise SystemExit(f"No {args.source.upper()} .ts rows found for the selected concurrency range.")
 
         minute_path = args.out_dir / "concurrency_minute.parquet"
         status_minute_path = args.out_dir / "concurrency_status_minute.parquet"

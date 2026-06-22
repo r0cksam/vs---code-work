@@ -1423,8 +1423,9 @@ def main() -> None:
 
     if not args.skip_watch and not args.skip_concurrency:
         fast_lake = lake_root / "source=fast"
+        stream_lake = lake_root / "source=stream"
         if args.dry_run:
-            print("\n[skip] FAST concurrency skipped in dry-run mode.")
+            print("\n[skip] FAST/STREAM concurrency skipped in dry-run mode.")
         elif not fast_lake.exists():
             print(f"\n[skip] FAST concurrency skipped because FAST lake folder is missing: {fast_lake}")
         else:
@@ -1453,6 +1454,8 @@ def main() -> None:
                 str(lake_root),
                 "--out-dir",
                 str(output_root / "watch_hours" / "concurrency"),
+                "--source",
+                "fast",
                 "--threads",
                 str(max(1, int(args.concurrency_threads))),
                 "--memory-limit",
@@ -1469,6 +1472,36 @@ def main() -> None:
                 allow_failure=args.continue_on_error,
                 retry_on_memory=True,
             )
+
+            stream_concurrency_ok = True
+            if stream_lake.exists():
+                stream_concurrency_cmd = [
+                    python,
+                    str(concurrency_script),
+                    "--lake",
+                    str(lake_root),
+                    "--out-dir",
+                    str(output_root / "watch_hours" / "concurrency"),
+                    "--source",
+                    "stream",
+                    "--threads",
+                    str(max(1, int(args.concurrency_threads))),
+                    "--memory-limit",
+                    args.concurrency_memory,
+                ]
+                if concurrency_start and concurrency_end:
+                    stream_concurrency_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+                stream_concurrency_ok = run(
+                    stream_concurrency_cmd,
+                    cwd=etl_root,
+                    env=env,
+                    step_name="watch_hours_stream_concurrency",
+                    log_dir=log_dir,
+                    allow_failure=args.continue_on_error,
+                    retry_on_memory=True,
+                )
+            else:
+                print(f"\n[skip] STREAM concurrency skipped because STREAM lake folder is missing: {stream_lake}")
 
             fast_identity_cmd = [
                 python,
@@ -1624,7 +1657,7 @@ def main() -> None:
                 "--title",
                 "Veto Concurrency",
             ]
-            if concurrency_ok and fast_identity_ok and fast_geo_ok and fast_ua_device_ok and fast_manifest_ok and fast_bandwidth_ok and fast_cmcd_ok:
+            if concurrency_ok and stream_concurrency_ok and fast_identity_ok and fast_geo_ok and fast_ua_device_ok and fast_manifest_ok and fast_bandwidth_ok and fast_cmcd_ok:
                 run(
                     concurrency_html_cmd,
                     cwd=concurrency_dashboard_dir,
@@ -1634,11 +1667,11 @@ def main() -> None:
                     allow_failure=args.continue_on_error,
                 )
             else:
-                reason = "FAST concurrency, platform/channel identity, platform/channel geo, platform/channel UA device, platform/channel manifest, platform/channel bandwidth, or platform/channel CMCD failed; skipped concurrency HTML refresh to avoid stale data"
+                reason = "FAST/STREAM concurrency, platform/channel identity, platform/channel geo, platform/channel UA device, platform/channel manifest, platform/channel bandwidth, or platform/channel CMCD failed; skipped concurrency HTML refresh to avoid stale data"
                 print(f"\n[skip] concurrency_dashboard_html: {reason}")
                 record_skip("concurrency_dashboard_html", reason)
     else:
-        print("\n[skip] FAST concurrency step skipped.")
+        print("\n[skip] FAST/STREAM concurrency step skipped.")
 
     if not args.skip_latency:
         latency_start = args.latency_start

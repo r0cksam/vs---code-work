@@ -1271,10 +1271,10 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "note": "Request-hour metrics are production-ready. Dedup playback mart is WIP.",
         },
         {
-            "area": "FAST concurrency",
+            "area": "Concurrency",
             "status": "Available",
             "basis": "watch_hours/concurrency",
-            "note": "Minute and 5-minute viewer estimates are available for FAST. STREAM concurrency mart is not available yet.",
+            "note": "Minute and 5-minute viewer estimates are available for FAST. STREAM source-level minute concurrency is available when the stream rows are built; STREAM platform-level concurrency remains unavailable because app platform is not present on .ts rows.",
         },
         {
             "area": "Latency and CDN reliability",

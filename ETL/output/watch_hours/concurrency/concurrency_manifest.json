@@ -1,17 +1,17 @@
 {
-  "generated_at_utc": "2026-06-22T05:54:33.161070+00:00",
-  "source": "fast",
+  "generated_at_utc": "2026-06-22T12:27:22.782988+00:00",
+  "source": "stream",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "date_range_replaced": {
-    "start": "2026-06-21",
-    "end": "2026-06-22"
+    "start": "2026-06-10",
+    "end": "2026-06-16"
   },
   "metric_notes": {
     "unique_viewers": "Exact distinct cliIP count per minute.",
     "unique_ua_viewers": "Exact distinct normalized User-Agent string count per minute.",
-    "distinct_cliips": "Exact daily distinct cliIP count for each FAST platform/channel on .ts rows.",
-    "distinct_uas": "Exact daily distinct normalized User-Agent count for each FAST platform/channel on .ts rows.",
-    "distinct_ipua_pairs": "Exact daily distinct cliIP + User-Agent pair count for each FAST platform/channel on .ts rows.",
+    "distinct_cliips": "Exact daily distinct cliIP count for each source/platform/channel on .ts rows. STREAM platform is labelled STREAM because app platform is not present on .ts rows.",
+    "distinct_uas": "Exact daily distinct normalized User-Agent count for each source/platform/channel on .ts rows. STREAM platform is labelled STREAM because app platform is not present on .ts rows.",
+    "distinct_ipua_pairs": "Exact daily distinct cliIP + User-Agent pair count for each source/platform/channel on .ts rows. STREAM platform is labelled STREAM because app platform is not present on .ts rows.",
     "segment_viewers_estimate": "raw .ts rows divided by 10 six-second segments per minute.",
     "status_200_segment_viewers_estimate": "HTTP 200 .ts rows divided by 10 six-second segments per minute.",
     "status_code_segment_viewers_estimate": "Selected HTTP status .ts rows divided by 10 six-second segments per minute.",
@@ -24,30 +24,30 @@
     "status_minute": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\concurrency_status_minute.parquet"
   },
   "new_counts": {
-    "minute_rows": 22603,
-    "status_minute_rows": 29231,
-    "summary_rows": 32
+    "minute_rows": 197124,
+    "status_minute_rows": 290544,
+    "summary_rows": 190
   },
   "output_stats": {
-    "minute_rows": 668716,
-    "first_date": "2026-05-13",
+    "minute_rows": 2619555,
+    "first_date": "2026-03-26",
     "last_date": "2026-06-22",
-    "dates": 41,
-    "platforms": 4,
-    "channels": 4,
-    "platform_channel_candidates": 16,
+    "dates": 89,
+    "platforms": 5,
+    "channels": 28,
+    "platform_channel_candidates": 68,
     "peak_unique_viewers": 10788,
-    "avg_unique_viewers": 88.976,
-    "peak_unique_ua_viewers": 240,
-    "avg_unique_ua_viewers": 10.479,
+    "avg_unique_viewers": 48.314,
+    "peak_unique_ua_viewers": 353,
+    "avg_unique_ua_viewers": 12.528,
     "peak_segment_viewers_estimate": 10241.7,
-    "summary_rows": 656,
+    "summary_rows": 2886,
     "peak_daily_distinct_cliips": 232861.0,
-    "daily_distinct_cliip_sum": 6752533.0,
+    "daily_distinct_cliip_sum": 9930785.0,
     "peak_daily_distinct_uas": 1655.0,
-    "daily_distinct_ua_sum": 105760.0,
-    "status_minute_rows": 78857,
-    "status_codes": 5,
-    "status_code_list": "200,206,304,503,504"
+    "daily_distinct_ua_sum": 390513.0,
+    "status_minute_rows": 2592289,
+    "status_codes": 12,
+    "status_code_list": "200,206,301,304,400,401,403,404,500,502,503,504"
   }
 }

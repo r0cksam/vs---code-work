@@ -58,7 +58,7 @@ input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 
 .section .desc{font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:12px}
 .grid-stack{display:grid;grid-template-columns:1fr;gap:12px}
-.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:12px}
+.grid-3{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .panel{border:1px solid var(--line);border-radius:8px;background:#fff;min-width:0;overflow:hidden}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#f8fafc;border-bottom:1px solid var(--line);padding:10px 12px}
 .panel-title{font-size:12px;font-weight:900;color:var(--ink);line-height:1.2}
@@ -117,7 +117,7 @@ tr:hover td{background:#f8fafc}
 .modal-head b{font-size:14px}.modal-body{flex:1;min-height:0;padding:12px;display:flex;flex-direction:column}.modal-body .chart-box{flex:1;height:auto;min-height:0}.modal-controls:empty{display:none}.modal-controls .mini-controls{padding:0 0 10px}
 .footer{text-align:center;color:#7d8999;font-size:10px;padding:8px 0 0}
 @media(max-width:1500px){.stakeholder-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.viewership-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:1050px){.filters{grid-template-columns:repeat(6,minmax(0,1fr))}.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 3}.topbar .sub{text-align:left}.chart-box{height:320px}}
+@media(max-width:1050px){.filters{grid-template-columns:repeat(6,minmax(0,1fr))}.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 3}.topbar .sub{text-align:left}.chart-box{height:320px}.grid-3{grid-template-columns:1fr}}
 @media(max-width:1050px){.evidence-head{display:none}.evidence-row{grid-template-columns:30px 1fr}.evidence-value{text-align:left}.evidence-track,.evidence-kpis{grid-column:2}.evidence-kpis{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}}
 @media(max-width:680px){.wrap{padding:12px}.filters{grid-template-columns:1fr}.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 1}.preset-row .btn,.action-row .btn{flex:1 1 42%}.sticky{position:relative}.chart-box,.chart-box.tall{height:300px}.topbar{padding:14px 16px}.topbar h1{font-size:19px}.stakeholder-kpis,.viewership-kpis{grid-template-columns:1fr}}
 html,body{max-width:100%;overflow-x:hidden}
@@ -1018,17 +1018,31 @@ function renderStakeholderKpis(){
   const ipuaSessionText=ident.hasIdentity?fmtInt(ident.ipua):(fastIpUa?fmtInt(fastIpUa.value):notAvailable);
   const deviceText=ident.hasIdentity?fmtInt(ident.devices):notAvailable;
   const manifestNote=channelManifestNote;
+  const dayText=ident.days>1?(" across "+ident.days+" selected days"):" for selected day";
+  const ipDayText=(ipMetric.rows&&ipMetric.rows.length?selectedDayCount(ipMetric.rows,ipMetric.kind==="overview_dist_ip_sum"?"date":"log_date"):0);
+  const ipRangeText=ipDayText>1?(" across "+ipDayText+" selected days"):" for selected day";
+  const deviceCalc=ident.hasIdentity?"Sum of daily distinct device_id"+dayText:identityMissingNote;
+  const sessionCalc=ident.hasIdentity?"Sum of daily distinct session_id"+dayText:identityMissingNote;
+  const newUserCalc=ident.hasIdentity?"Users whose first_seen date falls in the selected range":identityMissingNote;
+  const returningUserCalc=ident.hasIdentity?"Device users seen before or returning inside the selected range":identityMissingNote;
+  const ipCalc=ipMetric.available?"Sum of daily distinct cliIP"+ipRangeText:identityMissingNote;
+  const ipuaCalc=ident.hasIdentity
+    ?"Sum of daily distinct cliIP + user-agent signatures"+dayText
+    :(fastIpUa?"Sum of daily distinct cliIP + UA signatures"+ipRangeText:identityMissingNote);
+  const viewsCalc=views!=null?"Count of master manifest (.m3u8) request rows in selected filters":identityMissingNote;
+  const avgCalc=ipMetric.available?"Request watch minutes divided by Total Users based on Unique IP":identityMissingNote;
+  const ipSessionCalc=ipMetric.available?"Shows Unique IP total and best available session count for the same filters":identityMissingNote;
   el("stakeholderKpis").innerHTML=[
-    stakeholderKpi("Total Users (Based on Device ID - APP DATA)",deviceText,ident.hasIdentity?ident.note:identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Sessions (Based on Session ID in query String - APP DATA)",sessionText,ident.hasIdentity?ident.note:identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Users (Based on Uniq IP)",ipMetric.available?fmtInt(ipHint):notAvailable,ipMetric.note,ipMetric.available?"gold":"wip-box"),
-    stakeholderKpi("Total New Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.newDevices):notAvailable,ident.hasIdentity?"First seen users":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Returning Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.returningDevices):notAvailable,ident.hasIdentity?"Returning users":identityMissingNote,ident.hasIdentity?"gold":"wip-box"),
-    stakeholderKpi("Total Sessions (Based on Uniq IP & UA)",ipuaSessionText,ident.hasIdentity?ident.note:(fastIpUa?fastIpUa.note:"Not available for this selection"),(ident.hasIdentity||fastIpUa)?"gold":"wip-box"),
-    stakeholderKpi("Total Views (Total Master Manifest Requests)",views!=null?fmtInt(views):notAvailable,manifestNote,views!=null?"gold":"wip-box"),
-    stakeholderKpi("Total Session Duration (Hours)",notAvailable,"Not available for this selection","wip-box"),
-    stakeholderKpi("Avg Watch Time per user (Based on Unique IP)",ipMetric.available&&ipHint?fmt(reqHours*60/ipHint,1)+" min":notAvailable,avgWatchNote,ipMetric.available?"gold":"wip-box"),
-    stakeholderKpi("Total Unique IPs & Sessions (Distinct)",ipMetric.available?("IPs "+fmtInt(ipHint)+" / Sessions "+(ident.hasIdentity?fmtInt(ident.sessions):(fastIpUa?fmtInt(fastIpUa.value):"NA"))):notAvailable,ipSessionNote,ipMetric.available?"gold":"wip-box")
+    stakeholderKpi("Total Users (Based on Device ID - APP DATA)",deviceText,deviceCalc,ident.hasIdentity?"gold":"wip-box"),
+    stakeholderKpi("Total Sessions (Based on Session ID in query String - APP DATA)",sessionText,sessionCalc,ident.hasIdentity?"gold":"wip-box"),
+    stakeholderKpi("Total Users (Based on Uniq IP)",ipMetric.available?fmtInt(ipHint):notAvailable,ipCalc,ipMetric.available?"gold":"wip-box"),
+    stakeholderKpi("Total New Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.newDevices):notAvailable,newUserCalc,ident.hasIdentity?"gold":"wip-box"),
+    stakeholderKpi("Total Returning Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.returningDevices):notAvailable,returningUserCalc,ident.hasIdentity?"gold":"wip-box"),
+    stakeholderKpi("Total Sessions (Based on Uniq IP & UA)",ipuaSessionText,ipuaCalc,(ident.hasIdentity||fastIpUa)?"gold":"wip-box"),
+    stakeholderKpi("Total Views (Total Master Manifest Requests)",views!=null?fmtInt(views):notAvailable,viewsCalc,views!=null?"gold":"wip-box"),
+    stakeholderKpi("Total Session Duration (Hours)",notAvailable,"Requires true app session start/end duration; not present in current CDN marts","wip-box"),
+    stakeholderKpi("Avg Watch Time per user (Based on Unique IP)",ipMetric.available&&ipHint?fmt(reqHours*60/ipHint,1)+" min":notAvailable,avgCalc,ipMetric.available?"gold":"wip-box"),
+    stakeholderKpi("Total Unique IPs & Sessions (Distinct)",ipMetric.available?("IPs "+fmtInt(ipHint)+" / Sessions "+(ident.hasIdentity?fmtInt(ident.sessions):(fastIpUa?fmtInt(fastIpUa.value):"NA"))):notAvailable,ipSessionCalc,ipMetric.available?"gold":"wip-box")
   ].join("");
 }
 function renderViewershipTrend(){
@@ -1564,8 +1578,9 @@ function renderGeoDevice(){
 }
 
 function opsMinuteRows(){
-  if(state.source!=="fast")return [];
-  return filterRows(DATA.concurrency_minute||[],{channel:true,platform:true});
+  if(state.source==="fast")return filterRows(DATA.concurrency_minute||[],{channel:true,platform:true});
+  if(state.source==="stream"&&state.platform==="all")return filterRows(DATA.concurrency_minute||[],{channel:true,platform:false});
+  return [];
 }
 function groupOpsMinute(rows,bucketMinutes){
   const bucket=Math.max(1,Number(bucketMinutes)||1);
@@ -1608,9 +1623,9 @@ function renderOpsMonitoring(){
   const identityPrimary=state.source==="fast"?sum(identityDaily,"distinct_cliips"):sum(identityDaily,"total_devices");
   const identitySecondary=state.source==="fast"?sum(identityDaily,"distinct_ipua_pairs"):sum(identityDaily,"total_sessions");
   el("opsKpis").innerHTML=[
-    kpi("Minute Rows",minuteRows.length?fmtInt(minuteRows.length):"Not Available",state.source==="fast"?"FAST minute mart rows in selected filters":"STREAM minute mart not available",""),
-    kpi("Peak Active Users",peakMinute?fmtInt(peakMinute):"Not Available",state.source==="fast"?"Peak summed cliIP per minute":"FAST only metric","gold"),
-    kpi("Peak 5-Min User-Minute",peakFive?fmtInt(peakFive):"Not Available",state.source==="fast"?"Highest 5-minute summed cliIP activity":"FAST only metric","violet"),
+    kpi("Minute Rows",minuteRows.length?fmtInt(minuteRows.length):"Not Available",state.source==="fast"?"FAST minute mart rows in selected filters":(state.platform==="all"?"STREAM minute mart rows in selected filters":"STREAM platform-specific minute mart is not available"),""),
+    kpi("Peak Active Users",peakMinute?fmtInt(peakMinute):"Not Available",state.source==="fast"?"Peak summed cliIP per minute":(state.platform==="all"?"Peak STREAM cliIP per minute":"STREAM platform-specific metric is not available"),"gold"),
+    kpi("Peak 5-Min User-Minute",peakFive?fmtInt(peakFive):"Not Available",state.source==="fast"?"Highest 5-minute summed cliIP activity":(state.platform==="all"?"Highest STREAM 5-minute summed cliIP activity":"STREAM platform-specific metric is not available"),"violet"),
     kpi("Master Manifest Views",manifestViews?fmtInt(manifestViews):"Not Available",state.source==="fast"?"FAST platform/channel m3u8 rows":"STREAM content/title m3u8 rows","green"),
     kpi(state.source==="fast"?"Unique Users":"Device IDs",identityPrimary?fmtInt(identityPrimary):"Not Available",state.source==="fast"?"Daily distinct cliIP sum":"STREAM app device_id identity",""),
     kpi(state.source==="fast"?"IP + UA Signatures":"Sessions",identitySecondary?fmtInt(identitySecondary):"Not Available",state.source==="fast"?"Daily distinct cliIP+UA sum, not app session_id":"STREAM app session_id identity","")
@@ -1623,7 +1638,7 @@ function renderOpsMonitoring(){
     ],"Count"));
     el("opsUsersMinuteNote").textContent="FAST only. Counts are summed at platform/channel minute grain for the selected filters.";
   }else{
-    clearChart("opsUsersMinuteChart",state.source==="fast"?"No FAST minute rows for selected filters":"STREAM minute-level active user mart is not available yet");
+    clearChart("opsUsersMinuteChart",state.source==="fast"?"No FAST minute rows for selected filters":(state.platform==="all"?"No STREAM minute rows for selected filters":"STREAM minute-level platform split is not available"));
     el("opsUsersMinuteNote").textContent="";
   }
   if(minute5.length){
@@ -1633,7 +1648,7 @@ function renderOpsMonitoring(){
     ],"Viewer-minute count"));
     el("opsUsers5Note").textContent="Each point is a 5-minute summed viewer-minute count, matching the Grafana-style 5-minute summation concept.";
   }else{
-    clearChart("opsUsers5Chart",state.source==="fast"?"No FAST 5-minute rows for selected filters":"STREAM 5-minute active user mart is not available yet");
+    clearChart("opsUsers5Chart",state.source==="fast"?"No FAST 5-minute rows for selected filters":(state.platform==="all"?"No STREAM 5-minute rows for selected filters":"STREAM 5-minute platform split is not available"));
     el("opsUsers5Note").textContent="";
   }
   if(manifestDaily.length){
