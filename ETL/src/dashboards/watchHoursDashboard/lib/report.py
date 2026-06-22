@@ -106,6 +106,31 @@ def _read_json_safe(path: Path | None) -> dict:
         return {}
 
 
+def _compact_record_rows(rows: list[dict]) -> tuple[list[str], list[list]]:
+    """Store repeated daily-table rows as schema + arrays to reduce static HTML size."""
+    if not rows:
+        return [], []
+    columns: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen.add(key)
+                columns.append(key)
+    return columns, [[row.get(col) for col in columns] for row in rows]
+
+
+def _compact_daily_tables(tables: dict[str, list[dict]]) -> tuple[dict[str, list[str]], dict[str, list[list]]]:
+    """Compact every daily table while preserving its original table/key shape."""
+    schemas: dict[str, list[str]] = {}
+    compact: dict[str, list[list]] = {}
+    for name, rows in tables.items():
+        schema, values = _compact_record_rows(rows)
+        schemas[name] = schema
+        compact[name] = values
+    return schemas, compact
+
+
 def _clean_decode_samples(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     for col in ["log_date", "first_date", "last_date"]:
@@ -562,6 +587,7 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     for row in daily_tables.get("query_params_daily", []):
         if str(row.get("sample_queryStr", "")).strip():
             row["sample_queryStr"] = "[queryStr sample hidden]"
+    daily_table_schemas, daily_tables_compact = _compact_daily_tables(daily_tables)
 
     # ── Assemble output dict ──────────────────────────────────────────────────
     return {
@@ -602,7 +628,8 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
              "status_200_ts_rows", "ts_rows", "m3u8_rows", "approx_unique_ips",
              "raw_watch_hours", "status_200_watch_hours", "non_200_pct"],
         ),
-        "daily_tables":       daily_tables,
+        "daily_table_schemas": daily_table_schemas,
+        "daily_tables":       daily_tables_compact,
         "sources":            sorted({
             str(r.get("source", "stream")).lower()
             for rows in daily_tables.values()

@@ -218,7 +218,21 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 
 <script>
 const D = $DATA_BLOB;
-const rows = D.rows || [];
+function inflateRows(input,schema,dictionaries){
+  if(!Array.isArray(input)||!input.length)return [];
+  if(!Array.isArray(schema)||!schema.length||!Array.isArray(input[0]))return input;
+  dictionaries=dictionaries||{};
+  return input.map(function(row){
+    const out={};
+    schema.forEach(function(key,idx){
+      const dict=dictionaries[key];
+      const value=row[idx];
+      out[key]=dict&&value!==null&&value!==undefined?dict[value]:value;
+    });
+    return out;
+  });
+}
+const rows = inflateRows(D.rows || [], D.rows_schema || [], D.rows_dictionaries || {});
 const charts = {};
 const palette = ["#173b5c","#0f766e","#b58517","#5b55a3","#b42318","#2f6b2f","#2563eb","#a855f7"];
 const state = {

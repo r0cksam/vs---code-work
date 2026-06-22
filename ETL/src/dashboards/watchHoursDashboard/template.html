@@ -412,7 +412,23 @@ const CONCURRENCY_METRICS = {
 const CONCURRENCY_COLORS = ['#c77a32','#5794f2','#73bf69','#f2495c','#b877d9','#ffb357','#2ec7b8','#e0b400','#8ab8ff','#e24d42','#a352cc','#56a64b'];
 
 // ── Bootstrap: strip first/last partial days (same logic as Python side) ──────
-const DAILY_TABLES_RAW = D.daily_tables || {};
+function inflateRows(rows,schema){
+  if(!Array.isArray(rows)||!rows.length)return [];
+  if(!Array.isArray(schema)||!schema.length||!Array.isArray(rows[0]))return rows;
+  return rows.map(row=>{
+    const out={};
+    schema.forEach((key,idx)=>{out[key]=row[idx];});
+    return out;
+  });
+}
+function inflateDailyTables(tables,schemas){
+  const out={};
+  Object.entries(tables||{}).forEach(([name,rows])=>{
+    out[name]=inflateRows(rows||[],(schemas||{})[name]||[]);
+  });
+  return out;
+}
+const DAILY_TABLES_RAW = inflateDailyTables(D.daily_tables || {}, D.daily_table_schemas || {});
 const sourceOf = r => String(r?.source || 'stream').trim().toLowerCase() || 'stream';
 const sourceLabel = s => s === 'fast' ? 'FAST' : s === 'stream' ? 'STREAM' : 'ALL';
 let sourceFilter = 'stream';

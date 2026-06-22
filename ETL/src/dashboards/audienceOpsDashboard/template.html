@@ -446,17 +446,38 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 <script>
 const D = $DATA_BLOB;
 const DATA = D.data || {};
-function inflateRows(rows,schema){
+function inflateRows(rows,schema,dictionaries){
   if(!Array.isArray(rows)||!rows.length)return [];
   if(!Array.isArray(schema)||!schema.length||!Array.isArray(rows[0]))return rows;
+  dictionaries=dictionaries||{};
   return rows.map(function(row){
     const out={};
-    schema.forEach(function(key,idx){out[key]=row[idx];});
+    schema.forEach(function(key,idx){
+      const dict=dictionaries[key];
+      const value=row[idx];
+      out[key]=dict&&value!==null&&value!==undefined?dict[value]:value;
+    });
     return out;
   });
 }
-DATA.concurrency_minute=inflateRows(DATA.concurrency_minute||[],DATA.concurrency_minute_schema||[]);
-DATA.concurrency_status_minute=inflateRows(DATA.concurrency_status_minute||[],DATA.concurrency_status_minute_schema||[]);
+DATA.concurrency_minute=inflateRows(DATA.concurrency_minute||[],DATA.concurrency_minute_schema||[],DATA.concurrency_minute_dictionaries||{});
+DATA.concurrency_status_minute=inflateRows(DATA.concurrency_status_minute||[],DATA.concurrency_status_minute_schema||[],DATA.concurrency_status_minute_dictionaries||{});
+[
+  "geo_daily",
+  "channel_geo_daily",
+  "channel_device_type_daily",
+  "region_channel_device_daily",
+  "ua_device_detail_daily",
+  "fast_platform_channel_geo_daily",
+  "fast_platform_channel_ua_device_daily",
+  "content_daily",
+  "latency_hourly",
+  "latency_channel",
+  "latency_host_daily",
+  "identity_platform_channel_daily"
+].forEach(function(key){
+  DATA[key]=inflateRows(DATA[key]||[],DATA[key+"_schema"]||[]);
+});
 const COLORS = ["#1f7897","#b88416","#12805c","#6057b1","#d65f18","#b42318","#0f6b4d","#2d5b9a","#9f5a00","#7c3aed","#0891b2","#dc2626"];
 const state = {start:D.meta.max_date,end:D.meta.max_date,source:"fast",platform:"all",channel:"all",preset:"yesterday",concurrencyInterval:5,concurrencyStatus:"all"};
 const charts = {};
@@ -465,6 +486,7 @@ const htmlViews = {};
 let modalChart = null;
 let modalSourceChartId = "";
 let modalSourceHtmlId = "";
+let filterCache = new WeakMap();
 
 function el(id){return document.getElementById(id)}
 function n(v){const x=Number(v);return Number.isFinite(x)?x:0}
@@ -488,7 +510,35 @@ function betweenDate(row,key){const d=String(row[key||"log_date"]||"").slice(0,1
 function sourceOk(row){return state.source==="all"||String(row.source||"").toLowerCase()===state.source}
 function platformOk(row){return state.platform==="all"||String(row.platform_name||"")===state.platform}
 function channelOk(row){return state.channel==="all"||String(row.channel_name||"")===state.channel}
-function filterRows(rows,opt){opt=opt||{};return (rows||[]).filter(function(r){if(opt.dateKey!==false&&!betweenDate(r,opt.dateKey||"log_date"))return false;if(opt.source!==false&&!sourceOk(r))return false;if(opt.platform!==false&&!platformOk(r))return false;if(opt.channel!==false&&!channelOk(r))return false;return true})}
+function resetFilterCache(){filterCache=new WeakMap()}
+function filterRows(rows,opt){
+  rows=rows||[];
+  if(!rows.length)return [];
+  opt=opt||{};
+  const useDate=opt.dateKey!==false;
+  const useSource=opt.source!==false;
+  const usePlatform=opt.platform!==false;
+  const useChannel=opt.channel!==false;
+  const dateKey=useDate?(opt.dateKey||"log_date"):"";
+  const cacheKey=[
+    useDate?dateKey+":"+state.start+":"+state.end:"no-date",
+    useSource?state.source:"no-source",
+    usePlatform?state.platform:"no-platform",
+    useChannel?state.channel:"no-channel"
+  ].join("|");
+  let scoped=filterCache.get(rows);
+  if(!scoped){scoped=new Map();filterCache.set(rows,scoped)}
+  if(scoped.has(cacheKey))return scoped.get(cacheKey);
+  const out=rows.filter(function(r){
+    if(useDate&&!betweenDate(r,dateKey))return false;
+    if(useSource&&!sourceOk(r))return false;
+    if(usePlatform&&!platformOk(r))return false;
+    if(useChannel&&!channelOk(r))return false;
+    return true;
+  });
+  scoped.set(cacheKey,out);
+  return out;
+}
 function sum(rows,col){return rows.reduce(function(a,r){return a+n(r[col])},0)}
 function max(rows,col){return rows.reduce(function(a,r){return Math.max(a,n(r[col]))},0)}
 function weightedAvg(rows,val,weight){const w=sum(rows,weight);return w?rows.reduce(function(a,r){return a+n(r[val])*n(r[weight])},0)/w:0}
@@ -1719,7 +1769,7 @@ function renderHeader(){
   el("selectionContext").innerHTML="<span class='pill'><b>Used Range</b> "+fmtDayStart(state.start)+" to "+fmtDayEnd(state.end)+"</span><span class='pill'><b>Source</b> "+sourceLabel()+"</span><span class='pill'><b>Platform</b> "+esc(state.platform==="all"?"All Platforms":state.platform)+"</span><span class='pill'><b>Channel</b> "+esc(state.channel==="all"?"All Channels":state.channel)+"</span>";
 }
 
-function renderAll(){renderHeader();renderStakeholderKpis();renderViewershipTrend();renderContent();renderKpis();renderTraffic();renderConcurrency();renderPlatforms();renderPlaytimePies();renderChannels();renderReliability();renderGeoDevice();renderOpsMonitoring()}
+function renderAll(){resetFilterCache();renderHeader();renderStakeholderKpis();renderViewershipTrend();renderContent();renderKpis();renderTraffic();renderConcurrency();renderPlatforms();renderPlaytimePies();renderChannels();renderReliability();renderGeoDevice();renderOpsMonitoring()}
 function refreshModalChart(){
   if(!el("chartModal").classList.contains("open"))return;
   if(modalSourceHtmlId){

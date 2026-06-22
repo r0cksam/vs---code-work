@@ -126,6 +126,55 @@ def array_records(df: pd.DataFrame, columns: list[str]) -> list[list[Any]]:
     return clean.values.tolist()
 
 
+def limited_frame(df: pd.DataFrame, limit: int | None = None, tail: bool = False) -> pd.DataFrame:
+    """Apply the same row cap semantics used by records() before compact serialization."""
+    if df.empty:
+        return df
+    if limit is None:
+        return df
+    if limit < 0:
+        raise ValueError("compact records limit must be non-negative")
+    return df.tail(limit) if tail else df.head(limit)
+
+
+def compact_schema(df: pd.DataFrame, limit: int | None = None, tail: bool = False) -> list[str]:
+    """Return the schema that matches compact_records() for browser-side inflation."""
+    return list(limited_frame(df, limit, tail).columns)
+
+
+def compact_records(df: pd.DataFrame, limit: int | None = None, tail: bool = False) -> list[list[Any]]:
+    """Serialize a full frame as arrays so repeated JSON keys do not dominate HTML size."""
+    out = limited_frame(df, limit, tail)
+    return array_records(out, list(out.columns))
+
+
+def dictionary_compact_records(
+    df: pd.DataFrame,
+    columns: list[str],
+    dictionary_columns: list[str],
+) -> tuple[dict[str, list[str]], list[list[Any]]]:
+    """Serialize arrays and replace repeated text values with compact dictionary ids."""
+    if df.empty:
+        return {}, []
+    clean = df[[col for col in columns if col in df.columns]].copy()
+    for col in clean.columns:
+        if pd.api.types.is_datetime64_any_dtype(clean[col]):
+            clean[col] = clean[col].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    dictionaries: dict[str, list[str]] = {}
+    for col in dictionary_columns:
+        if col not in clean.columns:
+            continue
+        values = clean[col].where(pd.notna(clean[col]), None)
+        labels = pd.Series(values.dropna().astype(str).unique()).tolist()
+        mapping = {label: idx for idx, label in enumerate(labels)}
+        clean[col] = values.map(lambda value: mapping.get(str(value)) if value is not None else None)
+        dictionaries[col] = labels
+
+    clean = clean.astype(object).where(pd.notna(clean), None)
+    return dictionaries, clean.values.tolist()
+
+
 def numeric(df: pd.DataFrame, cols: list[str], fill_value: float | None = 0) -> pd.DataFrame:
     if df.empty:
         return df
@@ -1362,6 +1411,29 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
         },
     ]
 
+    concurrency_minute_schema = [
+        "log_date",
+        "source",
+        "minute_ist",
+        "platform_name",
+        "channel_name",
+        "unique_viewers",
+        "unique_ua_viewers",
+        "raw_ts_rows",
+        "status_200_ts_rows",
+    ]
+    concurrency_minute_dicts, concurrency_minute_rows = dictionary_compact_records(
+        concurrency["minute_detail"],
+        concurrency_minute_schema,
+        ["log_date", "source", "minute_ist", "platform_name", "channel_name"],
+    )
+    concurrency_status_schema = ["d", "s", "m", "p", "c", "code", "uv", "rows"]
+    concurrency_status_dicts, concurrency_status_rows = dictionary_compact_records(
+        concurrency["status_detail"],
+        concurrency_status_schema,
+        ["d", "s", "m", "p", "c", "code"],
+    )
+
     return {
         "meta": {
             "title": args.title,
@@ -1407,10 +1479,14 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "daily": records(daily, 5000),
             "overview_daily": records(overview_daily, 5000),
             "channel_daily": records(channel, 6000),
-            "geo_daily": records(geo, 25000),
-            "channel_geo_daily": records(channel_geo),
-            "channel_device_type_daily": records(channel_device_type),
-            "region_channel_device_daily": records(region_channel_device),
+            "geo_daily_schema": compact_schema(geo, 25000),
+            "geo_daily": compact_records(geo, 25000),
+            "channel_geo_daily_schema": compact_schema(channel_geo),
+            "channel_geo_daily": compact_records(channel_geo),
+            "channel_device_type_daily_schema": compact_schema(channel_device_type),
+            "channel_device_type_daily": compact_records(channel_device_type),
+            "region_channel_device_daily_schema": compact_schema(region_channel_device),
+            "region_channel_device_daily": compact_records(region_channel_device),
             "channel_top": records(channel_top, 80),
             "geo_top": records(geo_top, 100),
             "ua_platform_daily": records(ua_playtime["platform"], 5000),
@@ -1419,59 +1495,43 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "ua_model_daily": records(ua_playtime["model"], 5000),
             "ua_form_factor_daily": records(ua_playtime["form_factor"], 5000),
             "ua_decode_quality_daily": records(ua_playtime["decode_quality"], 5000),
-            "ua_device_detail_daily": records(ua_playtime["device_detail"]),
-            "concurrency_minute_schema": [
-                "log_date",
-                "source",
-                "minute_ist",
-                "platform_name",
-                "channel_name",
-                "unique_viewers",
-                "unique_ua_viewers",
-                "raw_ts_rows",
-                "status_200_ts_rows",
-            ],
-            "concurrency_minute": array_records(
-                concurrency["minute_detail"],
-                [
-                    "log_date",
-                    "source",
-                    "minute_ist",
-                    "platform_name",
-                    "channel_name",
-                    "unique_viewers",
-                    "unique_ua_viewers",
-                    "raw_ts_rows",
-                    "status_200_ts_rows",
-                ],
-            ),
-            "concurrency_status_minute_schema": ["d", "s", "m", "p", "c", "code", "uv", "rows"],
-            "concurrency_status_minute": array_records(
-                concurrency["status_detail"],
-                ["d", "s", "m", "p", "c", "code", "uv", "rows"],
-            ),
+            "ua_device_detail_daily_schema": compact_schema(ua_playtime["device_detail"]),
+            "ua_device_detail_daily": compact_records(ua_playtime["device_detail"]),
+            "concurrency_minute_schema": concurrency_minute_schema,
+            "concurrency_minute_dictionaries": concurrency_minute_dicts,
+            "concurrency_minute": concurrency_minute_rows,
+            "concurrency_status_minute_schema": concurrency_status_schema,
+            "concurrency_status_minute_dictionaries": concurrency_status_dicts,
+            "concurrency_status_minute": concurrency_status_rows,
             "concurrency_status_codes": concurrency["status_codes"],
             "concurrency_summary": records(concurrency["summary"], 2000),
             "fast_platform_channel_identity_daily": records(concurrency["platform_channel_identity"], 5000),
-            "fast_platform_channel_geo_daily": records(concurrency["platform_channel_geo"]),
-            "fast_platform_channel_ua_device_daily": records(concurrency["platform_channel_ua_device"]),
+            "fast_platform_channel_geo_daily_schema": compact_schema(concurrency["platform_channel_geo"]),
+            "fast_platform_channel_geo_daily": compact_records(concurrency["platform_channel_geo"]),
+            "fast_platform_channel_ua_device_daily_schema": compact_schema(concurrency["platform_channel_ua_device"]),
+            "fast_platform_channel_ua_device_daily": compact_records(concurrency["platform_channel_ua_device"]),
             "fast_platform_channel_manifest_daily": records(concurrency["platform_channel_manifest"]),
             "fast_platform_channel_bandwidth_daily": records(concurrency["platform_channel_bandwidth"]),
             "fast_platform_channel_cmcd_daily": records(concurrency["platform_channel_cmcd"]),
             "platform_top": records(platform_top, 80),
-            "content_daily": records(content, 50000),
+            "content_daily_schema": compact_schema(content, 50000),
+            "content_daily": compact_records(content, 50000),
             "content_top": records(content_top, 120),
             "latency_daily": records(latency["daily"], 3000),
-            "latency_hourly": records(latency["hourly"], 12000, tail=True),
-            "latency_channel": records(latency["channel"], 6000),
-            "latency_host_daily": records(latency["host"], 5000),
+            "latency_hourly_schema": compact_schema(latency["hourly"], 12000, tail=True),
+            "latency_hourly": compact_records(latency["hourly"], 12000, tail=True),
+            "latency_channel_schema": compact_schema(latency["channel"], 6000),
+            "latency_channel": compact_records(latency["channel"], 6000),
+            "latency_host_daily_schema": compact_schema(latency["host"], 5000),
+            "latency_host_daily": compact_records(latency["host"], 5000),
             "latency_host_top": records(host_latency, 100),
             "latency_status": records(status_top, 120),
             "device_summary": records(device_by_name, 100),
             "identity_daily": records(identity["daily"], 5000),
             "identity_channel_daily": records(identity["channel"], 12000),
             "identity_platform_daily": records(identity["platform"], 8000),
-            "identity_platform_channel_daily": records(identity["platform_channel"], 16000),
+            "identity_platform_channel_daily_schema": compact_schema(identity["platform_channel"], 16000),
+            "identity_platform_channel_daily": compact_records(identity["platform_channel"], 16000),
         },
         "source_files": {
             "watch_daily_tables": str(watch_dir),

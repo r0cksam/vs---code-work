@@ -95,6 +95,53 @@ def fetch_records(con: duckdb.DuckDBPyConnection, sql: str, params: list[Any] | 
     return json.loads(df.to_json(orient="records", date_format="iso"))
 
 
+def compact_record_rows(
+    rows: list[dict[str, Any]],
+    dictionary_columns: set[str] | None = None,
+) -> tuple[list[str], dict[str, list[str]], list[list[Any]]]:
+    """Store large row lists as schema + arrays, with dictionaries for repeated text."""
+    if not rows:
+        return [], {}, []
+    dictionary_columns = dictionary_columns or set()
+    columns: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen.add(key)
+                columns.append(key)
+
+    dictionaries: dict[str, list[str]] = {}
+    mappings: dict[str, dict[str, int]] = {}
+    for col in columns:
+        if col not in dictionary_columns:
+            continue
+        labels: list[str] = []
+        mapping: dict[str, int] = {}
+        for row in rows:
+            value = row.get(col)
+            if value is None:
+                continue
+            label = str(value)
+            if label not in mapping:
+                mapping[label] = len(labels)
+                labels.append(label)
+        dictionaries[col] = labels
+        mappings[col] = mapping
+
+    compact: list[list[Any]] = []
+    for row in rows:
+        out: list[Any] = []
+        for col in columns:
+            value = row.get(col)
+            if col in mappings and value is not None:
+                out.append(mappings[col].get(str(value)))
+            else:
+                out.append(value)
+        compact.append(out)
+    return columns, dictionaries, compact
+
+
 def build_data(args: argparse.Namespace) -> dict[str, Any]:
     index_path = args.index.expanduser().resolve()
     if not index_path.exists():
@@ -183,6 +230,18 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
         key = cliip_slug(str(row.get("cliIP") or ""))
         row["cliip_slug"] = key
         row["journey_dashboard"] = dash_map.get(key, "")
+    row_schema, row_dictionaries, compact_rows = compact_record_rows(
+        rows,
+        {
+            "source",
+            "country",
+            "state",
+            "city",
+            "channel_name",
+            "statusCode",
+            "reqHost",
+        },
+    )
 
     con.close()
     return {
@@ -196,7 +255,9 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
         },
         "stats": stats,
         "sources": source_rows,
-        "rows": rows,
+        "rows_schema": row_schema,
+        "rows_dictionaries": row_dictionaries,
+        "rows": compact_rows,
         "manifest": read_json_safe(index_path.with_suffix(".manifest.json")),
     }
 

@@ -239,10 +239,40 @@ def array_records(df: pd.DataFrame, columns: list[str]) -> list[list]:
     return out.values.tolist()
 
 
-def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+def dictionary_array_records(
+    df: pd.DataFrame,
+    columns: list[str],
+    dictionary_columns: list[str],
+) -> tuple[dict[str, list[str]], list[list]]:
+    """Encode repeated text columns as integer dictionary ids before embedding in HTML."""
+    if df.empty:
+        return {}, []
+    out = df[[col for col in columns if col in df.columns]].copy()
+    for col in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[col]):
+            if getattr(out[col].dt, "tz", None) is not None:
+                out[col] = out[col].dt.tz_convert(IST).dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                out[col] = out[col].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    dictionaries: dict[str, list[str]] = {}
+    for col in dictionary_columns:
+        if col not in out.columns:
+            continue
+        values = out[col].where(pd.notna(out[col]), None)
+        labels = pd.Series(values.dropna().astype(str).unique()).tolist()
+        mapping = {label: idx for idx, label in enumerate(labels)}
+        out[col] = values.map(lambda value: mapping.get(str(value)) if value is not None else None)
+        dictionaries[col] = labels
+
+    out = out.astype(object).where(pd.notna(out), None)
+    return dictionaries, out.values.tolist()
+
+
+def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], dict[str, list[str]], list[list]]:
     """Return status-code filter metadata plus sparse non-200 minute values."""
     if status_minute.empty or "status_code" not in status_minute.columns:
-        return [], []
+        return [], {}, []
 
     required = {
         "pair_key",
@@ -252,7 +282,7 @@ def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[
         "status_segment_viewers_estimate",
     }
     if not required.issubset(status_minute.columns):
-        return [], []
+        return [], {}, []
 
     status = status_minute.copy()
     status["status_code"] = status["status_code"].fillna("Unknown").astype(str)
@@ -273,7 +303,7 @@ def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[
 
     extra = status[status["status_code"] != "200"].copy()
     if extra.empty:
-        return options, []
+        return options, {}, []
 
     extra["status_ts_rows"] = (
         pd.to_numeric(extra["status_ts_rows"], errors="coerce")
@@ -302,7 +332,8 @@ def build_status_payload(status_minute: pd.DataFrame) -> tuple[list[dict], list[
             "status_segment_viewers_estimate": "v",
         }
     )
-    return options, array_records(extra, ["k", "m", "c", "r", "v"])
+    dictionaries, rows = dictionary_array_records(extra, ["k", "m", "c", "r", "v"], ["k", "m", "c"])
+    return options, dictionaries, rows
 
 
 def write_viewer_exports(
@@ -419,7 +450,7 @@ def build_data(data_dir: Path, title: str, embed_window_days: int = 30) -> tuple
             status_minute = status_minute[status_minute["log_date"].astype(str).isin(embedded_dates)]
         if not summary.empty and "log_date" in summary.columns:
             summary = summary[summary["log_date"].astype(str).isin(embedded_dates)]
-    status_code_options, status_extra = build_status_payload(status_minute)
+    status_code_options, status_extra_dictionaries, status_extra = build_status_payload(status_minute)
 
     integrity_checks = []
     if not minute.empty and not status_minute.empty:
@@ -512,6 +543,12 @@ def build_data(data_dir: Path, title: str, embed_window_days: int = 30) -> tuple
         "pair_key",
     ]
 
+    minute_dictionaries, minute_rows = dictionary_array_records(
+        minute,
+        minute_columns,
+        ["source", "minute_ist", "platform_key", "platform_name", "candidate_id", "channel_name", "pair_key"],
+    )
+
     data = {
         "title": title,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -527,9 +564,11 @@ def build_data(data_dir: Path, title: str, embed_window_days: int = 30) -> tuple
         "status_meanings": STATUS_CODE_MEANINGS,
         "status_code_options": status_code_options,
         "status_extra_schema": ["k", "m", "c", "r", "v"],
+        "status_extra_dictionaries": status_extra_dictionaries,
         "status_extra": status_extra,
         "minute_schema": minute_columns,
-        "minute": array_records(minute, minute_columns),
+        "minute_dictionaries": minute_dictionaries,
+        "minute": minute_rows,
         "summary": records(
             summary,
             [
