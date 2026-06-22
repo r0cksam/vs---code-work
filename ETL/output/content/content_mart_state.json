@@ -863,14 +863,44 @@
     "stream/2026-06-19": {
       "source": "stream",
       "date": "2026-06-19",
-      "file_count": 1,
-      "bytes": 72459868,
-      "max_mtime_ns": 1781841460354603300,
+      "file_count": 2,
+      "bytes": 871249094,
+      "max_mtime_ns": 1781927566182441700,
       "output_counts": {
-        "rows": 127
+        "rows": 526
+      }
+    },
+    "stream/2026-06-20": {
+      "source": "stream",
+      "date": "2026-06-20",
+      "file_count": 2,
+      "bytes": 751202040,
+      "max_mtime_ns": 1782014074421860800,
+      "output_counts": {
+        "rows": 490
+      }
+    },
+    "stream/2026-06-21": {
+      "source": "stream",
+      "date": "2026-06-21",
+      "file_count": 2,
+      "bytes": 701748691,
+      "max_mtime_ns": 1782104280846100400,
+      "output_counts": {
+        "rows": 482
+      }
+    },
+    "stream/2026-06-22": {
+      "source": "stream",
+      "date": "2026-06-22",
+      "file_count": 1,
+      "bytes": 57478207,
+      "max_mtime_ns": 1782104281098877100,
+      "output_counts": {
+        "rows": 110
       }
     }
   },
-  "updated_at_utc": "2026-06-19T05:52:02.383599+00:00",
+  "updated_at_utc": "2026-06-22T06:01:47.373535+00:00",
   "mart_version": 3
 }

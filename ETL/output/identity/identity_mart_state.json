@@ -1035,15 +1035,51 @@
     "stream/2026-06-19": {
       "source": "stream",
       "date": "2026-06-19",
-      "file_count": 1,
-      "bytes": 72459868,
-      "max_mtime_ns": 1781841460354603300,
+      "file_count": 2,
+      "bytes": 871249094,
+      "max_mtime_ns": 1781927566182441700,
       "output_counts": {
-        "identity_device_daily": 495,
-        "identity_session_daily": 504,
-        "identity_ipua_daily": 518
+        "identity_device_daily": 13182,
+        "identity_session_daily": 16854,
+        "identity_ipua_daily": 15334
+      }
+    },
+    "stream/2026-06-20": {
+      "source": "stream",
+      "date": "2026-06-20",
+      "file_count": 2,
+      "bytes": 751202040,
+      "max_mtime_ns": 1782014074421860800,
+      "output_counts": {
+        "identity_device_daily": 12956,
+        "identity_session_daily": 16549,
+        "identity_ipua_daily": 14976
+      }
+    },
+    "stream/2026-06-21": {
+      "source": "stream",
+      "date": "2026-06-21",
+      "file_count": 2,
+      "bytes": 701748691,
+      "max_mtime_ns": 1782104280846100400,
+      "output_counts": {
+        "identity_device_daily": 12663,
+        "identity_session_daily": 16234,
+        "identity_ipua_daily": 14642
+      }
+    },
+    "stream/2026-06-22": {
+      "source": "stream",
+      "date": "2026-06-22",
+      "file_count": 1,
+      "bytes": 57478207,
+      "max_mtime_ns": 1782104281098877100,
+      "output_counts": {
+        "identity_device_daily": 412,
+        "identity_session_daily": 423,
+        "identity_ipua_daily": 428
       }
     }
   },
-  "updated_at_utc": "2026-06-19T05:51:55.118555+00:00"
+  "updated_at_utc": "2026-06-22T06:01:39.840884+00:00"
 }

@@ -1,11 +1,11 @@
 {
-  "generated_at_utc": "2026-06-19T10:34:45.914569+00:00",
+  "generated_at_utc": "2026-06-22T05:55:50.363861+00:00",
   "source": "fast",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\fast_platform_channel_geo_daily.parquet",
   "date_range_replaced": {
-    "start": "",
-    "end": ""
+    "start": "2026-06-21",
+    "end": "2026-06-22"
   },
   "metric_notes": {
     "raw_watch_hours": "All .ts segment rows multiplied by 6 seconds.",
@@ -13,5 +13,5 @@
     "approx_unique_ips": "Exact daily distinct cliIP for each FAST platform/channel/geography on .ts rows.",
     "distinct_ipua_pairs": "Exact daily distinct cliIP + User-Agent pair for each FAST platform/channel/geography on .ts rows."
   },
-  "new_rows": 21799
+  "new_rows": 1240
 }
