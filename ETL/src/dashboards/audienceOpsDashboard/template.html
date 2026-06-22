@@ -57,6 +57,7 @@ input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 
 .section h2{font-size:15px;color:var(--brand)}
 .section .desc{font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:12px}
+.grid-stack{display:grid;grid-template-columns:1fr;gap:12px}
 .grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:12px}
 .panel{border:1px solid var(--line);border-radius:8px;background:#fff;min-width:0;overflow:hidden}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#f8fafc;border-bottom:1px solid var(--line);padding:10px 12px}
@@ -379,17 +380,56 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
         <div class="desc">Top regions and device intelligence for the selected filters.</div>
       </div>
     </div>
-    <div class="grid-2">
+    <div class="grid-stack">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Top Regions<small>Country / state / city by request hours</small></div><button class="btn" onclick="expandChart('geoChart','Top Regions')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Top States / Regions<small>Country / state by request hours</small></div><button class="btn" onclick="expandChart('geoChart','Top States / Regions')">Expand</button></div>
         <div class="chart-box tall"><canvas id="geoChart"></canvas></div>
         <div id="geoTable"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Top Cities<small>City-level request hours</small></div><button class="btn" onclick="expandChart('cityChart','Top Cities')">Expand</button></div>
+        <div class="chart-box tall"><canvas id="cityChart"></canvas></div>
+        <div id="cityTable"></div>
       </div>
       <div class="panel">
         <div class="panel-head"><div class="panel-title">Device / Region Evidence<small>decoded UA identity or channel device type</small></div><button class="btn" onclick="expandHtml('deviceEvidence','Device / Region Evidence')">Expand</button></div>
         <div class="chart-box evidence-box"><div id="deviceEvidence"></div></div>
         <div id="deviceTable"></div>
       </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <h2>Operations Monitoring Upgrade</h2>
+        <div class="desc">Grafana-style monitoring added below the existing dashboard. Current sections above are unchanged.</div>
+      </div>
+    </div>
+    <div class="kpis" id="opsKpis"></div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Active Users - Per Minute<small>FAST cliIP and UA movement</small></div><button class="btn" onclick="expandChart('opsUsersMinuteChart','Active Users - Per Minute')">Expand</button></div>
+        <div class="chart-box tall"><canvas id="opsUsersMinuteChart"></canvas></div>
+        <div class="chart-note" id="opsUsersMinuteNote"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Active Users - 5 Minute Sum<small>Summed viewer-minute activity</small></div><button class="btn" onclick="expandChart('opsUsers5Chart','Active Users - 5 Minute Sum')">Expand</button></div>
+        <div class="chart-box tall"><canvas id="opsUsers5Chart"></canvas></div>
+        <div class="chart-note" id="opsUsers5Note"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Master Manifest Views<small>Playback entry requests by day</small></div><button class="btn" onclick="expandChart('opsViewsChart','Master Manifest Views')">Expand</button></div>
+        <div class="chart-box"><canvas id="opsViewsChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Identity / Session Daily Trend<small>App identity where available, IP+UA fallback for FAST</small></div><button class="btn" onclick="expandChart('opsIdentityChart','Identity / Session Daily Trend')">Expand</button></div>
+        <div class="chart-box"><canvas id="opsIdentityChart"></canvas></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="panel-head"><div class="panel-title">Popular Content / Manifest Leaders<small>Content title when available; channel manifest leaders otherwise</small></div></div>
+      <div id="opsPopularTable"></div>
     </div>
   </section>
 
@@ -1041,6 +1081,7 @@ function contentRollup(rows,keyFn,limit){
     const o=m.get(k);
     o.rows+=n(r.rows);o.m3u8_rows+=n(r.m3u8_rows);o.status_200_m3u8_rows+=n(r.status_200_m3u8_rows);o.non_200_rows+=n(r.non_200_rows);
     o.approx_unique_ips+=n(r.approx_unique_ips);o.approx_sessions+=n(r.approx_sessions);o.approx_devices+=n(r.approx_devices);
+    o.distinct_ipua_pairs=(o.distinct_ipua_pairs||0)+n(r.distinct_ipua_pairs);
   });
   return Array.from(m.values()).sort(function(a,b){return n(b.m3u8_rows)-n(a.m3u8_rows)}).slice(0,limit||20);
 }
@@ -1434,10 +1475,13 @@ function renderGeoDevice(){
   if(state.platform!=="all"){
     if(state.source==="fast"){
       const fastGeo=fastPlatformChannelGeoRows();
-      const ranked=topBy(fastGeo,function(r){return [r.country||"Unknown",r.state||"Unknown",r.city||"Unknown"].join(" / ")}, "raw_watch_hours", 20);
+      const ranked=topBy(fastGeo,function(r){return [r.country||"Unknown",r.state||"Unknown"].join(" / ")}, "raw_watch_hours", 20);
+      const cityRanked=topBy(fastGeo,function(r){return [r.country||"Unknown",r.state||"Unknown",r.city||"Unknown / NA"].join(" / ")}, "raw_watch_hours", 20);
       draw("geoChart",barConfig(ranked.map(function(r){return r.key}),ranked.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[2],"y"));
+      draw("cityChart",barConfig(cityRanked.map(function(r){return r.key}),cityRanked.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[3],"y"));
       const scopeLabel=(state.platform==="all"?"All Platforms":state.platform)+" / "+(state.channel==="all"?"All Channels":state.channel);
-      renderTable("geoTable",["Geo","Scope","Raw Hours","Status 200 Hours","Approx IPs","Rows"],ranked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips),fmtInt(r.raw_ts_rows)]}),[2,3,4,5]);
+      renderTable("geoTable",["Country / State","Scope","Raw Hours","Status 200 Hours","Approx IPs","Rows"],ranked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips),fmtInt(r.raw_ts_rows)]}),[2,3,4,5]);
+      renderTable("cityTable",["Country / State / City","Scope","Raw Hours","Status 200 Hours","Approx IPs","Rows"],cityRanked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips),fmtInt(r.raw_ts_rows)]}),[2,3,4,5]);
       const fastDevices=fastPlatformChannelUaDeviceRows();
       const deviceRank=topBy(fastDevices,fastDeviceIdentityLabel,"raw_watch_hours",20);
       const samples=new Map();
@@ -1462,7 +1506,9 @@ function renderGeoDevice(){
       return;
     }
     clearChart("geoChart","Not available for selected platform");
-    renderTable("geoTable",["Geo","Status"],[["STREAM platform-level geography","Not Available"]],[]);
+    clearChart("cityChart","Not available for selected platform");
+    renderTable("geoTable",["Country / State","Status"],[["STREAM platform-level geography","Not Available"]],[]);
+    renderTable("cityTable",["City","Status"],[["STREAM platform-level city geography","Not Available"]],[]);
     clearEvidence("deviceEvidence","Not available for selected platform");
     renderTable("deviceTable",["Device / Platform","Status"],[["STREAM platform-level device decode","Not Available"]],[]);
     return;
@@ -1470,10 +1516,13 @@ function renderGeoDevice(){
   const geo=state.channel==="all"
     ?filterRows(DATA.geo_daily||[],{channel:false})
     :filterRows(DATA.channel_geo_daily||[],{channel:true,platform:false});
-  const ranked=topBy(geo,function(r){return [r.country||"Unknown",r.state||"Unknown",r.city||"Unknown"].join(" / ")}, "raw_watch_hours", 15);
+  const ranked=topBy(geo,function(r){return [r.country||"Unknown",r.state||"Unknown"].join(" / ")}, "raw_watch_hours", 15);
+  const cityRanked=topBy(geo,function(r){return [r.country||"Unknown",r.state||"Unknown",r.city||"Unknown / NA"].join(" / ")}, "raw_watch_hours", 20);
   draw("geoChart",barConfig(ranked.map(function(r){return r.key}),ranked.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[2],"y"));
+  draw("cityChart",barConfig(cityRanked.map(function(r){return r.key}),cityRanked.map(function(r){return n(r.raw_watch_hours)}),"Request Hours",COLORS[3],"y"));
   const scopeLabel=state.channel==="all"?"All channels":"Channel: "+state.channel;
-  renderTable("geoTable",["Geo","Scope","Raw Hours","Status 200 Hours","Approx IPs"],ranked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips)]}),[2,3,4]);
+  renderTable("geoTable",["Country / State","Scope","Raw Hours","Status 200 Hours","Approx IPs"],ranked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips)]}),[2,3,4]);
+  renderTable("cityTable",["Country / State / City","Scope","Raw Hours","Status 200 Hours","Approx IPs"],cityRanked.map(function(r){return [r.key,scopeLabel,fmt(r.raw_watch_hours,1),fmt(r.status_200_watch_hours,1),fmtInt(r.approx_unique_ips)]}),[2,3,4]);
   if(state.channel!=="all"){
     const channelDevices=channelDeviceTypeRows();
     const deviceRank=topBy(channelDevices,function(r){return r.device_type||"Unknown / NA"}, "raw_watch_hours", 15);
@@ -1514,6 +1563,120 @@ function renderGeoDevice(){
   }),[6,7]);
 }
 
+function opsMinuteRows(){
+  if(state.source!=="fast")return [];
+  return filterRows(DATA.concurrency_minute||[],{channel:true,platform:true});
+}
+function groupOpsMinute(rows,bucketMinutes){
+  const bucket=Math.max(1,Number(bucketMinutes)||1);
+  const m=new Map();
+  (rows||[]).forEach(function(r){
+    const idx=parseMinuteIndex(r.minute_ist);
+    if(idx==null)return;
+    const b=Math.floor(idx/bucket)*bucket;
+    if(!m.has(b))m.set(b,{key:minuteIndexLabel(b),active_cliip:0,active_ua:0,ts_rows:0,status_200_ts_rows:0});
+    const o=m.get(b);
+    o.active_cliip+=n(r.unique_viewers);
+    o.active_ua+=n(r.unique_ua_viewers);
+    o.ts_rows+=n(r.raw_ts_rows);
+    o.status_200_ts_rows+=n(r.status_200_ts_rows);
+  });
+  return Array.from(m.values()).sort(function(a,b){return a.key.localeCompare(b.key)});
+}
+function opsManifestDailyRows(){
+  const rows=state.source==="fast"?fastPlatformChannelManifestRows():streamContentRows();
+  const grouped=groupSum(rows,function(r){return String(r.log_date||"").slice(0,10)},["m3u8_rows","status_200_m3u8_rows","non_200_m3u8_rows","approx_unique_ips","approx_sessions","approx_devices"]);
+  return grouped.filter(function(r){return r.key}).sort(function(a,b){return a.key.localeCompare(b.key)});
+}
+function opsIdentityDailyRows(){
+  if(state.source==="fast"){
+    const rows=fastPlatformChannelIdentityRows();
+    return groupSum(rows,function(r){return String(r.log_date||"").slice(0,10)},["distinct_cliips","distinct_uas","distinct_ipua_pairs"]).filter(function(r){return r.key}).sort(function(a,b){return a.key.localeCompare(b.key)});
+  }
+  const rows=identityRowsForScope();
+  return groupSum(rows,function(r){return String(r.log_date||"").slice(0,10)},["total_devices","total_sessions","total_ipua_sessions","new_devices","returning_devices"]).filter(function(r){return r.key}).sort(function(a,b){return a.key.localeCompare(b.key)});
+}
+function renderOpsMonitoring(){
+  const minuteRows=opsMinuteRows();
+  const minute1=groupOpsMinute(minuteRows,1);
+  const minute5=groupOpsMinute(minuteRows,5);
+  const manifestDaily=opsManifestDailyRows();
+  const identityDaily=opsIdentityDailyRows();
+  const manifestViews=sum(manifestDaily,"m3u8_rows");
+  const peakMinute=max(minute1,"active_cliip");
+  const peakFive=max(minute5,"active_cliip");
+  const identityPrimary=state.source==="fast"?sum(identityDaily,"distinct_cliips"):sum(identityDaily,"total_devices");
+  const identitySecondary=state.source==="fast"?sum(identityDaily,"distinct_ipua_pairs"):sum(identityDaily,"total_sessions");
+  el("opsKpis").innerHTML=[
+    kpi("Minute Rows",minuteRows.length?fmtInt(minuteRows.length):"Not Available",state.source==="fast"?"FAST minute mart rows in selected filters":"STREAM minute mart not available",""),
+    kpi("Peak Active Users",peakMinute?fmtInt(peakMinute):"Not Available",state.source==="fast"?"Peak summed cliIP per minute":"FAST only metric","gold"),
+    kpi("Peak 5-Min User-Minute",peakFive?fmtInt(peakFive):"Not Available",state.source==="fast"?"Highest 5-minute summed cliIP activity":"FAST only metric","violet"),
+    kpi("Master Manifest Views",manifestViews?fmtInt(manifestViews):"Not Available",state.source==="fast"?"FAST platform/channel m3u8 rows":"STREAM content/title m3u8 rows","green"),
+    kpi(state.source==="fast"?"Unique Users":"Device IDs",identityPrimary?fmtInt(identityPrimary):"Not Available",state.source==="fast"?"Daily distinct cliIP sum":"STREAM app device_id identity",""),
+    kpi(state.source==="fast"?"IP + UA Signatures":"Sessions",identitySecondary?fmtInt(identitySecondary):"Not Available",state.source==="fast"?"Daily distinct cliIP+UA sum, not app session_id":"STREAM app session_id identity","")
+  ].join("");
+
+  if(minute1.length){
+    draw("opsUsersMinuteChart",lineConfig(minute1.map(function(r){return fmtDateTime(r.key)}),[
+      {label:"Active cliIP",data:minute1.map(function(r){return n(r.active_cliip)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.2,pointRadius:0},
+      {label:"Distinct UA",data:minute1.map(function(r){return n(r.active_ua)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.10)",tension:.2,pointRadius:0}
+    ],"Count"));
+    el("opsUsersMinuteNote").textContent="FAST only. Counts are summed at platform/channel minute grain for the selected filters.";
+  }else{
+    clearChart("opsUsersMinuteChart",state.source==="fast"?"No FAST minute rows for selected filters":"STREAM minute-level active user mart is not available yet");
+    el("opsUsersMinuteNote").textContent="";
+  }
+  if(minute5.length){
+    draw("opsUsers5Chart",lineConfig(minute5.map(function(r){return fmtDateTime(r.key)}),[
+      {label:"cliIP 5-min sum",data:minute5.map(function(r){return n(r.active_cliip)}),borderColor:COLORS[1],backgroundColor:"rgba(184,132,22,.10)",tension:.2,pointRadius:0},
+      {label:"UA 5-min sum",data:minute5.map(function(r){return n(r.active_ua)}),borderColor:COLORS[2],backgroundColor:"rgba(18,128,92,.10)",tension:.2,pointRadius:0}
+    ],"Viewer-minute count"));
+    el("opsUsers5Note").textContent="Each point is a 5-minute summed viewer-minute count, matching the Grafana-style 5-minute summation concept.";
+  }else{
+    clearChart("opsUsers5Chart",state.source==="fast"?"No FAST 5-minute rows for selected filters":"STREAM 5-minute active user mart is not available yet");
+    el("opsUsers5Note").textContent="";
+  }
+  if(manifestDaily.length){
+    draw("opsViewsChart",lineConfig(manifestDaily.map(function(r){return fmtDate(r.key)}),[
+      {label:"Manifest Views",data:manifestDaily.map(function(r){return n(r.m3u8_rows)}),borderColor:COLORS[2],backgroundColor:"rgba(18,128,92,.10)",tension:.25,pointRadius:2},
+      {label:"Status 200 Views",data:manifestDaily.map(function(r){return n(r.status_200_m3u8_rows)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.25,pointRadius:2}
+    ],"Views"));
+  }else{
+    clearChart("opsViewsChart","No manifest/content rows for selected filters");
+  }
+  if(identityDaily.length){
+    const datasets=state.source==="fast"
+      ?[
+        {label:"Unique cliIP",data:identityDaily.map(function(r){return n(r.distinct_cliips)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.25,pointRadius:2},
+        {label:"IP + UA Signatures",data:identityDaily.map(function(r){return n(r.distinct_ipua_pairs)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.10)",tension:.25,pointRadius:2}
+      ]
+      :[
+        {label:"Device IDs",data:identityDaily.map(function(r){return n(r.total_devices)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.25,pointRadius:2},
+        {label:"Session IDs",data:identityDaily.map(function(r){return n(r.total_sessions)}),borderColor:COLORS[5],backgroundColor:"rgba(180,35,24,.10)",tension:.25,pointRadius:2},
+        {label:"IP + UA Sessions",data:identityDaily.map(function(r){return n(r.total_ipua_sessions)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.10)",tension:.25,pointRadius:2}
+      ];
+    draw("opsIdentityChart",lineConfig(identityDaily.map(function(r){return fmtDate(r.key)}),datasets,"Count"));
+  }else{
+    clearChart("opsIdentityChart",state.source==="fast"?"FAST app device_id/session_id is not available; select platform/channel for IP+UA signatures":"No STREAM identity rows for selected filters");
+  }
+
+  if(state.source==="stream"&&streamContentRows().length){
+    const detailed=contentRollup(streamContentRows(),function(r){return [r.content_title||"Unknown / NA",r.category_name||"Unknown / NA",r.channel_name||"Other",r.platform_name||"Unknown / NA",String(r.log_date||"").slice(0,10)].join("|||")},30);
+    renderTable("opsPopularTable",["Date","Content Title","Category","Channel","Platform","Views","Users","Sessions","Devices"],detailed.map(function(r){
+      const p=String(r.key).split("|||");
+      return [fmtDate(p[4]),p[0],p[1],p[2],p[3],fmtInt(r.m3u8_rows),fmtInt(r.approx_unique_ips),fmtInt(r.approx_sessions),fmtInt(r.approx_devices)];
+    }),[5,6,7,8]);
+  }else if(state.source==="fast"&&fastPlatformChannelManifestRows().length){
+    const rows=contentRollup(fastPlatformChannelManifestRows(),function(r){return [r.log_date||"",r.channel_name||"Other",r.platform_name||"Unknown"].join("|||")},30);
+    renderTable("opsPopularTable",["Date","Channel","Platform","Manifest Views","Status 200 Views","Approx IPs","IP+UA"],rows.map(function(r){
+      const p=String(r.key).split("|||");
+      return [fmtDate(p[0]),p[1],p[2],fmtInt(r.m3u8_rows),fmtInt(r.status_200_m3u8_rows),fmtInt(r.approx_unique_ips),fmtInt(r.distinct_ipua_pairs)];
+    }),[3,4,5,6]);
+  }else{
+    renderTable("opsPopularTable",["Metric","Status"],[["Popular content / manifest leaders","Not Available for selected filters"]],[]);
+  }
+}
+
 function renderWip(){}
 
 function renderTable(id,headers,rows,numCols){
@@ -1530,7 +1693,7 @@ function renderHeader(){
   el("selectionContext").innerHTML="<span class='pill'><b>Used Range</b> "+fmtDayStart(state.start)+" to "+fmtDayEnd(state.end)+"</span><span class='pill'><b>Source</b> "+sourceLabel()+"</span><span class='pill'><b>Platform</b> "+esc(state.platform==="all"?"All Platforms":state.platform)+"</span><span class='pill'><b>Channel</b> "+esc(state.channel==="all"?"All Channels":state.channel)+"</span>";
 }
 
-function renderAll(){renderHeader();renderStakeholderKpis();renderViewershipTrend();renderContent();renderKpis();renderTraffic();renderConcurrency();renderPlatforms();renderPlaytimePies();renderChannels();renderReliability();renderGeoDevice()}
+function renderAll(){renderHeader();renderStakeholderKpis();renderViewershipTrend();renderContent();renderKpis();renderTraffic();renderConcurrency();renderPlatforms();renderPlaytimePies();renderChannels();renderReliability();renderGeoDevice();renderOpsMonitoring()}
 function refreshModalChart(){
   if(!el("chartModal").classList.contains("open"))return;
   if(modalSourceHtmlId){
