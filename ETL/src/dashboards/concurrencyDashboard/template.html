@@ -26,6 +26,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .seg-btn:hover{background:#fff;color:var(--brand)}
 .seg-btn.active{background:var(--brand);color:#fff;box-shadow:0 1px 2px rgba(15,23,42,.12)}
 .date-inputs{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.date-end-wrap{display:inline-flex;align-items:center;gap:6px;line-height:1;vertical-align:middle}
+.to-label{display:inline-flex;align-items:center;align-self:center;font-size:12px;color:var(--soft);font-weight:750;line-height:1}
 .filter-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
 .insights-active .dashboard-only-filter{display:none!important}
 .filter-title{font-size:10px;font-weight:850;text-transform:uppercase;color:var(--soft);letter-spacing:.04em}
@@ -202,7 +204,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
         <span class="filter-sep"></span>
         <div class="date-inputs">
           <input type="date" id="dateStart" onchange="setDateRange()"/>
-          <span id="dateEndWrap"><span style="font-size:12px;color:var(--soft);font-weight:750">to</span>
+          <span id="dateEndWrap" class="date-end-wrap"><span class="to-label">to</span>
           <input type="date" id="dateEnd" onchange="setDateRange()"/></span>
         </div>
         <span class="filter-sep"></span>
