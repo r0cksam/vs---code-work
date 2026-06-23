@@ -1,0 +1,17 @@
+{
+  "generated_at_utc": "2026-06-23T11:51:53.298355+00:00",
+  "source": "fast",
+  "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
+  "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\temp\\tomorrow_etl_validation\\identity_fast\\identity_minute.parquet",
+  "date_range_replaced": {
+    "start": "2026-06-23",
+    "end": "2026-06-23"
+  },
+  "metric_notes": {
+    "distinct_cliips": "Distinct cliIP values per IST minute on .ts playback rows.",
+    "distinct_ipua_pairs": "Distinct cliIP + normalized UA signatures per IST minute on .ts playback rows.",
+    "distinct_devices": "Distinct STREAM device_id values per IST minute where queryStr carries device_id.",
+    "distinct_sessions": "Distinct STREAM session_id values per IST minute where queryStr carries session_id."
+  },
+  "new_rows": 3478
+}

@@ -76,6 +76,9 @@ canvas{width:100%!important;height:100%!important}
 .pie-value{text-align:right;font-size:11px;font-weight:900;color:var(--brand);font-variant-numeric:tabular-nums;line-height:1.2}
 .pie-value small{display:block;font-size:10px;font-weight:800;color:#64748b;margin-top:2px}
 .pie-total{grid-column:1/-1;color:#64748b;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.03em}
+.modal-chart-values{display:none;margin-top:10px;max-height:min(34vh,300px);overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fbfdff}
+.modal-chart-values .pie-breakdown{border-top:0;background:transparent;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.modal-chart-values .pie-item{box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .evidence-box{height:auto;min-height:440px;padding:10px}
 .evidence-board{border:1px solid #e2e8f0;background:#fbfcfe;border-radius:8px;padding:10px;display:grid;gap:7px}
 .evidence-head,.evidence-row{display:grid;grid-template-columns:34px minmax(0,1.25fr) minmax(90px,.55fr) minmax(120px,1fr) minmax(150px,1.1fr);gap:10px;align-items:center}
@@ -449,7 +452,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 <div class="modal" id="chartModal">
   <div class="modal-panel">
     <div class="modal-head"><b id="modalTitle">Chart</b><button class="btn" onclick="closeModal()">Close</button></div>
-    <div class="modal-body"><div id="modalControls" class="modal-controls"></div><div id="modalChartBox" class="chart-box"><canvas id="modalCanvas"></canvas></div><div id="modalHtml" class="modal-html"></div></div>
+    <div class="modal-body"><div id="modalControls" class="modal-controls"></div><div id="modalChartBox" class="chart-box"><canvas id="modalCanvas"></canvas></div><div id="modalChartValues" class="modal-chart-values"></div><div id="modalHtml" class="modal-html"></div></div>
   </div>
 </div>
 
@@ -1972,6 +1975,17 @@ const CHART_SECTION={
   opsUniqueIpChart:"ops",
   opsIpUaChart:"ops"
 };
+const PIE_VALUE_TABLES={
+  playPlatformChart:"playPlatformTable",
+  playOsChart:"playOsTable",
+  ipGeoChart:"ipGeoTable",
+  ipPlatformChart:"ipPlatformTable",
+  ipOsChart:"ipOsTable",
+  playBrandChart:"playBrandTable",
+  playFormChart:"playFormTable",
+  decodeQualityChart:"decodeQualityTable",
+  statusChart:"statusTable"
+};
 function arrangePrioritySections(){
   const viewership=document.querySelector('[data-render-section="viewership"]');
   const ops=document.querySelector('[data-render-section="ops"]');
@@ -2026,12 +2040,27 @@ function renderAll(){
   renderKpis();
   renderVisibleSections(false);
 }
+function syncModalChartValues(){
+  const box=el("modalChartValues");
+  if(!box)return;
+  const tableId=PIE_VALUE_TABLES[modalSourceChartId];
+  const source=tableId?el(tableId):null;
+  const html=source?source.innerHTML:"";
+  if(tableId&&html){
+    box.innerHTML=html;
+    box.style.display="block";
+  }else{
+    box.innerHTML="";
+    box.style.display="none";
+  }
+}
 function refreshModalChart(){
   if(!el("chartModal").classList.contains("open"))return;
   if(modalSourceHtmlId){
     renderSection(CHART_SECTION[modalSourceHtmlId],false);
     if(modalChart){modalChart.destroy();modalChart=null}
     el("modalChartBox").style.display="none";
+    if(el("modalChartValues")){el("modalChartValues").innerHTML="";el("modalChartValues").style.display="none"}
     el("modalHtml").style.display="block";
     el("modalHtml").innerHTML=htmlViews[modalSourceHtmlId]||"<div class='empty'>No data for selected filters</div>";
     return;
@@ -2043,6 +2072,7 @@ function refreshModalChart(){
   el("modalHtml").innerHTML="";
   if(modalChart)modalChart.destroy();
   modalChart=new Chart(el("modalCanvas").getContext("2d"),JSON.parse(JSON.stringify(configs[modalSourceChartId])));
+  syncModalChartValues();
 }
 function expandChart(id,title){
   renderSection(CHART_SECTION[id],true);
@@ -2068,7 +2098,7 @@ function expandHtml(id,title){
   syncModalFilterControls();
   refreshModalChart();
 }
-function closeModal(){el("chartModal").classList.remove("open");modalSourceChartId="";modalSourceHtmlId="";el("modalControls").innerHTML="";el("modalHtml").innerHTML="";el("modalHtml").style.display="none";el("modalChartBox").style.display="block";if(modalChart){modalChart.destroy();modalChart=null}}
+function closeModal(){el("chartModal").classList.remove("open");modalSourceChartId="";modalSourceHtmlId="";el("modalControls").innerHTML="";if(el("modalChartValues")){el("modalChartValues").innerHTML="";el("modalChartValues").style.display="none"}el("modalHtml").innerHTML="";el("modalHtml").style.display="none";el("modalChartBox").style.display="block";if(modalChart){modalChart.destroy();modalChart=null}}
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal()});
 arrangePrioritySections();
 setupLazySections();

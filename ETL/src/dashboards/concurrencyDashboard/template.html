@@ -1387,7 +1387,7 @@ function updateHeaderMeta(selectedRows){
   const fullEnd=D.stats?.last_ist||((D.stats?.full_last_date||D.stats?.last_date||'')+' 23:59:59');
   const embedStart=D.stats?.first_ist||((D.stats?.first_date||'')+' 00:00:00');
   const embedEnd=D.stats?.last_ist||((D.stats?.last_date||'')+' 23:59:59');
-  const embeddedWindow=n(D.stats?.embed_window_days)>0;
+  const embeddedWindow=Number(D.stats?.embed_window_days||0)>0;
   const embeddedText=embeddedWindow?' | Embedded filter range: '+formatDateTime(embedStart)+' to '+formatDateTime(embedEnd):'';
   document.getElementById('rangeMeta').textContent='Source: '+dashboardSourceLabel()+' | Full source range: '+formatDateTime(fullStart)+' to '+formatDateTime(fullEnd)+embeddedText+' | '+fmt(D.stats?.minute_rows||0)+' minute rows loaded';
   const used=selectedRows&&selectedRows.length?selectedWindowLabel(selectedRows):(startDate&&endDate?formatDateTime(startDate+' 00:00:00')+' to '+formatDateTime(endDate+' 23:59:59'):'No selected range');
