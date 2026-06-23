@@ -1,12 +1,12 @@
 {
-  "generated_at_utc": "2026-06-22T05:57:05.287919+00:00",
+  "generated_at_utc": "2026-06-23T06:16:48.138845+00:00",
   "source": "fast",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "ua_lookup": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_lookup_both_all.parquet",
   "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\fast_platform_channel_ua_device_daily.parquet",
   "date_range_replaced": {
-    "start": "2026-06-21",
-    "end": "2026-06-22"
+    "start": "",
+    "end": ""
   },
   "metric_notes": {
     "raw_watch_hours": "All .ts segment rows multiplied by 6 seconds.",
@@ -14,5 +14,5 @@
     "approx_unique_ips": "Exact daily distinct cliIP for each FAST platform/channel/decoded device bucket on .ts rows.",
     "distinct_ipua_pairs": "Exact daily distinct cliIP + normalized User-Agent pair for each bucket."
   },
-  "new_rows": 2863
+  "new_rows": 74082
 }

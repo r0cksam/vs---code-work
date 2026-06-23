@@ -1071,15 +1071,27 @@
     "stream/2026-06-22": {
       "source": "stream",
       "date": "2026-06-22",
-      "file_count": 1,
-      "bytes": 57478207,
-      "max_mtime_ns": 1782104281098877100,
+      "file_count": 2,
+      "bytes": 830057212,
+      "max_mtime_ns": 1782186765866813700,
       "output_counts": {
-        "identity_device_daily": 412,
-        "identity_session_daily": 423,
-        "identity_ipua_daily": 428
+        "identity_device_daily": 13327,
+        "identity_session_daily": 17170,
+        "identity_ipua_daily": 15532
+      }
+    },
+    "stream/2026-06-23": {
+      "source": "stream",
+      "date": "2026-06-23",
+      "file_count": 1,
+      "bytes": 69857772,
+      "max_mtime_ns": 1782186765968521400,
+      "output_counts": {
+        "identity_device_daily": 488,
+        "identity_session_daily": 499,
+        "identity_ipua_daily": 509
       }
     }
   },
-  "updated_at_utc": "2026-06-22T06:01:39.840884+00:00"
+  "updated_at_utc": "2026-06-23T05:18:57.193489+00:00"
 }

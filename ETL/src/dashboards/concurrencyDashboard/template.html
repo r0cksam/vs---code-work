@@ -429,6 +429,7 @@ let statusMixChart=null;
 let platformChannelTrendChart=null;
 let renderTimer=null;
 let renderHideTimer=null;
+let rowFilterCache=new Map();
 
 function inflateRows(rows,schema,dictionaries){
   if(!Array.isArray(rows)||!rows.length)return [];
@@ -637,16 +638,26 @@ function rowInCustomRange(row,start,end){
   const d=String(row.log_date||'');
   return (!start||d>=start)&&(!end||d<=end);
 }
-function rangeRows(){return minute.filter(rowInRange);}
+function rangeRows(){
+  const key='range|'+(startDate||'')+'|'+(endDate||'');
+  if(rowFilterCache.has(key))return rowFilterCache.get(key);
+  const out=minute.filter(rowInRange);
+  rowFilterCache.set(key,out);
+  return out;
+}
 function filteredRows(){
   return filteredRowsForRange(startDate,endDate);
 }
 function filteredRowsForRange(start,end){
-  return minute.filter(function(r){
+  const key=['filtered',start||'',end||'',platform||'all',channel||'all'].join('|');
+  if(rowFilterCache.has(key))return rowFilterCache.get(key);
+  const out=minute.filter(function(r){
     return rowInCustomRange(r,start,end)
       && (platform==='all'||platformKey(r)===platform)
       && (channel==='all'||pairKey(r)===channel);
   });
+  rowFilterCache.set(key,out);
+  return out;
 }
 function setOptions(id,items,value){
   const el=document.getElementById(id);
@@ -1843,6 +1854,7 @@ function showRenderOverlay(show){
   if(overlay)overlay.classList.toggle('active',!!show);
 }
 function renderNow(){
+  rowFilterCache=new Map();
   syncControls();
   syncMainTabs();
   const rows=filteredRows();

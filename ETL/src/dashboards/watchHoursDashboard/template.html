@@ -1824,7 +1824,7 @@ function setConcurrencyDateRange(){
   if(concurrencyStart>concurrencyEnd)[concurrencyStart,concurrencyEnd]=[concurrencyEnd,concurrencyStart];
   concurrencyPlatform='all';
   concurrencyPair='all';
-  renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();
+  renderCharts();queueRenderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();
 }
 function setConcurrencyPreset(mode){
   const days=[...new Set(concurrencyBaseRows(viewDaily).map(r=>String(r.log_date)))].sort();
@@ -1839,12 +1839,12 @@ function setConcurrencyPreset(mode){
   }
   concurrencyPlatform='all';
   concurrencyPair='all';
-  renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();
+  renderCharts();queueRenderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();
 }
-function setConcurrencyPlatform(value){concurrencyPlatform=value||'all';concurrencyPair='all';renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
-function setConcurrencyPair(value){concurrencyPair=value||'all';renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
-function setConcurrencyMetric(value){concurrencyMetric=value||'unique_viewers';renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
-function toggleConcurrencyCompare(){concurrencyCompare=!concurrencyCompare;renderCharts();renderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
+function setConcurrencyPlatform(value){concurrencyPlatform=value||'all';concurrencyPair='all';renderCharts();queueRenderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
+function setConcurrencyPair(value){concurrencyPair=value||'all';renderCharts();queueRenderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
+function setConcurrencyMetric(value){concurrencyMetric=value||'unique_viewers';renderCharts();queueRenderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
+function toggleConcurrencyCompare(){concurrencyCompare=!concurrencyCompare;renderCharts();queueRenderTables();if(modalChartSourceId==='concurrencyChart')renderModalChart();}
 
 // ── Date filter ───────────────────────────────────────────────────────────────
 function syncDateInputs(){
@@ -1863,7 +1863,7 @@ function applyDateView(updateInputs=true){
   renderTrendFocusOptions();
   renderCards(selectedSummary());
   renderCharts();
-  renderTables();
+  queueRenderTables();
   updateChannelLimitText();
 }
 
@@ -2954,6 +2954,27 @@ function renderUsageDropAnalysis(){
   if(stateEl)stateEl.innerHTML=stateRows.length?table(stateRows,[{key:'state_region',label:'State / Region'},{key:'before_avg_hours_day',label:'Before Avg/Day (hrs)'},{key:'after_avg_hours_day',label:'After Avg/Day (hrs)'},{key:'drop_hours_day',label:'Drop / Gain (hrs/day)'},{key:'change_pct',label:'Change'},{key:'approx_unique_ips',label:'Approx IPs'}],detailFmt):noGeo;
   const cityEl=document.getElementById('usageDropCityTable');
   if(cityEl)cityEl.innerHTML=cityRows.length?table(cityRows,[{key:'state_region',label:'State / Region'},{key:'city_name',label:'City / Option'},{key:'before_avg_hours_day',label:'Before Avg/Day (hrs)'},{key:'after_avg_hours_day',label:'After Avg/Day (hrs)'},{key:'drop_hours_day',label:'Drop / Gain (hrs/day)'},{key:'change_pct',label:'Change'},{key:'approx_unique_ips',label:'Approx IPs'}],detailFmt):noGeo;
+}
+
+let tableRenderHandle=null;
+let tableRenderKind='';
+function queueRenderTables(){
+  if(tableRenderHandle!==null){
+    if(tableRenderKind==='idle'&&window.cancelIdleCallback)window.cancelIdleCallback(tableRenderHandle);
+    else clearTimeout(tableRenderHandle);
+  }
+  const run=function(){
+    tableRenderHandle=null;
+    tableRenderKind='';
+    renderTables();
+  };
+  if(window.requestIdleCallback){
+    tableRenderKind='idle';
+    tableRenderHandle=window.requestIdleCallback(run,{timeout:350});
+  }else{
+    tableRenderKind='timeout';
+    tableRenderHandle=setTimeout(run,0);
+  }
 }
 
 function renderTables(){

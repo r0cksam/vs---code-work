@@ -1,11 +1,11 @@
 {
-  "generated_at_utc": "2026-06-22T05:57:15.749926+00:00",
+  "generated_at_utc": "2026-06-23T05:09:28.287902+00:00",
   "source": "fast",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\fast_platform_channel_manifest_daily.parquet",
   "date_range_replaced": {
-    "start": "2026-06-21",
-    "end": "2026-06-22"
+    "start": "2026-06-22",
+    "end": "2026-06-23"
   },
   "metric_notes": {
     "m3u8_rows": "All FAST .m3u8 playlist/manifest request rows at platform/channel grain.",
@@ -14,5 +14,5 @@
     "approx_unique_ips": "Exact daily distinct cliIP for each FAST platform/channel/manifest-kind.",
     "channel_evidence": "path_map/host_map are mapped; unmapped_path_candidate stays visible as channel_name=Other."
   },
-  "new_rows": 34
+  "new_rows": 33
 }

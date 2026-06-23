@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-06-22T11:31:32",
+  "generated_at": "2026-06-23T10:48:50",
   "parts_root": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\latency\\parts",
   "sources": [
     "fast",
     "stream"
   ],
   "tables": {
-    "cache_daily": 1020,
-    "channel_daily": 5579,
-    "daily": 646,
-    "geo_daily": 33166,
-    "host_daily": 3799,
-    "hourly": 7089,
-    "status_daily": 1930,
+    "cache_daily": 1035,
+    "channel_daily": 5652,
+    "daily": 654,
+    "geo_daily": 33741,
+    "host_daily": 3855,
+    "hourly": 7217,
+    "status_daily": 1957,
     "summary": 1
   }
 }

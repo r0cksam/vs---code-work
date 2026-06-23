@@ -178,7 +178,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 
   <div class="stakeholder-kpis" id="stakeholderKpis"></div>
 
-  <section class="section">
+  <section class="section" data-render-section="viewership">
     <div class="section-head">
       <div>
         <h2>Viewership Trend</h2>
@@ -192,7 +192,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" data-render-section="content">
     <div class="section-head">
       <div>
         <h2>Content Title Analytics</h2>
@@ -215,7 +215,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
   <div class="kpis" id="kpis"></div>
 
 
-  <section class="section">
+  <section class="section" data-render-section="traffic">
     <div class="section-head">
       <div>
         <h2>Audience And Traffic</h2>
@@ -234,7 +234,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" data-render-section="playtime">
     <div class="section-head">
       <div>
         <h2>Playtime</h2>
@@ -295,7 +295,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" data-render-section="concurrency">
     <div class="section-head">
       <div>
         <h2>Concurrency</h2>
@@ -329,7 +329,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" data-render-section="channels">
     <div class="section-head">
       <div>
         <h2>Channels</h2>
@@ -349,7 +349,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" data-render-section="reliability">
     <div class="section-head">
       <div>
         <h2>Reliability And Latency</h2>
@@ -373,7 +373,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" data-render-section="geoDevice">
     <div class="section-head">
       <div>
         <h2>Geo And Devices</h2>
@@ -399,7 +399,7 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     </div>
   </section>
 
-  <section class="section">
+  <section class="section" data-render-section="ops">
     <div class="section-head">
       <div>
         <h2>Operations Monitoring Upgrade</h2>
@@ -487,6 +487,10 @@ let modalChart = null;
 let modalSourceChartId = "";
 let modalSourceHtmlId = "";
 let filterCache = new WeakMap();
+let renderVersion = 0;
+let sectionVersions = {};
+let lazyRenderQueued = false;
+let lazySectionObserver = null;
 
 function el(id){return document.getElementById(id)}
 function n(v){const x=Number(v);return Number.isFinite(x)?x:0}
@@ -1769,16 +1773,106 @@ function renderHeader(){
   el("selectionContext").innerHTML="<span class='pill'><b>Used Range</b> "+fmtDayStart(state.start)+" to "+fmtDayEnd(state.end)+"</span><span class='pill'><b>Source</b> "+sourceLabel()+"</span><span class='pill'><b>Platform</b> "+esc(state.platform==="all"?"All Platforms":state.platform)+"</span><span class='pill'><b>Channel</b> "+esc(state.channel==="all"?"All Channels":state.channel)+"</span>";
 }
 
-function renderAll(){resetFilterCache();renderHeader();renderStakeholderKpis();renderViewershipTrend();renderContent();renderKpis();renderTraffic();renderConcurrency();renderPlatforms();renderPlaytimePies();renderChannels();renderReliability();renderGeoDevice();renderOpsMonitoring()}
+const SECTION_RENDERERS={
+  viewership:function(){renderViewershipTrend()},
+  content:function(){renderContent()},
+  traffic:function(){renderTraffic()},
+  playtime:function(){renderPlaytimePies()},
+  concurrency:function(){renderConcurrency();renderPlatforms()},
+  channels:function(){renderChannels()},
+  reliability:function(){renderReliability()},
+  geoDevice:function(){renderGeoDevice()},
+  ops:function(){renderOpsMonitoring()}
+};
+const CHART_SECTION={
+  viewershipTrendChart:"viewership",
+  contentRankChart:"content",
+  contentTrendChart:"content",
+  trafficChart:"traffic",
+  audienceChart:"traffic",
+  playStateChart:"playtime",
+  playCityChart:"playtime",
+  playPlatformChart:"playtime",
+  playOsChart:"playtime",
+  ipGeoChart:"playtime",
+  ipPlatformChart:"playtime",
+  ipOsChart:"playtime",
+  playBrandChart:"playtime",
+  playFormChart:"playtime",
+  decodeQualityChart:"playtime",
+  concurrencyChart:"concurrency",
+  channelRankChart:"channels",
+  channelTrendChart:"channels",
+  latencyChart:"reliability",
+  statusChart:"reliability",
+  geoChart:"geoDevice",
+  cityChart:"geoDevice",
+  deviceEvidence:"geoDevice",
+  opsUsersMinuteChart:"ops",
+  opsUsers5Chart:"ops",
+  opsViewsChart:"ops",
+  opsIdentityChart:"ops"
+};
+function sectionIsNearViewport(section){
+  if(!section)return false;
+  const rect=section.getBoundingClientRect();
+  const buffer=Math.max(900,Math.round(window.innerHeight*1.25));
+  return rect.bottom>=-buffer&&rect.top<=window.innerHeight+buffer;
+}
+function renderSection(name,force){
+  if(!name||!SECTION_RENDERERS[name])return;
+  if(!force&&sectionVersions[name]===renderVersion)return;
+  sectionVersions[name]=renderVersion;
+  SECTION_RENDERERS[name]();
+}
+function renderVisibleSections(force){
+  document.querySelectorAll("[data-render-section]").forEach(function(section){
+    const name=section.getAttribute("data-render-section");
+    if(force||sectionIsNearViewport(section))renderSection(name);
+  });
+}
+function queueVisibleSectionRender(){
+  if(lazyRenderQueued)return;
+  lazyRenderQueued=true;
+  requestAnimationFrame(function(){
+    lazyRenderQueued=false;
+    renderVisibleSections(false);
+    refreshModalChart();
+  });
+}
+function setupLazySections(){
+  const sections=[].slice.call(document.querySelectorAll("[data-render-section]"));
+  if("IntersectionObserver" in window){
+    lazySectionObserver=new IntersectionObserver(function(entries){
+      let needsRender=false;
+      entries.forEach(function(entry){if(entry.isIntersecting)needsRender=true});
+      if(needsRender)queueVisibleSectionRender();
+    },{root:null,rootMargin:"900px 0px",threshold:0.01});
+    sections.forEach(function(section){lazySectionObserver.observe(section)});
+  }else{
+    window.addEventListener("scroll",queueVisibleSectionRender,{passive:true});
+  }
+  window.addEventListener("resize",queueVisibleSectionRender,{passive:true});
+}
+function renderAll(){
+  resetFilterCache();
+  renderVersion+=1;
+  renderHeader();
+  renderStakeholderKpis();
+  renderKpis();
+  renderVisibleSections(false);
+}
 function refreshModalChart(){
   if(!el("chartModal").classList.contains("open"))return;
   if(modalSourceHtmlId){
+    renderSection(CHART_SECTION[modalSourceHtmlId],false);
     if(modalChart){modalChart.destroy();modalChart=null}
     el("modalChartBox").style.display="none";
     el("modalHtml").style.display="block";
     el("modalHtml").innerHTML=htmlViews[modalSourceHtmlId]||"<div class='empty'>No data for selected filters</div>";
     return;
   }
+  renderSection(CHART_SECTION[modalSourceChartId],false);
   if(!modalSourceChartId||!configs[modalSourceChartId])return;
   el("modalChartBox").style.display="block";
   el("modalHtml").style.display="none";
@@ -1787,6 +1881,7 @@ function refreshModalChart(){
   modalChart=new Chart(el("modalCanvas").getContext("2d"),JSON.parse(JSON.stringify(configs[modalSourceChartId])));
 }
 function expandChart(id,title){
+  renderSection(CHART_SECTION[id],true);
   if(!configs[id])return;
   modalSourceChartId=id;
   modalSourceHtmlId="";
@@ -1798,6 +1893,7 @@ function expandChart(id,title){
   refreshModalChart();
 }
 function expandHtml(id,title){
+  renderSection(CHART_SECTION[id],true);
   modalSourceHtmlId=id;
   modalSourceChartId="";
   el("modalTitle").textContent=title;
@@ -1808,6 +1904,7 @@ function expandHtml(id,title){
 }
 function closeModal(){el("chartModal").classList.remove("open");modalSourceChartId="";modalSourceHtmlId="";el("modalControls").innerHTML="";el("modalHtml").innerHTML="";el("modalHtml").style.display="none";el("modalChartBox").style.display="block";if(modalChart){modalChart.destroy();modalChart=null}}
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal()});
+setupLazySections();
 setupFilters();
 </script>
 </body>
