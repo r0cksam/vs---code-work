@@ -901,6 +901,8 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
     platform_channel_manifest = read_parquet(concurrency_dir / "fast_platform_channel_manifest_daily.parquet")
     platform_channel_bandwidth = read_parquet(concurrency_dir / "fast_platform_channel_bandwidth_daily.parquet")
     platform_channel_cmcd = read_parquet(concurrency_dir / "fast_platform_channel_cmcd_daily.parquet")
+    manifest_minute = read_parquet(concurrency_dir / "manifest_minute.parquet")
+    identity_minute = read_parquet(concurrency_dir / "identity_minute.parquet")
     if not minute.empty:
         minute = numeric(
             minute,
@@ -1014,6 +1016,75 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
         minute_detail = minute_detail[minute_detail["log_date"].astype(str).isin(embedded_date_set)]
         if not status_detail.empty and "d" in status_detail.columns:
             status_detail = status_detail[status_detail["d"].astype(str).isin(embedded_date_set)]
+    if not manifest_minute.empty:
+        manifest_minute = numeric(
+            manifest_minute,
+            [
+                "m3u8_rows",
+                "status_200_m3u8_rows",
+                "non_200_m3u8_rows",
+                "unique_ips",
+                "unique_uas",
+                "unique_ipua_pairs",
+            ],
+        )
+        manifest_minute["log_date"] = date_string(manifest_minute["log_date"])
+        manifest_minute["minute_ist"] = pd.to_datetime(manifest_minute["minute_ist"], errors="coerce")
+        manifest_minute = manifest_minute[manifest_minute["minute_ist"].notna()].copy()
+        if "embedded_date_set" in locals() and embedded_date_set:
+            manifest_minute = manifest_minute[manifest_minute["log_date"].astype(str).isin(embedded_date_set)]
+        else:
+            embedded_manifest_dates = sorted(manifest_minute["log_date"].dropna().astype(str).unique())[-15:]
+            manifest_minute = manifest_minute[manifest_minute["log_date"].astype(str).isin(set(embedded_manifest_dates))]
+        manifest_minute = manifest_minute[
+            [
+                "log_date",
+                "source",
+                "minute_ist",
+                "platform_name",
+                "channel_name",
+                "m3u8_rows",
+                "status_200_m3u8_rows",
+                "non_200_m3u8_rows",
+                "unique_ips",
+                "unique_ipua_pairs",
+            ]
+        ].sort_values(["log_date", "minute_ist", "platform_name", "channel_name"])
+    if not identity_minute.empty:
+        identity_minute = numeric(
+            identity_minute,
+            [
+                "raw_ts_rows",
+                "status_200_ts_rows",
+                "distinct_cliips",
+                "distinct_ipua_pairs",
+                "distinct_devices",
+                "distinct_sessions",
+            ],
+        )
+        identity_minute["log_date"] = date_string(identity_minute["log_date"])
+        identity_minute["minute_ist"] = pd.to_datetime(identity_minute["minute_ist"], errors="coerce")
+        identity_minute = identity_minute[identity_minute["minute_ist"].notna()].copy()
+        if "embedded_date_set" in locals() and embedded_date_set:
+            identity_minute = identity_minute[identity_minute["log_date"].astype(str).isin(embedded_date_set)]
+        else:
+            embedded_identity_dates = sorted(identity_minute["log_date"].dropna().astype(str).unique())[-15:]
+            identity_minute = identity_minute[identity_minute["log_date"].astype(str).isin(set(embedded_identity_dates))]
+        identity_minute = identity_minute[
+            [
+                "log_date",
+                "source",
+                "minute_ist",
+                "platform_name",
+                "channel_name",
+                "raw_ts_rows",
+                "status_200_ts_rows",
+                "distinct_cliips",
+                "distinct_ipua_pairs",
+                "distinct_devices",
+                "distinct_sessions",
+            ]
+        ].sort_values(["log_date", "minute_ist", "platform_name", "channel_name"])
     if not platform_channel_identity.empty:
         platform_channel_identity = numeric(
             platform_channel_identity,
@@ -1125,6 +1196,8 @@ def build_concurrency(concurrency_dir: Path) -> dict[str, pd.DataFrame]:
         "platform_channel_manifest": platform_channel_manifest,
         "platform_channel_bandwidth": platform_channel_bandwidth,
         "platform_channel_cmcd": platform_channel_cmcd,
+        "manifest_minute": manifest_minute,
+        "identity_minute": identity_minute,
     }
 
 
@@ -1500,6 +1573,41 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
         concurrency_status_schema,
         ["d", "s", "m", "p", "c", "code"],
     )
+    manifest_minute_schema = [
+        "log_date",
+        "source",
+        "minute_ist",
+        "platform_name",
+        "channel_name",
+        "m3u8_rows",
+        "status_200_m3u8_rows",
+        "non_200_m3u8_rows",
+        "unique_ips",
+        "unique_ipua_pairs",
+    ]
+    manifest_minute_dicts, manifest_minute_rows = dictionary_compact_records(
+        concurrency["manifest_minute"],
+        manifest_minute_schema,
+        ["log_date", "source", "minute_ist", "platform_name", "channel_name"],
+    )
+    identity_minute_schema = [
+        "log_date",
+        "source",
+        "minute_ist",
+        "platform_name",
+        "channel_name",
+        "raw_ts_rows",
+        "status_200_ts_rows",
+        "distinct_cliips",
+        "distinct_ipua_pairs",
+        "distinct_devices",
+        "distinct_sessions",
+    ]
+    identity_minute_dicts, identity_minute_rows = dictionary_compact_records(
+        concurrency["identity_minute"],
+        identity_minute_schema,
+        ["log_date", "source", "minute_ist", "platform_name", "channel_name"],
+    )
 
     return {
         "meta": {
@@ -1574,6 +1682,12 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
             "concurrency_status_minute_dictionaries": concurrency_status_dicts,
             "concurrency_status_minute": concurrency_status_rows,
             "concurrency_status_codes": concurrency["status_codes"],
+            "manifest_minute_schema": manifest_minute_schema,
+            "manifest_minute_dictionaries": manifest_minute_dicts,
+            "manifest_minute": manifest_minute_rows,
+            "identity_minute_schema": identity_minute_schema,
+            "identity_minute_dictionaries": identity_minute_dicts,
+            "identity_minute": identity_minute_rows,
             "concurrency_summary": records(concurrency["summary"]),
             "fast_platform_channel_identity_daily": records(concurrency["platform_channel_identity"], 5000),
             "fast_platform_channel_geo_daily_schema": compact_schema(concurrency["platform_channel_geo"]),

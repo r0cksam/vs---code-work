@@ -397,17 +397,50 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
   <section class="section" data-render-section="ops">
     <div class="section-head">
       <div>
-        <h2>Identity Monitoring</h2>
-        <div class="desc">Identity, session, and manifest signals for the selected filters.</div>
+        <h2>Request And Identity Trends</h2>
+        <div class="desc">Priority minute-level identity and request signals for the selected filters.</div>
+      </div>
+    </div>
+    <div class="mini-controls">
+      <button class="btn" id="opsInterval1" onclick="setConcurrencyInterval(1)">1 min</button>
+      <button class="btn" id="opsInterval5" onclick="setConcurrencyInterval(5)">5 min</button>
+      <button class="btn" id="opsInterval10" onclick="setConcurrencyInterval(10)">10 min</button>
+      <button class="btn" id="opsInterval15" onclick="setConcurrencyInterval(15)">15 min</button>
+      <button class="btn" id="opsInterval30" onclick="setConcurrencyInterval(30)">30 min</button>
+      <button class="btn" id="opsInterval60" onclick="setConcurrencyInterval(60)">1 hour</button>
+      <div class="mini-field">
+        <label>Custom min</label>
+        <input id="opsCustomMinutes" type="number" min="1" max="240" step="1" value="5" onchange="setCustomConcurrencyInterval(this.value)"/>
+      </div>
+    </div>
+    <div class="grid-stack">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">STREAM Device ID Minute Sum<small>Device ID counts summed inside selected interval</small></div><button class="btn" onclick="expandChart('opsDeviceChart','STREAM Device ID Minute Sum')">Expand</button></div>
+        <div class="chart-box"><canvas id="opsDeviceChart"></canvas></div>
+        <div class="chart-note" id="opsDeviceNote"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">STREAM Session ID Minute Sum<small>Session ID counts summed inside selected interval</small></div><button class="btn" onclick="expandChart('opsSessionChart','STREAM Session ID Minute Sum')">Expand</button></div>
+        <div class="chart-box"><canvas id="opsSessionChart"></canvas></div>
+        <div class="chart-note" id="opsSessionNote"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Manifest Request Minute Sum<small>Playback entry requests summed inside selected interval</small></div><button class="btn" onclick="expandChart('opsViewsChart','Manifest Request Minute Sum')">Expand</button></div>
+        <div class="chart-box"><canvas id="opsViewsChart"></canvas></div>
+        <div class="chart-note" id="opsViewsNote"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Unique IP Minute Sum<small>Unique IP counts summed inside selected interval</small></div><div class="action-row"><button class="btn" onclick="exportUniqueIpMinuteCsv()">Export CSV</button><button class="btn" onclick="expandChart('opsUniqueIpChart','Unique IP Minute Sum')">Expand</button></div></div>
+        <div class="chart-box"><canvas id="opsUniqueIpChart"></canvas></div>
+        <div class="chart-note" id="opsUniqueIpNote"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">IP + UA Minute Sum<small>IP and user-agent signatures summed inside selected interval</small></div><button class="btn" onclick="expandChart('opsIpUaChart','IP + UA Minute Sum')">Expand</button></div>
+        <div class="chart-box"><canvas id="opsIpUaChart"></canvas></div>
+        <div class="chart-note" id="opsIpUaNote"></div>
       </div>
     </div>
     <div class="kpis" id="opsKpis"></div>
-    <div class="grid-stack">
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">Identity / Session Daily Trend<small>Identity and session signals by selected source</small></div><button class="btn" onclick="expandChart('opsIdentityChart','Identity / Session Daily Trend')">Expand</button></div>
-        <div class="chart-box"><canvas id="opsIdentityChart"></canvas></div>
-      </div>
-    </div>
   </section>
 
   <div class="footer">Generated for Veto Audience Operations.</div>
@@ -439,6 +472,8 @@ function inflateRows(rows,schema,dictionaries){
 }
 DATA.concurrency_minute=inflateRows(DATA.concurrency_minute||[],DATA.concurrency_minute_schema||[],DATA.concurrency_minute_dictionaries||{});
 DATA.concurrency_status_minute=inflateRows(DATA.concurrency_status_minute||[],DATA.concurrency_status_minute_schema||[],DATA.concurrency_status_minute_dictionaries||{});
+DATA.manifest_minute=inflateRows(DATA.manifest_minute||[],DATA.manifest_minute_schema||[],DATA.manifest_minute_dictionaries||{});
+DATA.identity_minute=inflateRows(DATA.identity_minute||[],DATA.identity_minute_schema||[],DATA.identity_minute_dictionaries||{});
 [
   "geo_daily",
   "channel_geo_daily",
@@ -587,12 +622,14 @@ function setConcurrencyInterval(value){
   state.concurrencyInterval=Number(value)||5;
   syncConcurrencyControls();
   renderConcurrency();
+  renderOpsMonitoring();
   refreshModalChart();
 }
 function setCustomConcurrencyInterval(value){
   state.concurrencyInterval=Number(value)||5;
   syncConcurrencyControls();
   renderConcurrency();
+  renderOpsMonitoring();
   refreshModalChart();
 }
 function setConcurrencyStatus(value){
@@ -627,6 +664,17 @@ function concurrencyModalControlsHtml(){
     +"<div class='mini-field'><label>HTTP Status</label><select id='modalConcStatusSelect' onchange='setConcurrencyStatus(this.value)'></select></div>"
     +"</div>";
 }
+function manifestModalControlsHtml(){
+  return "<div class='mini-controls'>"
+    +"<button class='btn' id='modalOpsInterval1' onclick='setConcurrencyInterval(1)'>1 min</button>"
+    +"<button class='btn' id='modalOpsInterval5' onclick='setConcurrencyInterval(5)'>5 min</button>"
+    +"<button class='btn' id='modalOpsInterval10' onclick='setConcurrencyInterval(10)'>10 min</button>"
+    +"<button class='btn' id='modalOpsInterval15' onclick='setConcurrencyInterval(15)'>15 min</button>"
+    +"<button class='btn' id='modalOpsInterval30' onclick='setConcurrencyInterval(30)'>30 min</button>"
+    +"<button class='btn' id='modalOpsInterval60' onclick='setConcurrencyInterval(60)'>1 hour</button>"
+    +"<div class='mini-field'><label>Custom min</label><input id='modalOpsCustomMinutes' type='number' min='1' max='240' step='1' value='"+esc(concurrencyIntervalMinutes())+"' onchange='setCustomConcurrencyInterval(this.value)'/></div>"
+    +"</div>";
+}
 function modalBaseControlsHtml(){
   return "<div class='mini-controls'>"
     +"<button class='btn' id='modalDateModeSingle' onclick=\"setDateMode('single')\">Single Date</button>"
@@ -648,13 +696,21 @@ function syncConcurrencyControls(){
   state.concurrencyInterval=interval;
   const input=el("concCustomMinutes");
   if(input)input.value=interval;
+  const opsInput=el("opsCustomMinutes");
+  if(opsInput)opsInput.value=interval;
   const modalInput=el("modalConcCustomMinutes");
   if(modalInput)modalInput.value=interval;
+  const modalOpsInput=el("modalOpsCustomMinutes");
+  if(modalOpsInput)modalOpsInput.value=interval;
   [1,5,10,15,30,60].forEach(function(v){
     const btn=el("concInterval"+v);
     if(btn)btn.classList.toggle("active",interval===v);
+    const opsBtn=el("opsInterval"+v);
+    if(opsBtn)opsBtn.classList.toggle("active",interval===v);
     const modalBtn=el("modalConcInterval"+v);
     if(modalBtn)modalBtn.classList.toggle("active",interval===v);
+    const modalOpsBtn=el("modalOpsInterval"+v);
+    if(modalOpsBtn)modalOpsBtn.classList.toggle("active",interval===v);
   });
   const select=el("concStatusSelect");
   if(select)select.value=state.concurrencyStatus;
@@ -1703,10 +1759,90 @@ function renderGeoDevice(){
   }),[6,7]);
 }
 
+function opsManifestMinuteRows(){
+  return filterRows(DATA.manifest_minute||[],{channel:true,platform:true});
+}
+function opsIdentityMinuteRows(){
+  return filterRows(DATA.identity_minute||[],{channel:true,platform:true});
+}
+function bucketMinuteSums(rows,fields){
+  const interval=concurrencyIntervalMinutes();
+  const buckets=new Map();
+  (rows||[]).forEach(function(r){
+    const minute=String(r.minute_ist||"");
+    const idx=parseMinuteIndex(minute);
+    if(idx===null)return;
+    const bucket=minuteIndexLabel(Math.floor(idx/interval)*interval);
+    if(!buckets.has(bucket)){
+      const item={key:bucket,minute_count:0};
+      fields.forEach(function(f){item[f]=0});
+      buckets.set(bucket,item);
+    }
+    const item=buckets.get(bucket);
+    item.minute_count+=1;
+    fields.forEach(function(f){item[f]+=n(r[f])});
+  });
+  return Array.from(buckets.values()).sort(function(a,b){return a.key.localeCompare(b.key)});
+}
+function csvCell(value){
+  const text=value===null||value===undefined?"":String(value);
+  return /[",\r\n]/.test(text)?"\""+text.replace(/"/g,"\"\"")+"\"":text;
+}
+function safeFileToken(value){
+  return String(value||"all").replace(/[^a-zA-Z0-9_-]+/g,"_").replace(/^_+|_+$/g,"").slice(0,80)||"all";
+}
+function downloadCsv(filename,headers,rows){
+  const csv=[headers].concat(rows).map(function(row){return row.map(csvCell).join(",")}).join("\r\n");
+  const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=url;
+  link.download=filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+function exportUniqueIpMinuteCsv(){
+  const buckets=bucketMinuteSums(opsIdentityMinuteRows(),["distinct_cliips"]);
+  if(!buckets.length){
+    alert("No Unique IP minute data for the selected filters.");
+    return;
+  }
+  const interval=concurrencyIntervalMinutes();
+  const platform=state.platform==="all"?"All Platforms":state.platform;
+  const channel=state.channel==="all"?"All Channels":state.channel;
+  const headers=[
+    "Bucket Start IST",
+    "Source",
+    "Platform Filter",
+    "Channel Filter",
+    "Date From",
+    "Date To",
+    "Interval Minutes",
+    "Unique IP Minute Sum"
+  ];
+  const rows=buckets.map(function(r){
+    return [fmtDateTime(r.key),sourceLabel(),platform,channel,fmtDate(state.start),fmtDate(state.end),interval,n(r.distinct_cliips)];
+  });
+  const filename=[
+    "unique_ip_minute_sum",
+    safeFileToken(state.source),
+    safeFileToken(platform),
+    safeFileToken(channel),
+    safeFileToken(state.start+"_to_"+state.end),
+    interval+"min"
+  ].join("_")+".csv";
+  downloadCsv(filename,headers,rows);
+}
 function opsManifestDailyRows(){
   const rows=state.source==="fast"?fastPlatformChannelManifestRows():streamContentRows();
-  const grouped=groupSum(rows,function(r){return String(r.log_date||"").slice(0,10)},["m3u8_rows","status_200_m3u8_rows","non_200_m3u8_rows","approx_unique_ips","approx_sessions","approx_devices"]);
-  return grouped.filter(function(r){return r.key}).sort(function(a,b){return a.key.localeCompare(b.key)});
+  const grouped=groupSum(rows,function(r){return String(r.log_date||"").slice(0,10)},["m3u8_rows","status_200_m3u8_rows","non_200_m3u8_rows","non_200_rows","approx_unique_ips","approx_sessions","approx_devices"]);
+  return grouped.filter(function(r){return r.key}).map(function(r){
+    const diff=Math.max(0,n(r.m3u8_rows)-n(r.status_200_m3u8_rows));
+    r.non_200_m3u8_rows=n(r.non_200_m3u8_rows)||n(r.non_200_rows)||diff;
+    return r;
+  }).sort(function(a,b){return a.key.localeCompare(b.key)});
 }
 function opsIdentityDailyRows(){
   if(state.source==="fast"){
@@ -1727,20 +1863,58 @@ function renderOpsMonitoring(){
     kpi(state.source==="fast"?"Unique Users":"Device IDs",identityPrimary?fmtInt(identityPrimary):"Not Available",state.source==="fast"?"Daily distinct cliIP sum":"STREAM app device_id identity",""),
     kpi(state.source==="fast"?"IP + UA Signatures":"Sessions",identitySecondary?fmtInt(identitySecondary):"Not Available",state.source==="fast"?"Daily distinct cliIP+UA sum, not app session_id":"STREAM app session_id identity","")
   ].join("");
-  if(identityDaily.length){
-    const datasets=state.source==="fast"
-      ?[
-        {label:"Unique cliIP",data:identityDaily.map(function(r){return n(r.distinct_cliips)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.25,pointRadius:2},
-        {label:"IP + UA Signatures",data:identityDaily.map(function(r){return n(r.distinct_ipua_pairs)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.10)",tension:.25,pointRadius:2}
-      ]
-      :[
-        {label:"Device IDs",data:identityDaily.map(function(r){return n(r.total_devices)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.25,pointRadius:2},
-        {label:"Session IDs",data:identityDaily.map(function(r){return n(r.total_sessions)}),borderColor:COLORS[5],backgroundColor:"rgba(180,35,24,.10)",tension:.25,pointRadius:2},
-        {label:"IP + UA Sessions",data:identityDaily.map(function(r){return n(r.total_ipua_sessions)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.10)",tension:.25,pointRadius:2}
-      ];
-    draw("opsIdentityChart",lineConfig(identityDaily.map(function(r){return fmtDate(r.key)}),datasets,"Count"));
+  const manifestMinute=opsManifestMinuteRows();
+  const manifestBuckets=bucketMinuteSums(manifestMinute,["m3u8_rows","status_200_m3u8_rows","non_200_m3u8_rows"]);
+  if(manifestBuckets.length){
+    const non200Manifest=sum(manifestBuckets,"non_200_m3u8_rows");
+    const viewsNote=el("opsViewsNote");
+    if(viewsNote){
+      viewsNote.textContent="Each point is the sum of manifest request counts for every minute inside the "+concurrencyIntervalLabel()+" bucket, using all HTTP statuses. Example: 12:00 to 12:04 equals five one-minute manifest request counts added together."
+        +(non200Manifest?" "+fmtInt(non200Manifest)+" non-200 manifest requests are present in this selection.":" All manifest requests in this selection returned HTTP 200.");
+    }
+    draw("opsViewsChart",lineConfig(manifestBuckets.map(function(r){return fmtDateTime(r.key)}),[
+      {label:"Total manifest request count - all statuses",data:manifestBuckets.map(function(r){return n(r.m3u8_rows)}),borderColor:COLORS[2],backgroundColor:"rgba(18,128,92,.10)",tension:.22,pointRadius:0},
+      {label:"HTTP 200 manifest request count",data:manifestBuckets.map(function(r){return n(r.status_200_m3u8_rows)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.22,pointRadius:0},
+      {label:"Non-200 manifest request count",data:manifestBuckets.map(function(r){return n(r.non_200_m3u8_rows)}),borderColor:COLORS[5],backgroundColor:"rgba(180,35,24,.10)",borderDash:[5,4],tension:.22,pointRadius:0}
+    ],"Requests"));
   }else{
-    clearChart("opsIdentityChart",state.source==="fast"?"FAST app device_id/session_id is not available; select platform/channel for IP+UA signatures":"No STREAM identity rows for selected filters");
+    const viewsNote=el("opsViewsNote");if(viewsNote)viewsNote.textContent="";
+    clearChart("opsViewsChart","No embedded minute-level manifest rows for selected filters");
+  }
+  const identityMinute=opsIdentityMinuteRows();
+  const identityBuckets=bucketMinuteSums(identityMinute,["distinct_cliips","distinct_ipua_pairs","distinct_devices","distinct_sessions"]);
+  if(identityBuckets.length){
+    const deviceTotal=sum(identityBuckets,"distinct_devices");
+    const sessionTotal=sum(identityBuckets,"distinct_sessions");
+    const labels=identityBuckets.map(function(r){return fmtDateTime(r.key)});
+    if(state.source==="stream"&&deviceTotal){
+      const deviceNote=el("opsDeviceNote");
+      if(deviceNote)deviceNote.textContent="Each point is the sum of STREAM device_id counts for every minute inside the "+concurrencyIntervalLabel()+" bucket.";
+      draw("opsDeviceChart",lineConfig(labels,[{label:"Device ID minute count",data:identityBuckets.map(function(r){return n(r.distinct_devices)}),borderColor:COLORS[2],backgroundColor:"rgba(18,128,92,.10)",tension:.22,pointRadius:0}],"Device ID minute-sum"));
+    }else{
+      const deviceNote=el("opsDeviceNote");if(deviceNote)deviceNote.textContent="";
+      clearChart("opsDeviceChart",state.source==="fast"?"Device ID is not present in FAST CDN rows.":"No STREAM device_id rows for selected filters");
+    }
+    if(state.source==="stream"&&sessionTotal){
+      const sessionNote=el("opsSessionNote");
+      if(sessionNote)sessionNote.textContent="Each point is the sum of STREAM session_id counts for every minute inside the "+concurrencyIntervalLabel()+" bucket.";
+      draw("opsSessionChart",lineConfig(labels,[{label:"Session ID minute count",data:identityBuckets.map(function(r){return n(r.distinct_sessions)}),borderColor:COLORS[5],backgroundColor:"rgba(180,35,24,.10)",tension:.22,pointRadius:0}],"Session ID minute-sum"));
+    }else{
+      const sessionNote=el("opsSessionNote");if(sessionNote)sessionNote.textContent="";
+      clearChart("opsSessionChart",state.source==="fast"?"Session ID is not present in FAST CDN rows.":"No STREAM session_id rows for selected filters");
+    }
+    const uniqueIpNote=el("opsUniqueIpNote");
+    if(uniqueIpNote)uniqueIpNote.textContent="Each point is the sum of distinct cliIP counts for every minute inside the "+concurrencyIntervalLabel()+" bucket, using .ts playback rows.";
+    draw("opsUniqueIpChart",lineConfig(labels,[{label:"Unique IP viewer-minute count",data:identityBuckets.map(function(r){return n(r.distinct_cliips)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.22,pointRadius:0}],"Unique IP minute-sum"));
+    const ipUaNote=el("opsIpUaNote");
+    if(ipUaNote)ipUaNote.textContent="Each point is the sum of distinct cliIP + user-agent signature counts for every minute inside the "+concurrencyIntervalLabel()+" bucket, using .ts playback rows.";
+    draw("opsIpUaChart",lineConfig(labels,[{label:"IP + UA signature-minute count",data:identityBuckets.map(function(r){return n(r.distinct_ipua_pairs)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.10)",tension:.22,pointRadius:0}],"IP + UA minute-sum"));
+  }else{
+    ["opsDeviceNote","opsSessionNote","opsUniqueIpNote","opsIpUaNote"].forEach(function(id){const note=el(id);if(note)note.textContent=""});
+    clearChart("opsDeviceChart","No embedded minute-level device rows for selected filters");
+    clearChart("opsSessionChart","No embedded minute-level session rows for selected filters");
+    clearChart("opsUniqueIpChart","No embedded minute-level Unique IP rows for selected filters");
+    clearChart("opsIpUaChart","No embedded minute-level IP + UA rows for selected filters");
   }
 }
 
@@ -1792,8 +1966,17 @@ const CHART_SECTION={
   geoChart:"geoDevice",
   cityChart:"geoDevice",
   deviceEvidence:"geoDevice",
-  opsIdentityChart:"ops"
+  opsDeviceChart:"ops",
+  opsSessionChart:"ops",
+  opsViewsChart:"ops",
+  opsUniqueIpChart:"ops",
+  opsIpUaChart:"ops"
 };
+function arrangePrioritySections(){
+  const viewership=document.querySelector('[data-render-section="viewership"]');
+  const ops=document.querySelector('[data-render-section="ops"]');
+  if(viewership&&ops&&viewership.nextElementSibling!==ops)viewership.insertAdjacentElement("afterend",ops);
+}
 function sectionIsNearViewport(section){
   if(!section)return false;
   const rect=section.getBoundingClientRect();
@@ -1868,9 +2051,11 @@ function expandChart(id,title){
   modalSourceHtmlId="";
   el("modalTitle").textContent=title;
   el("chartModal").classList.add("open");
-  el("modalControls").innerHTML=modalBaseControlsHtml()+(id==="concurrencyChart"?concurrencyModalControlsHtml():"");
+  const opsCharts=["opsDeviceChart","opsSessionChart","opsViewsChart","opsUniqueIpChart","opsIpUaChart"];
+  el("modalControls").innerHTML=modalBaseControlsHtml()+(id==="concurrencyChart"?concurrencyModalControlsHtml():(opsCharts.indexOf(id)>=0?manifestModalControlsHtml():""));
   syncModalFilterControls();
   if(id==="concurrencyChart"){rebuildConcurrencyStatusOptions();syncConcurrencyControls()}
+  if(opsCharts.indexOf(id)>=0){syncConcurrencyControls()}
   refreshModalChart();
 }
 function expandHtml(id,title){
@@ -1885,6 +2070,7 @@ function expandHtml(id,title){
 }
 function closeModal(){el("chartModal").classList.remove("open");modalSourceChartId="";modalSourceHtmlId="";el("modalControls").innerHTML="";el("modalHtml").innerHTML="";el("modalHtml").style.display="none";el("modalChartBox").style.display="block";if(modalChart){modalChart.destroy();modalChart=null}}
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal()});
+arrangePrioritySections();
 setupLazySections();
 setupFilters();
 </script>

@@ -1058,6 +1058,14 @@ def main() -> None:
         etl_root,
         str(Path("src") / "tools" / "build_fast_platform_channel_manifest.py"),
     )
+    manifest_minute_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_manifest_minute.py"),
+    )
+    identity_minute_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "build_identity_minute.py"),
+    )
     fast_platform_channel_bandwidth_script = _local_script(
         etl_root,
         str(Path("src") / "tools" / "build_fast_platform_channel_bandwidth.py"),
@@ -1627,6 +1635,112 @@ def main() -> None:
                 )
             else:
                 print(f"\n[skip] STREAM concurrency skipped because STREAM lake folder is missing: {stream_lake}")
+
+            manifest_minute_fast_cmd = [
+                python,
+                str(manifest_minute_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--source",
+                "fast",
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                manifest_minute_fast_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            run(
+                manifest_minute_fast_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="manifest_minute_fast",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
+            if stream_lake.exists():
+                manifest_minute_stream_cmd = [
+                    python,
+                    str(manifest_minute_script),
+                    "--lake",
+                    str(lake_root),
+                    "--out-dir",
+                    str(output_root / "watch_hours" / "concurrency"),
+                    "--source",
+                    "stream",
+                    "--threads",
+                    str(max(1, int(args.concurrency_threads))),
+                    "--memory-limit",
+                    args.concurrency_memory,
+                ]
+                if concurrency_start and concurrency_end:
+                    manifest_minute_stream_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+                run(
+                    manifest_minute_stream_cmd,
+                    cwd=etl_root,
+                    env=env,
+                    step_name="manifest_minute_stream",
+                    log_dir=log_dir,
+                    allow_failure=args.continue_on_error,
+                    retry_on_memory=True,
+                )
+
+            identity_minute_fast_cmd = [
+                python,
+                str(identity_minute_script),
+                "--lake",
+                str(lake_root),
+                "--out-dir",
+                str(output_root / "watch_hours" / "concurrency"),
+                "--source",
+                "fast",
+                "--threads",
+                str(max(1, int(args.concurrency_threads))),
+                "--memory-limit",
+                args.concurrency_memory,
+            ]
+            if concurrency_start and concurrency_end:
+                identity_minute_fast_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+            run(
+                identity_minute_fast_cmd,
+                cwd=etl_root,
+                env=env,
+                step_name="identity_minute_fast",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+                retry_on_memory=True,
+            )
+
+            if stream_lake.exists():
+                identity_minute_stream_cmd = [
+                    python,
+                    str(identity_minute_script),
+                    "--lake",
+                    str(lake_root),
+                    "--out-dir",
+                    str(output_root / "watch_hours" / "concurrency"),
+                    "--source",
+                    "stream",
+                    "--threads",
+                    str(max(1, int(args.concurrency_threads))),
+                    "--memory-limit",
+                    args.concurrency_memory,
+                ]
+                if concurrency_start and concurrency_end:
+                    identity_minute_stream_cmd.extend(["--start", concurrency_start, "--end", concurrency_end])
+                run(
+                    identity_minute_stream_cmd,
+                    cwd=etl_root,
+                    env=env,
+                    step_name="identity_minute_stream",
+                    log_dir=log_dir,
+                    allow_failure=args.continue_on_error,
+                    retry_on_memory=True,
+                )
 
             fast_identity_cmd = [
                 python,
