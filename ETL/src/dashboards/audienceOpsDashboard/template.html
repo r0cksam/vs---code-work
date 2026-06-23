@@ -17,7 +17,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ba
 .filters{border:1px solid var(--line);border-radius:8px;background:#fff;padding:11px;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:9px;align-items:end;box-shadow:var(--shadow)}
 .field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .field label{font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:850;color:var(--muted)}
-.field.date{grid-column:span 2}.field.source{grid-column:span 2}.field.platform{grid-column:span 2}.field.channel{grid-column:span 2}.field.actions{grid-column:span 2}
+.field.mode{grid-column:span 2}.field.date{grid-column:span 2}.field.source{grid-column:span 2}.field.platform{grid-column:span 2}.field.channel{grid-column:span 2}.field.actions{grid-column:span 2}
 input[type="date"],select{width:100%;background:#fff;border:1px solid #c8d4e3;color:var(--ink);border-radius:6px;padding:7px 8px;font:inherit;font-size:12px;font-weight:750;outline:none}
 input[type="date"]:focus,select:focus{border-color:var(--brand2);box-shadow:0 0 0 2px rgba(31,120,151,.14)}
 .preset-row,.action-row{display:flex;gap:6px;flex-wrap:wrap}
@@ -117,9 +117,9 @@ tr:hover td{background:#f8fafc}
 .modal-head b{font-size:14px}.modal-body{flex:1;min-height:0;padding:12px;display:flex;flex-direction:column}.modal-body .chart-box{flex:1;height:auto;min-height:0}.modal-controls:empty{display:none}.modal-controls .mini-controls{padding:0 0 10px}
 .footer{text-align:center;color:#7d8999;font-size:10px;padding:8px 0 0}
 @media(max-width:1500px){.stakeholder-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.viewership-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:1050px){.filters{grid-template-columns:repeat(6,minmax(0,1fr))}.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 3}.topbar .sub{text-align:left}.chart-box{height:320px}.grid-3{grid-template-columns:1fr}}
+@media(max-width:1050px){.filters{grid-template-columns:repeat(6,minmax(0,1fr))}.field.mode,.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 3}.topbar .sub{text-align:left}.chart-box{height:320px}.grid-3{grid-template-columns:1fr}}
 @media(max-width:1050px){.evidence-head{display:none}.evidence-row{grid-template-columns:30px 1fr}.evidence-value{text-align:left}.evidence-track,.evidence-kpis{grid-column:2}.evidence-kpis{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}}
-@media(max-width:680px){.wrap{padding:12px}.filters{grid-template-columns:1fr}.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 1}.preset-row .btn,.action-row .btn{flex:1 1 42%}.sticky{position:relative}.chart-box,.chart-box.tall{height:300px}.topbar{padding:14px 16px}.topbar h1{font-size:19px}.stakeholder-kpis,.viewership-kpis{grid-template-columns:1fr}}
+@media(max-width:680px){.wrap{padding:12px}.filters{grid-template-columns:1fr}.field.mode,.field.date,.field.source,.field.platform,.field.channel,.field.actions{grid-column:span 1}.preset-row .btn,.action-row .btn{flex:1 1 42%}.sticky{position:relative}.chart-box,.chart-box.tall{height:300px}.topbar{padding:14px 16px}.topbar h1{font-size:19px}.stakeholder-kpis,.viewership-kpis{grid-template-columns:1fr}}
 html,body{max-width:100%;overflow-x:hidden}
 .wrap,.topbar,.sticky,.filters,.field,.section,.panel,.chart-box,.table-wrap,.modal-panel,.modal-body{max-width:100%;min-width:0}
 .filters,.preset-row,.action-row{overflow-x:visible!important}
@@ -142,11 +142,18 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 <main class="wrap">
   <div class="sticky">
     <div class="filters">
-      <div class="field date">
-        <label>Date From</label>
-        <input id="startDate" type="date" onchange="setDateInputs()"/>
+      <div class="field mode">
+        <label>Date Mode</label>
+        <div class="preset-row">
+          <button class="btn" id="dateModeSingle" onclick="setDateMode('single')">Single Date</button>
+          <button class="btn" id="dateModeRange" onclick="setDateMode('range')">Date Range</button>
+        </div>
       </div>
       <div class="field date">
+        <label id="startDateLabel">Date From</label>
+        <input id="startDate" type="date" onchange="setDateInputs()"/>
+      </div>
+      <div class="field date" id="endDateField">
         <label>Date To</label>
         <input id="endDate" type="date" onchange="setDateInputs()"/>
       </div>
@@ -479,7 +486,7 @@ DATA.concurrency_status_minute=inflateRows(DATA.concurrency_status_minute||[],DA
   DATA[key]=inflateRows(DATA[key]||[],DATA[key+"_schema"]||[]);
 });
 const COLORS = ["#1f7897","#b88416","#12805c","#6057b1","#d65f18","#b42318","#0f6b4d","#2d5b9a","#9f5a00","#7c3aed","#0891b2","#dc2626"];
-const state = {start:D.meta.max_date,end:D.meta.max_date,source:"fast",platform:"all",channel:"all",preset:"yesterday",concurrencyInterval:5,concurrencyStatus:"all"};
+const state = {start:D.meta.max_date,end:D.meta.max_date,source:"fast",platform:"all",channel:"all",preset:"yesterday",dateMode:"single",concurrencyInterval:5,concurrencyStatus:"all"};
 const charts = {};
 const configs = {};
 const htmlViews = {};
@@ -641,8 +648,10 @@ function concurrencyModalControlsHtml(){
 }
 function modalBaseControlsHtml(){
   return "<div class='mini-controls'>"
-    +"<div class='mini-field date'><label>Date From</label><input id='modalStartDate' type='date' onchange='setModalDateInputs()'/></div>"
-    +"<div class='mini-field date'><label>Date To</label><input id='modalEndDate' type='date' onchange='setModalDateInputs()'/></div>"
+    +"<button class='btn' id='modalDateModeSingle' onclick=\"setDateMode('single')\">Single Date</button>"
+    +"<button class='btn' id='modalDateModeRange' onclick=\"setDateMode('range')\">Date Range</button>"
+    +"<div class='mini-field date'><label id='modalStartDateLabel'>Date From</label><input id='modalStartDate' type='date' onchange='setModalDateInputs()'/></div>"
+    +"<div class='mini-field date' id='modalEndDateField'><label>Date To</label><input id='modalEndDate' type='date' onchange='setModalDateInputs()'/></div>"
     +"<div class='mini-field'><label>Source</label><select id='modalSourceSelect' onchange='setSource(this.value)'></select></div>"
     +"<div class='mini-field wide'><label>Platform</label><select id='modalPlatformSelect' onchange='setPlatform(this.value)'></select></div>"
     +"<div class='mini-field wide'><label>Channel</label><select id='modalChannelSelect' onchange='setChannel(this.value)'></select></div>"
@@ -673,11 +682,15 @@ function syncConcurrencyControls(){
 }
 function applyPresetRange(p){
   const r=sourceRange();
+  state.dateMode=p==="yesterday"?"single":"range";
   if(p==="all"){state.start=r.min;state.end=r.max;return}
   if(p==="yesterday"){state.start=r.max;state.end=r.max;return}
   state.start=addIsoDays(r.max,-(Number(p)-1));
   if(state.start<r.min)state.start=r.min;
   state.end=r.max;
+}
+function enforceDateMode(){
+  if(state.dateMode==="single")state.end=state.start;
 }
 function syncDateBounds(){
   const r=sourceRange();
@@ -688,6 +701,7 @@ function clampDateRange(){
   if(state.start<r.min)state.start=r.min;
   if(state.end>r.max)state.end=r.max;
   if(state.start>state.end){state.start=r.max;state.end=r.max}
+  enforceDateMode();
 }
 function platformChannelRows(){
   return filterRows(DATA.concurrency_summary||[],{channel:true}).map(function(r){
@@ -1001,8 +1015,9 @@ function setupFilters(){
   setPreset("yesterday");
 }
 function setPreset(p){state.preset=p;applyPresetRange(p);syncFilters();renderAll();refreshModalChart()}
-function setDateInputs(){const r=sourceRange();state.start=el("startDate").value||r.min;state.end=el("endDate").value||r.max;if(state.start>state.end){const t=state.start;state.start=state.end;state.end=t}state.preset="custom";syncFilters();renderAll();refreshModalChart()}
-function setModalDateInputs(){const r=sourceRange();state.start=el("modalStartDate").value||r.min;state.end=el("modalEndDate").value||r.max;if(state.start>state.end){const t=state.start;state.start=state.end;state.end=t}state.preset="custom";syncFilters();renderAll();refreshModalChart()}
+function setDateMode(mode){state.dateMode=mode==="range"?"range":"single";if(state.dateMode==="single")state.end=state.start;state.preset="custom";syncFilters();renderAll();refreshModalChart()}
+function setDateInputs(){const r=sourceRange();state.start=el("startDate").value||r.min;state.end=state.dateMode==="single"?state.start:(el("endDate").value||r.max);if(state.start>state.end){const t=state.start;state.start=state.end;state.end=t}enforceDateMode();state.preset="custom";syncFilters();renderAll();refreshModalChart()}
+function setModalDateInputs(){const r=sourceRange();state.start=el("modalStartDate").value||r.min;state.end=state.dateMode==="single"?state.start:(el("modalEndDate").value||r.max);if(state.start>state.end){const t=state.start;state.start=state.end;state.end=t}enforceDateMode();state.preset="custom";syncFilters();renderAll();refreshModalChart()}
 function setSource(v){state.source=v;state.platform="all";state.channel="all";rebuildPlatformOptions();rebuildChannelOptions();if(state.preset==="custom"){clampDateRange()}else{applyPresetRange(state.preset)}syncFilters();renderAll();refreshModalChart()}
 function setPlatform(v){state.platform=v;rebuildChannelOptions();syncFilters();renderAll();refreshModalChart()}
 function setChannel(v){state.channel=v;syncFilters();renderAll();refreshModalChart()}
@@ -1035,6 +1050,10 @@ function syncFilters(){
   syncDateBounds();
   clampDateRange();
   el("startDate").value=state.start;el("endDate").value=state.end;el("sourceSelect").value=state.source;el("platformSelect").value=state.platform;el("channelSelect").value=state.channel;
+  el("startDateLabel").textContent=state.dateMode==="single"?"Date":"Date From";
+  el("endDateField").style.display=state.dateMode==="single"?"none":"";
+  el("dateModeSingle").classList.toggle("active",state.dateMode==="single");
+  el("dateModeRange").classList.toggle("active",state.dateMode==="range");
   ["presetYesterday","preset7","preset15","preset30","presetAll"].forEach(function(id){el(id).classList.remove("active")});
   if(state.preset==="yesterday")el("presetYesterday").classList.add("active");if(state.preset===7)el("preset7").classList.add("active");if(state.preset===15)el("preset15").classList.add("active");if(state.preset===30)el("preset30").classList.add("active");if(state.preset==="all")el("presetAll").classList.add("active");
   syncModalFilterControls();
@@ -1046,6 +1065,14 @@ function syncModalFilterControls(){
   const r=sourceRange();
   start.min=r.min;start.max=r.max;start.value=state.start;
   end.min=r.min;end.max=r.max;end.value=state.end;
+  const startLabel=el("modalStartDateLabel");
+  if(startLabel)startLabel.textContent=state.dateMode==="single"?"Date":"Date From";
+  const endField=el("modalEndDateField");
+  if(endField)endField.style.display=state.dateMode==="single"?"none":"";
+  const single=el("modalDateModeSingle");
+  const range=el("modalDateModeRange");
+  if(single)single.classList.toggle("active",state.dateMode==="single");
+  if(range)range.classList.toggle("active",state.dateMode==="range");
   const source=el("modalSourceSelect");
   const platform=el("modalPlatformSelect");
   const channel=el("modalChannelSelect");
@@ -1062,6 +1089,36 @@ function syncModalFilterControls(){
 
 function kpi(label,value,sub,cls){return "<div class='kpi "+(cls||"")+"'><b>"+esc(label)+"</b><span>"+value+"</span><small>"+esc(sub||"")+"</small></div>"}
 function stakeholderKpi(label,value,sub,cls){return "<div class='kpi "+(cls||"")+"'><b>"+esc(label)+"</b><span>"+value+"</span><small>"+esc(sub||"")+"</small></div>"}
+function appIdentityUnavailableNote(){
+  if(state.source==="fast"){
+    return "Data not present in FAST source: app device_id/session_id is not exposed in FAST CDN query string.";
+  }
+  if(state.source==="stream"){
+    return "Not available for this selection: no matching app identity rows in the processed identity mart. If expected, process the source/date/filter into the identity mart.";
+  }
+  return "Not available for this selection: app identity rows are not present in the processed mart.";
+}
+function sessionDurationUnavailableNote(ident){
+  if(ident&&ident.hasIdentity){
+    return "Needs processing from source: device/session identifiers exist, but true session start/end duration is not derived in current marts.";
+  }
+  return "Source data missing in current CDN marts: true app session start/end duration is not captured. Needs app telemetry or a session-duration source.";
+}
+function manifestUnavailableNote(){
+  return "Not available for this selection: no matching master manifest (.m3u8) rows in the processed marts.";
+}
+function uniqueIpUnavailableNote(){
+  return "Not available for this selection: unique IP denominator is not present in the processed mart for this filter.";
+}
+function ipUaUnavailableNote(){
+  if(state.source==="fast"&&(state.platform==="all"||state.channel==="all")){
+    return "Not available at this rollup: FAST cliIP+UA signatures are processed at platform+channel level. Select both Platform and Channel or build a wider identity mart.";
+  }
+  return "Not available for this selection: cliIP+UA signature rows are not present in the processed identity mart.";
+}
+function bandwidthUnavailableNote(){
+  return "Not available for this selection: bandwidth bytes are not present in the processed mart for this filter/source.";
+}
 function renderStakeholderKpis(){
   const rows=scopedWatchRows();
   const views=scopedManifestViews();
@@ -1073,12 +1130,10 @@ function renderStakeholderKpis(){
   const fastIpUa=fastIpUaMetricForScope();
   const cmcdMetric=cmcdPlaybackMetricForScope();
   const channelManifestNote=views==null
-    ?"Not available for this selection"
+    ?manifestUnavailableNote()
     :"Playback start requests";
   const notAvailable="Not Available";
-  const identityMissingNote="Not available for this selection";
-  const avgWatchNote=ipMetric.available?"Watch hours divided by users":"Not available for this selection";
-  const ipSessionNote=ipMetric.available?"Selected user and session summary":"Not available for this selection";
+  const identityMissingNote=appIdentityUnavailableNote();
   const sessionText=ident.hasIdentity?fmtInt(ident.sessions):notAvailable;
   const ipuaSessionText=ident.hasIdentity?fmtInt(ident.ipua):(fastIpUa?fmtInt(fastIpUa.value):notAvailable);
   const deviceText=ident.hasIdentity?fmtInt(ident.devices):notAvailable;
@@ -1090,13 +1145,14 @@ function renderStakeholderKpis(){
   const sessionCalc=ident.hasIdentity?"Sum of daily distinct session_id"+dayText:identityMissingNote;
   const newUserCalc=ident.hasIdentity?"Users whose first_seen date falls in the selected range":identityMissingNote;
   const returningUserCalc=ident.hasIdentity?"Device users seen before or returning inside the selected range":identityMissingNote;
-  const ipCalc=ipMetric.available?"Sum of daily distinct cliIP"+ipRangeText:identityMissingNote;
+  const uniqueIpMissingNote=uniqueIpUnavailableNote();
+  const ipCalc=ipMetric.available?"Sum of daily distinct cliIP"+ipRangeText:uniqueIpMissingNote;
   const ipuaCalc=ident.hasIdentity
     ?"Sum of daily distinct cliIP + user-agent signatures"+dayText
-    :(fastIpUa?"Sum of daily distinct cliIP + UA signatures"+ipRangeText:identityMissingNote);
-  const viewsCalc=views!=null?"Count of master manifest (.m3u8) request rows in selected filters":identityMissingNote;
-  const avgCalc=ipMetric.available?"Request watch minutes divided by Total Users based on Unique IP":identityMissingNote;
-  const ipSessionCalc=ipMetric.available?"Shows Unique IP total and best available session count for the same filters":identityMissingNote;
+    :(fastIpUa?"Sum of daily distinct cliIP + UA signatures"+ipRangeText:ipUaUnavailableNote());
+  const viewsCalc=views!=null?"Count of master manifest (.m3u8) request rows in selected filters":manifestUnavailableNote();
+  const avgCalc=ipMetric.available?"Request watch minutes divided by Total Users based on Unique IP":uniqueIpMissingNote;
+  const ipSessionCalc=ipMetric.available?"Shows Unique IP total and best available session count for the same filters":uniqueIpMissingNote;
   el("stakeholderKpis").innerHTML=[
     stakeholderKpi("Total Users (Based on Device ID - APP DATA)",deviceText,deviceCalc,ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Sessions (Based on Session ID in query String - APP DATA)",sessionText,sessionCalc,ident.hasIdentity?"gold":"wip-box"),
@@ -1105,7 +1161,7 @@ function renderStakeholderKpis(){
     stakeholderKpi("Total Returning Users (Based on Device ID - APP DATA)",ident.hasIdentity?fmtInt(ident.returningDevices):notAvailable,returningUserCalc,ident.hasIdentity?"gold":"wip-box"),
     stakeholderKpi("Total Sessions (Based on Uniq IP & UA)",ipuaSessionText,ipuaCalc,(ident.hasIdentity||fastIpUa)?"gold":"wip-box"),
     stakeholderKpi("Total Views (Total Master Manifest Requests)",views!=null?fmtInt(views):notAvailable,viewsCalc,views!=null?"gold":"wip-box"),
-    stakeholderKpi("Total Session Duration (Hours)",notAvailable,"Requires true app session start/end duration; not present in current CDN marts","wip-box"),
+    stakeholderKpi("Total Session Duration (Hours)",notAvailable,sessionDurationUnavailableNote(ident),"wip-box"),
     stakeholderKpi("Avg Watch Time per user (Based on Unique IP)",ipMetric.available&&ipHint?fmt(reqHours*60/ipHint,1)+" min":notAvailable,avgCalc,ipMetric.available?"gold":"wip-box"),
     stakeholderKpi("Total Unique IPs & Sessions (Distinct)",ipMetric.available?("IPs "+fmtInt(ipHint)+" / Sessions "+(ident.hasIdentity?fmtInt(ident.sessions):(fastIpUa?fmtInt(fastIpUa.value):"NA"))):notAvailable,ipSessionCalc,ipMetric.available?"gold":"wip-box")
   ].join("");
@@ -1118,10 +1174,10 @@ function renderViewershipTrend(){
   const ipHint=ipMetric.value;
   const bandwidth=scopedVideoBandwidthBytes();
   const cmcdMetric=cmcdPlaybackMetricForScope();
-  const bandwidthNote=bandwidth!=null?"Selected range video bandwidth":"Not available for this selection";
+  const bandwidthNote=bandwidth!=null?"Selected range video bandwidth":bandwidthUnavailableNote();
   const cards=[
     kpi("Total Viewership (Hours)",fmt(hours,1)+" h","Selected range watch hours",""),
-    kpi("Avg Watch Time/User",ipMetric.available&&ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipMetric.available?"Watch hours divided by users":"Not available for this selection",ipMetric.available?"gold":"wip-box"),
+    kpi("Avg Watch Time/User",ipMetric.available&&ipHint?fmt(hours*60/ipHint,1)+" min":"Not Available",ipMetric.available?"Watch hours divided by users":uniqueIpUnavailableNote(),ipMetric.available?"gold":"wip-box"),
     kpi("Total Segments Played",fmtInt(segments),"Video segment plays","green"),
     kpi("Total Bandwidth (Video)",bandwidth!=null?fmtBytes(bandwidth):"Not Available",bandwidthNote,bandwidth!=null?"gold":"wip-box")
   ];
@@ -1129,7 +1185,7 @@ function renderViewershipTrend(){
     cards.push(kpi(
       "CMCD Playback Sessions",
       cmcdMetric&&cmcdMetric.available?fmtInt(cmcdMetric.sessions):"Not Available",
-      cmcdMetric?"Playback sessions reported by supported devices":"Not available for selected filters",
+      cmcdMetric?"Playback sessions reported by supported devices":"Not available for this selection: CMCD session identifiers are not present in processed FAST rows for this filter.",
       cmcdMetric&&cmcdMetric.available?"gold":"wip-box"
     ));
   }
@@ -1445,7 +1501,8 @@ function renderPieWithTable(chartId,tableId,rows,labelFn,metric,valueLabel,decim
   const total=sum(all,metric);
   let ranked=all.slice(0,10);
   if(all.length>10){
-    ranked=ranked.concat([{key:"Others",sample:{},[metric]:sum(all.slice(10),metric)}]);
+    // Keep the chart-created rollup distinct from a real data category named "Others".
+    ranked=ranked.concat([{key:"Remaining Categories",sample:{},[metric]:sum(all.slice(10),metric)}]);
   }
   const labels=ranked.map(function(r){return r.key});
   const values=ranked.map(function(r){return n(r[metric])});

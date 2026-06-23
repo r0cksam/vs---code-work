@@ -194,10 +194,16 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
           <button class="btn" id="allBtn" onclick="setPreset('all')">All</button>
         </div>
         <span class="filter-sep"></span>
+        <span class="filter-title">Date Mode</span>
+        <div class="segmented" id="dateModeButtons" role="group" aria-label="Date mode">
+          <button class="seg-btn" id="dateModeSingle" onclick="setDateMode('single')">Single Date</button>
+          <button class="seg-btn" id="dateModeRange" onclick="setDateMode('range')">Date Range</button>
+        </div>
+        <span class="filter-sep"></span>
         <div class="date-inputs">
           <input type="date" id="dateStart" onchange="setDateRange()"/>
-          <span style="font-size:12px;color:var(--soft);font-weight:750">to</span>
-          <input type="date" id="dateEnd" onchange="setDateRange()"/>
+          <span id="dateEndWrap"><span style="font-size:12px;color:var(--soft);font-weight:750">to</span>
+          <input type="date" id="dateEnd" onchange="setDateRange()"/></span>
         </div>
         <span class="filter-sep"></span>
         <span class="filter-title">Platform</span>
@@ -410,6 +416,7 @@ const PLATFORM_CHANNEL_SCALES={
 };
 let startDate='';
 let endDate='';
+let dateMode='single';
 let platform='all';
 let channel='all';
 let identity='cliip';
@@ -705,6 +712,13 @@ function syncControls(){
     const el=document.getElementById(id);
     el.min=first;el.max=last;el.value=id==='dateStart'?startDate:endDate;
   });
+  if(dateMode==='single'){
+    endDate=startDate;
+    document.getElementById('dateEnd').value=startDate;
+  }
+  document.getElementById('dateModeSingle').classList.toggle('active',dateMode==='single');
+  document.getElementById('dateModeRange').classList.toggle('active',dateMode==='range');
+  document.getElementById('dateEndWrap').style.display=dateMode==='single'?'none':'inline-flex';
   const lastSeven=days.slice(-7);
   const lastThirty=days.slice(-30);
   document.getElementById('allBtn').classList.toggle('active',startDate===first&&endDate===last);
@@ -736,8 +750,9 @@ function syncControls(){
   document.getElementById('selectionText').textContent=(startDate&&endDate?formatDateRange(startDate,endDate):'No dates')+' | '+platformText+' | '+channelText+' | '+intervalLabel()+' interval | '+fmt(selectedRows.length)+' minute rows';
   updateHeaderMeta(selectedRows);
 }
-function setDateRange(){startDate=document.getElementById('dateStart').value||startDate;endDate=document.getElementById('dateEnd').value||endDate;if(startDate>endDate){const t=startDate;startDate=endDate;endDate=t;}render();}
-function setPreset(mode){const days=selectedDates();if(!days.length)return;if(mode==='latest'){startDate=days[days.length-1];endDate=days[days.length-1];}else if(mode==='all'){startDate=days[0];endDate=days[days.length-1];}else{const selected=days.slice(-Number(mode));startDate=selected[0]||days[0];endDate=selected[selected.length-1]||days[days.length-1];}render();}
+function setDateMode(mode){dateMode=mode==='range'?'range':'single';if(dateMode==='single')endDate=startDate;render();}
+function setDateRange(){startDate=document.getElementById('dateStart').value||startDate;endDate=dateMode==='single'?startDate:(document.getElementById('dateEnd').value||endDate);if(startDate>endDate){const t=startDate;startDate=endDate;endDate=t;}if(dateMode==='single')endDate=startDate;render();}
+function setPreset(mode){const days=selectedDates();if(!days.length)return;if(mode==='latest'){dateMode='single';startDate=days[days.length-1];endDate=days[days.length-1];}else if(mode==='all'){dateMode='range';startDate=days[0];endDate=days[days.length-1];}else{dateMode='range';const selected=days.slice(-Number(mode));startDate=selected[0]||days[0];endDate=selected[selected.length-1]||days[days.length-1];}render();}
 function setPlatform(v){platform=v||'all';render();}
 function setChannel(v){channel=v||'all';render();}
 function setIdentity(v){identity=v||'cliip';render();}
@@ -749,6 +764,7 @@ function setPlatformChannelScale(v){platformChannelScale=v||'indexed';render();}
 function resetFilters(){
   const days=selectedDates();
   if(days.length){
+    dateMode='single';
     startDate=days[days.length-1];
     endDate=days[days.length-1];
   }

@@ -365,6 +365,9 @@ def main() -> None:
         f"Daily parts done. processed={processed}, skipped={skipped}, failed={failed}, "
         f"elapsed={time.time() - started:.1f}s"
     )
+    if args.dry_run:
+        log("Dry-run mode: merge skipped because daily part parquet files were not written.")
+        return
     if args.skip_merge:
         return
     merged, out_path = merge_parts(args, jobs)

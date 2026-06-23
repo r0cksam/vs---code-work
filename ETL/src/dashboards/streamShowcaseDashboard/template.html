@@ -63,6 +63,8 @@
     }
     button:hover, .download:hover { border-color: var(--blue); color: var(--blue); }
     button.primary, .download.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .button-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .button-row button { flex: 1 1 110px; padding: 8px 10px; }
     main {
       width: min(1440px, 100%);
       margin: 0 auto;
@@ -289,10 +291,16 @@
   <main>
     <section class="panel">
       <div class="filters">
+        <label>Date Mode
+          <span class="button-row">
+            <button type="button" id="singleDateBtn">Single Date</button>
+            <button type="button" id="rangeDateBtn">Date Range</button>
+          </span>
+        </label>
         <label>Date From
           <input type="date" id="startDate">
         </label>
-        <label>Date To
+        <label id="endDateLabel">Date To
           <input type="date" id="endDate">
         </label>
         <label>Best Range Hint
@@ -325,6 +333,7 @@
     const DATA = __DATA_BLOB__;
     const INR = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 });
     const INT = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+    let dateMode = DATA.defaultRange.start === DATA.defaultRange.end ? 'single' : 'range';
 
     function parseDate(value) {
       return new Date(value + 'T00:00:00');
@@ -360,7 +369,7 @@
 
     function inRange(row) {
       const start = document.getElementById('startDate').value;
-      const end = document.getElementById('endDate').value;
+      const end = dateMode === 'single' ? start : document.getElementById('endDate').value;
       return row.date >= start && row.date <= end;
     }
 
@@ -388,9 +397,25 @@
       return Array.from(map.values()).sort((a, b) => (b.rawHours || 0) - (a.rawHours || 0));
     }
 
+    function syncDateMode() {
+      const single = dateMode === 'single';
+      document.getElementById('singleDateBtn').classList.toggle('primary', single);
+      document.getElementById('rangeDateBtn').classList.toggle('primary', !single);
+      document.getElementById('endDateLabel').style.display = single ? 'none' : '';
+      if (single) document.getElementById('endDate').value = document.getElementById('startDate').value;
+    }
+
+    function setDateMode(mode) {
+      dateMode = mode === 'range' ? 'range' : 'single';
+      syncDateMode();
+      render();
+    }
+
     function setRange(start, end) {
+      dateMode = start === end ? 'single' : 'range';
       document.getElementById('startDate').value = start;
       document.getElementById('endDate').value = end;
+      syncDateMode();
       render();
     }
 
@@ -470,7 +495,8 @@
 
     function render() {
       const start = document.getElementById('startDate').value;
-      const end = document.getElementById('endDate').value;
+      const end = dateMode === 'single' ? start : document.getElementById('endDate').value;
+      if (dateMode === 'single') document.getElementById('endDate').value = start;
       if (!start || !end || start > end) {
         document.getElementById('selectionStatus').textContent = 'Invalid range';
         return;
@@ -493,9 +519,12 @@
       document.getElementById('endDate').max = DATA.range.end;
       document.getElementById('startDate').value = DATA.defaultRange.start;
       document.getElementById('endDate').value = DATA.defaultRange.end;
+      syncDateMode();
       renderHints();
       document.getElementById('resetBtn').addEventListener('click', () => setRange(DATA.range.start, DATA.range.end));
       document.getElementById('bestMaxBtn').addEventListener('click', () => setRange(DATA.range.start, DATA.range.end));
+      document.getElementById('singleDateBtn').addEventListener('click', () => setDateMode('single'));
+      document.getElementById('rangeDateBtn').addEventListener('click', () => setDateMode('range'));
       document.getElementById('startDate').addEventListener('change', render);
       document.getElementById('endDate').addEventListener('change', render);
       render();

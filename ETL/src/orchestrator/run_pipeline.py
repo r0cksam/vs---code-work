@@ -464,6 +464,19 @@ def _build_profile_range(lake_root: Path, lookback_days: Optional[int]) -> tuple
     return start.isoformat(), latest.isoformat()
 
 
+def _latest_matching(root: Path, pattern: str) -> Optional[Path]:
+    matches = [path for path in root.glob(pattern) if path.is_file() and path.stat().st_size > 0]
+    return max(matches, key=lambda path: path.stat().st_mtime_ns) if matches else None
+
+
+def _ua_distinct_profile_path(output_root: Path, source: str, start: Optional[str], end: Optional[str]) -> Optional[Path]:
+    suffix = f"{source}_sources" if source != "both" else "all_sources"
+    out_dir = output_root / "device_decode"
+    if start and end:
+        return out_dir / f"ua_distinct_profile_{suffix}_{start}_to_{end}.parquet"
+    return _latest_matching(out_dir, f"ua_distinct_profile_{suffix}_*_to_*.parquet")
+
+
 def _lake_day_exists(lake_root: Path, day_value: date) -> bool:
     year = day_value.strftime("%Y")
     month = day_value.strftime("%m")
@@ -736,7 +749,7 @@ def main() -> None:
     parser.add_argument(
         "--run-ua-profile",
         action="store_true",
-        help="Build distinct User-Agent profile and local decode cache before dashboards.",
+        help="Build incremental distinct User-Agent profile, API-fill new UAs, and rebuild the production lookup before dashboards.",
     )
     parser.add_argument(
         "--ua-profile-window-days",
@@ -746,8 +759,13 @@ def main() -> None:
     )
     parser.add_argument("--ua-profile-start", default=None, help="UA profile IST start date YYYY-MM-DD.")
     parser.add_argument("--ua-profile-end", default=None, help="UA profile IST end date YYYY-MM-DD.")
-    parser.add_argument("--ua-profile-source", choices=["stream", "fast"], default=None)
+    parser.add_argument("--ua-profile-source", choices=["both", "stream", "fast"], default="both")
     parser.add_argument("--ua-api-limit", type=int, default=0, help="Optional whatmyuseragent.com API decode count. Use -1 for all candidates.")
+    parser.add_argument(
+        "--ua-api-include-malformed",
+        action="store_true",
+        help="Also send locally suspicious/malformed UA strings to the API when filling the cache.",
+    )
     parser.add_argument("--ua-min-rows-for-api", type=int, default=1)
 
     # UA model-code device decode controls
@@ -1002,7 +1020,19 @@ def main() -> None:
     )
     ua_profile_script = _local_script(
         etl_root,
-        str(Path("src") / "tools" / "profile_user_agents.py"),
+        str(Path("src") / "tools" / "build_ua_profile_incremental.py"),
+    )
+    ua_reference_sync_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "sync_distinct_ua_reference.py"),
+    )
+    ua_api_fill_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "decode_all_distinct_ua_api.py"),
+    )
+    ua_lookup_script = _local_script(
+        etl_root,
+        str(Path("src") / "tools" / "decode_distinct_ua_lookup.py"),
     )
     device_decode_profile_script = _local_script(
         etl_root,
@@ -1279,6 +1309,7 @@ def main() -> None:
     if args.run_ua_profile:
         ua_start = args.ua_profile_start
         ua_end = args.ua_profile_end
+        ua_source = args.ua_profile_source or "both"
         if not (ua_start and ua_end):
             if args.etl1_daily_date:
                 daily_dates = _daily_profile_dates(lake_root, date.fromisoformat(args.etl1_daily_date))
@@ -1298,32 +1329,126 @@ def main() -> None:
             str(lake_root),
             "--out-dir",
             str(output_root / "device_decode"),
-            "--cache",
-            str(base_root / "cache" / "device_decode" / "ua_decode_cache.parquet"),
+            "--parts-dir",
+            str(output_root / "device_decode" / "ua_profile_parts"),
+            "--source",
+            ua_source,
             "--threads",
             str(max(1, min(args.deep_profile_threads, 4))),
             "--memory-limit",
             "12GB",
-            "--api-limit",
-            str(args.ua_api_limit),
-            "--min-rows-for-api",
-            str(args.ua_min_rows_for_api),
+            "--temp-dir",
+            str(output_root / "cache" / "duckdb_temp"),
         ]
         if ua_start and ua_end:
             ua_cmd.extend(["--start", ua_start, "--end", ua_end])
-        if args.ua_profile_source:
-            ua_cmd.extend(["--source", args.ua_profile_source])
         if args.dry_run:
             ua_cmd.append("--dry-run")
-        run(
+        ua_profile_ok = run(
             ua_cmd,
             cwd=etl_root,
             env=env,
-            step_name="ua_distinct_profile_decode_cache",
+            step_name="ua_distinct_profile_incremental",
             log_dir=log_dir,
             allow_failure=args.continue_on_error,
             retry_on_memory=True,
         )
+
+        ua_profile_input = _ua_distinct_profile_path(output_root, ua_source, ua_start, ua_end)
+        if args.dry_run:
+            record_skip("ua_distinct_reference_sync", "dry-run mode; incremental UA profile was not written")
+            record_skip("ua_api_cache_fill", "dry-run mode; external API cache was not changed")
+            record_skip("ua_decode_lookup_rebuild", "dry-run mode; production lookup was not rebuilt")
+        elif not ua_profile_ok:
+            reason = "incremental UA profile failed; skipped reference/API/lookup refresh to avoid using stale input"
+            print(f"\n[skip] ua_distinct_reference_sync: {reason}")
+            record_skip("ua_distinct_reference_sync", reason)
+            record_skip("ua_api_cache_fill", reason)
+            record_skip("ua_decode_lookup_rebuild", reason)
+        elif ua_profile_input is None or not ua_profile_input.exists():
+            reason = "incremental UA profile output was not found after build"
+            print(f"\n[skip] ua_distinct_reference_sync: {reason}")
+            record_skip("ua_distinct_reference_sync", reason)
+            record_skip("ua_api_cache_fill", reason)
+            record_skip("ua_decode_lookup_rebuild", reason)
+            if not args.continue_on_error:
+                raise SystemExit(reason)
+        else:
+            distinct_reference = etl_root / "distinct_UA_Both_All.csv"
+            api_cache = base_root / "cache" / "device_decode" / "whatmyuseragent_all_distinct_ua_cache.parquet"
+            sync_ok = run(
+                [
+                    python,
+                    str(ua_reference_sync_script),
+                    "--reference",
+                    str(distinct_reference),
+                    "--profile",
+                    str(ua_profile_input),
+                    "--out-parquet",
+                    str(output_root / "device_decode" / "distinct_UA_Both_All.parquet"),
+                    "--manifest",
+                    str(output_root / "device_decode" / "distinct_UA_Both_All_manifest.json"),
+                ],
+                cwd=etl_root,
+                env=env,
+                step_name="ua_distinct_reference_sync",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+            )
+
+            api_ok = True
+            if args.ua_api_limit != 0 and sync_ok:
+                api_fill_cmd = [
+                    python,
+                    str(ua_api_fill_script),
+                    "--input",
+                    str(distinct_reference),
+                    "--api-cache",
+                    str(api_cache),
+                    "--out-dir",
+                    str(output_root / "device_decode"),
+                    "--api-limit",
+                    str(args.ua_api_limit),
+                ]
+                if args.ua_api_include_malformed:
+                    api_fill_cmd.append("--include-malformed")
+                api_ok = run(
+                    api_fill_cmd,
+                    cwd=etl_root,
+                    env=env,
+                    step_name="ua_api_cache_fill",
+                    log_dir=log_dir,
+                    allow_failure=args.continue_on_error,
+                )
+            elif sync_ok:
+                record_skip("ua_api_cache_fill", "--ua-api-limit is 0; production lookup will use existing API cache")
+
+            if sync_ok and (api_ok or args.continue_on_error):
+                run(
+                    [
+                        python,
+                        str(ua_lookup_script),
+                        "--input",
+                        str(distinct_reference),
+                        "--api-cache",
+                        str(api_cache),
+                        "--out-dir",
+                        str(output_root / "device_decode"),
+                        "--output-prefix",
+                        "ua_decode_lookup_both_all",
+                        "--api-limit",
+                        "0",
+                    ],
+                    cwd=etl_root,
+                    env=env,
+                    step_name="ua_decode_lookup_rebuild",
+                    log_dir=log_dir,
+                    allow_failure=args.continue_on_error,
+                )
+            else:
+                reason = "UA reference sync or API fill failed; skipped production lookup rebuild"
+                print(f"\n[skip] ua_decode_lookup_rebuild: {reason}")
+                record_skip("ua_decode_lookup_rebuild", reason)
     else:
         print("\n[skip] UA profile/cache step skipped.")
 

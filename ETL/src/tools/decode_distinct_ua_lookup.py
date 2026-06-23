@@ -158,11 +158,20 @@ def write_csv(frame: pd.DataFrame, path: Path) -> None:
 
 def read_distinct_ua_csv(path: Path, column: str | None) -> pd.DataFrame:
     if not path.exists():
-        raise SystemExit(f"Input CSV not found: {path}")
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        raise SystemExit(f"Input distinct UA file not found: {path}")
+    if path.suffix.lower() in {".parquet", ".pq"}:
+        df = pd.read_parquet(path).fillna("")
+    else:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
     if df.empty:
         raise SystemExit(f"Input CSV is empty: {path}")
-    selected = column or ("UA" if "UA" in df.columns else df.columns[0])
+    selected = column
+    if not selected:
+        for candidate in ["UA", "ua_sample", "ua_norm_key", "ua_norm", "userAgent"]:
+            if candidate in df.columns:
+                selected = candidate
+                break
+    selected = selected or df.columns[0]
     if selected not in df.columns:
         raise SystemExit(f"Column {selected!r} not found. Available columns: {', '.join(df.columns)}")
     out = pd.DataFrame({"UA": df[selected].map(safe_text)})

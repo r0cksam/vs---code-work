@@ -21,6 +21,9 @@ param(
     [switch]$SkipPostVerifyDelay,
     [switch]$SkipWatch,
     [switch]$SkipOverview,
+    [switch]$SkipUaProfile,
+    [int]$UaApiLimit = -1,
+    [switch]$SkipUaMalformedApi,
     [switch]$RunDeviceDecode,
     [switch]$StrictPipeline,
     [switch]$SingleSourceMode,
@@ -348,6 +351,15 @@ try {
         "--deep-profile-temp-dir", $DefaultDeepProfileTempDir,
         "--deep-profile-max-temp-size", $DeepProfileMaxTempSize
     )
+    if (-not $SkipUaProfile) {
+        $pipelineArgs += @(
+            "--run-ua-profile",
+            "--ua-api-limit", $UaApiLimit.ToString()
+        )
+        if (-not $SkipUaMalformedApi) {
+            $pipelineArgs += "--ua-api-include-malformed"
+        }
+    }
     $pipelineArgs += $watchArgs
 
     $cmd = @($DefaultVenvPython, $pipeline) + $pipelineArgs

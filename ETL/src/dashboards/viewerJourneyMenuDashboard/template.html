@@ -87,9 +87,11 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
   <div class="sticky-controls">
     <div class="filter-bar">
       <span class="filter-title">Date</span>
+      <button class="preset-btn" id="dateModeSingle" onclick="setDateMode('single')">Single Date</button>
+      <button class="preset-btn" id="dateModeRange" onclick="setDateMode('range')">Date Range</button>
       <input type="date" id="dateStart"/>
-      <span style="font-size:12px;color:#64748b;font-weight:750">to</span>
-      <input type="date" id="dateEnd"/>
+      <span id="dateEndWrap"><span style="font-size:12px;color:#64748b;font-weight:750">to</span>
+      <input type="date" id="dateEnd"/></span>
       <button class="preset-btn" data-preset="yesterday">Yesterday</button>
       <button class="preset-btn" data-preset="7d">7D</button>
       <button class="preset-btn" data-preset="15d">15D</button>
@@ -239,6 +241,7 @@ const state = {
   start: D.stats?.min_date || "",
   end: D.stats?.max_date || "",
   preset: "yesterday",
+  dateMode: "single",
   source: "all",
   country: "all",
   region: "all",
@@ -343,8 +346,22 @@ function updatePresetButtons(){
     btn.classList.toggle("active",btn.dataset.preset===state.preset);
   });
 }
+function syncDateModeControls(){
+  const single=state.dateMode==="single";
+  el("dateModeSingle").classList.toggle("active",single);
+  el("dateModeRange").classList.toggle("active",!single);
+  el("dateEndWrap").style.display=single?"none":"inline-flex";
+  if(single){state.end=state.start;if(el("dateEnd"))el("dateEnd").value=state.start;}
+}
+function setDateMode(mode){
+  state.dateMode=mode==="range"?"range":"single";
+  state.preset="custom";
+  syncDateModeControls();
+  render();
+}
 function applyDatePreset(preset,shouldRender){
   state.preset=preset||"yesterday";
+  state.dateMode=state.preset==="yesterday"?"single":"range";
   const stats=currentScopeStats();
   const minDate=String(stats.min_date||D.stats?.min_date||"");
   const maxDate=String(stats.max_date||D.stats?.max_date||"");
@@ -361,6 +378,7 @@ function applyDatePreset(preset,shouldRender){
   }
   if(el("dateStart"))el("dateStart").value=state.start;
   if(el("dateEnd"))el("dateEnd").value=state.end;
+  syncDateModeControls();
   updatePresetButtons();
   if(shouldRender)render();
 }
@@ -378,9 +396,11 @@ function setDateBoundsForSource(clamp){
     if(!state.start || state.start<minDate)state.start=minDate;
     if(!state.end || state.end>maxDate)state.end=maxDate;
     if(state.start>state.end){state.start=minDate;state.end=maxDate;}
+    if(state.dateMode==="single")state.end=state.start;
     if(startEl)startEl.value=state.start;
     if(endEl)endEl.value=state.end;
   }
+  syncDateModeControls();
   updatePresetButtons();
 }
 function renderScopeMeta(filtered){
@@ -876,11 +896,11 @@ function render(){
 function bind(){
   el("reportTitle").textContent=D.meta.title||"Viewer Journey Menu";
   el("genText").textContent="Last updated "+fmtDateTime12(D.meta.generated);
-  el("dateStart").value=state.start;el("dateEnd").value=state.end;
+  el("dateStart").value=state.start;el("dateEnd").value=state.end;syncDateModeControls();
   document.querySelectorAll("[data-preset]").forEach(function(btn){
     btn.addEventListener("click",function(){applyDatePreset(this.dataset.preset,true);});
   });
-  ["dateStart","dateEnd"].forEach(function(id){el(id).addEventListener("change",function(){state.preset="custom";state[id==="dateStart"?"start":"end"]=this.value;updatePresetButtons();render();});});
+  ["dateStart","dateEnd"].forEach(function(id){el(id).addEventListener("change",function(){state.preset="custom";state[id==="dateStart"?"start":"end"]=this.value;if(state.dateMode==="single")state.end=state.start;updatePresetButtons();syncDateModeControls();render();});});
   [["sourceSelect","source"],["countrySelect","country"],["stateSelect","region"],["citySelect","city"],["channelSelect","channel"],["sortSelect","sort"],["limitSelect","limit"]].forEach(function(pair){el(pair[0]).addEventListener("change",function(){state[pair[1]]=pair[1]==="limit"?Number(this.value):this.value;render();});});
   [["rankDimensionSelect","rankDimension"],["rankMetricSelect","rankMetric"],["rankLimitSelect","rankLimit"],["pivotPrimarySelect","pivotPrimary"],["pivotSecondarySelect","pivotSecondary"],["pivotMetricSelect","pivotMetric"],["pivotLimitSelect","pivotLimit"]].forEach(function(pair){el(pair[0]).addEventListener("change",function(){state[pair[1]]=pair[1].includes("Limit")?Number(this.value):this.value;render();});});
   el("searchInput").addEventListener("input",function(){state.search=this.value;render();});

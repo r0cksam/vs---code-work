@@ -111,8 +111,12 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <button class="filter-btn" id="range15" onclick="setQuickRange('15d')">15D</button>
     <button class="filter-btn" id="range30" onclick="setQuickRange('30d')">Month</button>
     <button class="filter-btn" id="rangeAll" onclick="setQuickRange('all')">All</button>
+    <span class="filter-sep"></span>
+    <span class="filter-title">Date Mode</span>
+    <button class="filter-btn active" id="dateModeSingle" onclick="setDateMode('single')">Single Date</button>
+    <button class="filter-btn" id="dateModeRange" onclick="setDateMode('range')">Date Range</button>
     <input type="date" id="startDate" onchange="manualDateChanged()"/>
-    <input type="date" id="endDate" onchange="manualDateChanged()"/>
+    <span id="endDateWrap"><span style="font-size:12px;color:#64748b;font-weight:700">to</span><input type="date" id="endDate" onchange="manualDateChanged()"/></span>
     <span class="date-hint" id="dateAvailability"></span>
     <span class="date-error" id="dateError"></span>
     <span class="filter-sep"></span>
@@ -228,6 +232,7 @@ const chartConfigs = {};
 let modalChart = null;
 let sourceFilter = 'fast';
 let activeQuickRange = 'yesterday';
+let dateMode = 'single';
 
 function n(v){const x=Number(v);return Number.isFinite(x)?x:0}
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
@@ -290,7 +295,13 @@ function sourceBounds(){
 function rangeDays(key){return ({yesterday:1,'7d':7,'15d':15,'30d':30}[key]||1)}
 function quickButtonId(key){return ({yesterday:'rangeYesterday','7d':'range7','15d':'range15','30d':'range30',all:'rangeAll'}[key]||'')}
 function updateQuickButtons(){['yesterday','7d','15d','30d','all'].forEach(k=>{const id=quickButtonId(k); if(id)document.getElementById(id).classList.toggle('active',activeQuickRange===k);});}
-function setDateInputs(start,end){document.getElementById('startDate').value=start||''; document.getElementById('endDate').value=end||'';}
+function syncDateModeControls(){
+  document.getElementById('dateModeSingle').classList.toggle('active',dateMode==='single');
+  document.getElementById('dateModeRange').classList.toggle('active',dateMode==='range');
+  document.getElementById('endDateWrap').style.display=dateMode==='single'?'none':'inline-flex';
+}
+function setDateInputs(start,end){document.getElementById('startDate').value=start||''; document.getElementById('endDate').value=(dateMode==='single'?(start||''):(end||''));syncDateModeControls();}
+function setDateMode(mode){dateMode=mode==='range'?'range':'single';if(dateMode==='single')document.getElementById('endDate').value=document.getElementById('startDate').value||'';activeQuickRange='custom';updateQuickButtons();syncDateModeControls();applyFilters();}
 function updateDateBounds(){
   const b=sourceBounds();
   const start=document.getElementById('startDate');
@@ -315,19 +326,21 @@ function validateDateSelection(){
   const start=document.getElementById('startDate');
   const end=document.getElementById('endDate');
   let s=start.value||b.defaultEnd;
-  let e=end.value||b.defaultEnd;
+  let e=dateMode==='single'?s:(end.value||b.defaultEnd);
   let adjusted=false;
   if(s<b.first){s=b.first; adjusted=true;}
   if(s>b.last){s=b.last; adjusted=true;}
   if(e<b.first){e=b.first; adjusted=true;}
   if(e>b.last){e=b.last; adjusted=true;}
   if(s>e){s=e; adjusted=true;}
+  if(dateMode==='single')e=s;
   setDateInputs(s,e);
   showDateError(adjusted?'Selected date adjusted to available '+sourceLabel(sourceFilter)+' filter range '+fmtDate(b.first)+' to '+fmtDate(b.last)+'.':'');
   return true;
 }
 function setQuickRange(key){
   activeQuickRange=key;
+  dateMode=key==='yesterday'?'single':'range';
   updateQuickButtons();
   const b=updateDateBounds();
   if(!b){setDateInputs('',''); applyFilters(); return;}
@@ -340,7 +353,9 @@ function setQuickRange(key){
 }
 function manualDateChanged(){
   activeQuickRange='custom';
+  if(dateMode==='single')document.getElementById('endDate').value=document.getElementById('startDate').value||'';
   updateQuickButtons();
+  syncDateModeControls();
   applyFilters();
 }
 function inRange(r){const s=document.getElementById('startDate').value; const e=document.getElementById('endDate').value; const d=String(r.log_date||''); return (!s||d>=s)&&(!e||d<=e)}

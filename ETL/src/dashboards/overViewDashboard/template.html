@@ -135,9 +135,13 @@ td:first-child{position:static}
        <button class="btn-preset" id="btn30" onclick="setPreset(30)">30D</button>
        <button class="btn-preset active" id="btn7" onclick="setPreset(7)">7D</button>
        <span class="filter-sep"></span>
+       <span>Date Mode</span>
+       <button class="btn-preset" id="dateModeSingle" onclick="setDateMode('single')">Single Date</button>
+       <button class="btn-preset active" id="dateModeRange" onclick="setDateMode('range')">Date Range</button>
+       <span class="filter-sep"></span>
        <input type="date" id="dateStart" onchange="handleCustomDate()" />
-       <span>to</span>
-       <input type="date" id="dateEnd" onchange="handleCustomDate()" />
+       <span id="dateEndWrap"><span>to</span>
+       <input type="date" id="dateEnd" onchange="handleCustomDate()" /></span>
        <span class="filter-sep"></span>
        <span>DAU/WAU/MAU End</span>
        <input type="date" id="activeEndDate" onchange="setActiveEndDate(this.value)" />
@@ -239,6 +243,7 @@ const sourceRowsAll = (source_rows || []).map(r => {
   return {...r, source: sourceOf(r), ts: new Date(y, m - 1, d).getTime()};
 }).filter(r => r.date !== report_date).sort((a,b) => a.ts - b.ts || sourceOf(a).localeCompare(sourceOf(b)));
 let sourceFilter = 'stream';
+let dateMode = 'range';
 let completeRows = completeRowsForSource(sourceFilter);
 
 function completeRowsForSource(src) {
@@ -814,6 +819,25 @@ function syncDateInputBounds() {
   if (endEl) { endEl.min = first; endEl.max = last; }
 }
 
+function syncDateModeControls() {
+  const single = dateMode === 'single';
+  document.getElementById('dateModeSingle')?.classList.toggle('active', single);
+  document.getElementById('dateModeRange')?.classList.toggle('active', !single);
+  const wrap = document.getElementById('dateEndWrap');
+  if (wrap) wrap.style.display = single ? 'none' : 'inline-flex';
+  if (single) {
+    const start = document.getElementById('dateStart')?.value || '';
+    const end = document.getElementById('dateEnd');
+    if (end) end.value = start;
+  }
+}
+
+function setDateMode(mode) {
+  dateMode = mode === 'range' ? 'range' : 'single';
+  syncDateModeControls();
+  handleCustomDate();
+}
+
 function clampDateValue(value, first, last) {
   if (!value || !first || !last) return value || '';
   if (value < first) return first;
@@ -839,6 +863,7 @@ function setSourceFilter(value) {
       if (previousStart > last) nextEnd = nextStart;
       else nextStart = nextEnd;
     }
+    if (dateMode === 'single') nextEnd = nextStart;
     if (startEl) startEl.value = nextStart;
     if (endEl) endEl.value = nextEnd;
     _applyCustomDate();
@@ -863,6 +888,7 @@ function applyViewRows(rows) {
 
 function setPreset(days) {
   syncDateInputBounds();
+  dateMode = days === 1 ? 'single' : 'range';
   syncUIState(days);
   let next;
   if (days === 'all' || completeRows.length === 0) {
@@ -876,6 +902,7 @@ function setPreset(days) {
       document.getElementById('dateEnd').value   = tsToDateStr(next[next.length - 1].ts);
     }
   }
+  syncDateModeControls();
   applyViewRows(next);
 }
 
@@ -889,7 +916,8 @@ function handleCustomDate() {
 function _applyCustomDate() {
   syncUIState(null);
   const startStr = document.getElementById('dateStart').value;
-  const endStr   = document.getElementById('dateEnd').value;
+  const endStr   = dateMode === 'single' ? startStr : document.getElementById('dateEnd').value;
+  if (dateMode === 'single') document.getElementById('dateEnd').value = startStr;
   let sTs = -Infinity, eTs = Infinity;
   if (startStr) { const [y,m,d] = startStr.split('-').map(Number); sTs = new Date(y, m-1, d).getTime(); }
   if (endStr)   { const [y,m,d] = endStr.split('-').map(Number);   eTs = new Date(y, m-1, d+1).getTime() - 1; }

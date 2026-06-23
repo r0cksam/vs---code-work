@@ -692,6 +692,72 @@ def classify_ua_series(series: pd.Series, rules: list[tuple[str, str]], default:
     return output
 
 
+def refine_decoded_platform(ua: pd.DataFrame) -> pd.Series:
+    """Split the fallback UA bucket after API decoding.
+
+    "Others" from the regex rules is a real data bucket, not an API failure.
+    This refinement keeps known stakeholder platform labels intact and uses
+    decoded API fields to expose why the remaining rows could not be mapped to
+    a named CTV/app platform.
+    """
+    output = ua["ua_platform"].fillna("Others").astype(str).copy()
+    other = output.eq("Others")
+    if not other.any():
+        return output
+
+    ua_text = ua.get("ua_norm", ua.get("userAgent", pd.Series("", index=ua.index))).fillna("").astype(str).str.lower()
+    form = ua.get("form_factor_label", pd.Series("", index=ua.index)).fillna("").astype(str).str.lower()
+    device = ua.get("device_type_label", pd.Series("", index=ua.index)).fillna("").astype(str).str.lower()
+    os_label = ua.get("os_label", pd.Series("", index=ua.index)).fillna("").astype(str).str.lower()
+    browser = ua.get("browser_label", pd.Series("", index=ua.index)).fillna("").astype(str).str.lower()
+    brand = ua.get("brand_label", pd.Series("", index=ua.index)).fillna("").astype(str).str.lower()
+    model = ua.get("model_label", pd.Series("", index=ua.index)).fillna("").astype(str).str.lower()
+    status = ua.get("decode_status", pd.Series("", index=ua.index)).fillna("").astype(str).str.lower()
+
+    no_ua = other & ua_text.eq("")
+    output.loc[no_ua] = "No UA / Not In Lookup"
+
+    automation_pattern = (
+        r"bot|crawler|spider|probe|scan|monitor|checker|python-requests|"
+        r"curl|wget|ffmpeg|lavf|hls2disk|palo alto|adflag|slackbot|streamhub"
+    )
+    automation = other & ~no_ua & (
+        ua_text.str.contains(automation_pattern, regex=True, na=False)
+        | form.eq("bot")
+        | browser.str.contains(r"requests|ffmpeg|bot", regex=True, na=False)
+    )
+    output.loc[automation] = "Automation / Probe UA"
+
+    smart_tv = other & output.eq("Others") & (form.eq("ctv") | device.str.contains("smart_tv|tv", regex=True, na=False))
+    output.loc[smart_tv] = "Smart TV / Unclassified"
+
+    mobile = other & output.eq("Others") & (
+        form.eq("mobile") | device.str.contains("smartphone|phablet|feature phone", regex=True, na=False)
+    )
+    output.loc[mobile] = "Mobile / Smartphone"
+
+    tablet = other & output.eq("Others") & (form.eq("tablet") | device.str.contains("tablet", regex=True, na=False))
+    output.loc[tablet] = "Tablet / iPad"
+
+    desktop = other & output.eq("Others") & (
+        form.eq("desktop")
+        | device.str.contains("desktop", regex=True, na=False)
+        | os_label.str.contains("windows|macos|gnu/linux|linux", regex=True, na=False)
+    )
+    output.loc[desktop] = "Desktop / Web Browser"
+
+    decoded_generic = other & output.eq("Others") & status.eq("decoded_api") & (
+        brand.ne("brand not exposed in ua")
+        | model.ne("model not exposed in ua")
+        | os_label.ne("os not exposed in ua")
+        | browser.ne("browser not exposed in ua")
+    )
+    output.loc[decoded_generic] = "Decoded / Generic Device"
+
+    output.loc[other & output.eq("Others")] = "Decoded / Unclassified UA"
+    return output
+
+
 def derive_ua_platform(ua_value: Any) -> str:
     clean = clean_ua_text(ua_value).lower()
     for pattern, label in UA_PLATFORM_RULES:
@@ -737,6 +803,7 @@ def build_ua_playtime(watch_dir: Path, device_dir: Path) -> dict[str, pd.DataFra
     # brand/model fields are exposed separately so unknown brand is not confused
     # with an undecoded UA.
     ua["ua_platform"] = classify_ua_series(ua["userAgent"], UA_PLATFORM_RULES, "Others")
+    ua["ua_platform"] = refine_decoded_platform(ua)
     ua["ua_os"] = classify_ua_series(ua["userAgent"], UA_OS_RULES, "Others")
     ua.loc[ua["os_label"].ne("OS Not Exposed In UA"), "ua_os"] = ua.loc[ua["os_label"].ne("OS Not Exposed In UA"), "os_label"]
 
