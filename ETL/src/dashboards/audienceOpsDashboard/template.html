@@ -225,15 +225,11 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
   <section class="section" data-render-section="traffic">
     <div class="section-head">
       <div>
-        <h2>Audience And Traffic</h2>
-        <div class="desc">Daily viewership, successful playback, audience reach, and playback starts.</div>
+        <h2>Audience Reach</h2>
+        <div class="desc">Daily audience reach and playback starts for the selected filters.</div>
       </div>
     </div>
-    <div class="grid-2">
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">Request Hours Trend<small>Total vs successful playback hours</small></div><button class="btn" onclick="expandChart('trafficChart','Request Hours Trend')">Expand</button></div>
-        <div class="chart-box"><canvas id="trafficChart"></canvas></div>
-      </div>
+    <div class="grid-stack">
       <div class="panel">
         <div class="panel-head"><div class="panel-title">Audience Reach Trend<small>Approx unique IPs and manifest requests</small></div><button class="btn" onclick="expandChart('audienceChart','Audience Reach Trend')">Expand</button></div>
         <div class="chart-box"><canvas id="audienceChart"></canvas></div>
@@ -249,16 +245,6 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
       </div>
     </div>
     <div class="grid-3">
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">Playtime by State / Region<small>Raw watch hours by country and region</small></div><button class="btn" onclick="expandChart('playStateChart','Playtime by State / Region')">Expand</button></div>
-        <div class="chart-box compact"><canvas id="playStateChart"></canvas></div>
-        <div id="playStateTable"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">Playtime by City<small>Raw watch hours by city</small></div><button class="btn" onclick="expandChart('playCityChart','Playtime by City')">Expand</button></div>
-        <div class="chart-box compact"><canvas id="playCityChart"></canvas></div>
-        <div id="playCityTable"></div>
-      </div>
       <div class="panel">
         <div class="panel-head"><div class="panel-title">Playtime by Platform / Device Type<small>Platform or device type split</small></div><button class="btn" onclick="expandChart('playPlatformChart','Playtime by Platform / Device Type')">Expand</button></div>
         <div class="chart-box compact"><canvas id="playPlatformChart"></canvas></div>
@@ -306,17 +292,19 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
     <div class="section-head">
       <div>
         <h2>Concurrency</h2>
-        <div class="desc">Minute-level active viewer movement for FAST.</div>
+        <div class="desc">Minute-level active viewer movement for the selected source where processed.</div>
       </div>
     </div>
     <div class="grid-2">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Active Viewer Minute Sum<small>FAST cliIP count summed inside selected interval</small></div><button class="btn" onclick="expandChart('concurrencyChart','Active Viewer Minute Sum')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Active Viewer Minute Sum<small>cliIP count summed inside selected interval</small></div><button class="btn" onclick="expandChart('concurrencyChart','Active Viewer Minute Sum')">Expand</button></div>
         <div class="mini-controls">
           <button class="btn" id="concInterval1" onclick="setConcurrencyInterval(1)">1 min</button>
           <button class="btn" id="concInterval5" onclick="setConcurrencyInterval(5)">5 min</button>
+          <button class="btn" id="concInterval10" onclick="setConcurrencyInterval(10)">10 min</button>
           <button class="btn" id="concInterval15" onclick="setConcurrencyInterval(15)">15 min</button>
           <button class="btn" id="concInterval30" onclick="setConcurrencyInterval(30)">30 min</button>
+          <button class="btn" id="concInterval60" onclick="setConcurrencyInterval(60)">1 hour</button>
           <div class="mini-field">
             <label>Custom min</label>
             <input id="concCustomMinutes" type="number" min="1" max="240" step="1" value="5" onchange="setCustomConcurrencyInterval(this.value)"/>
@@ -409,34 +397,16 @@ th,td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
   <section class="section" data-render-section="ops">
     <div class="section-head">
       <div>
-        <h2>Operations Monitoring Upgrade</h2>
-        <div class="desc">Grafana-style monitoring added below the existing dashboard. Current sections above are unchanged.</div>
+        <h2>Identity Monitoring</h2>
+        <div class="desc">Identity, session, and manifest signals for the selected filters.</div>
       </div>
     </div>
     <div class="kpis" id="opsKpis"></div>
-    <div class="grid-2">
+    <div class="grid-stack">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Active Users - Per Minute<small>FAST cliIP and UA movement</small></div><button class="btn" onclick="expandChart('opsUsersMinuteChart','Active Users - Per Minute')">Expand</button></div>
-        <div class="chart-box tall"><canvas id="opsUsersMinuteChart"></canvas></div>
-        <div class="chart-note" id="opsUsersMinuteNote"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">Active Users - 5 Minute Sum<small>Summed viewer-minute activity</small></div><button class="btn" onclick="expandChart('opsUsers5Chart','Active Users - 5 Minute Sum')">Expand</button></div>
-        <div class="chart-box tall"><canvas id="opsUsers5Chart"></canvas></div>
-        <div class="chart-note" id="opsUsers5Note"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">Master Manifest Views<small>Playback entry requests by day</small></div><button class="btn" onclick="expandChart('opsViewsChart','Master Manifest Views')">Expand</button></div>
-        <div class="chart-box"><canvas id="opsViewsChart"></canvas></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">Identity / Session Daily Trend<small>App identity where available, IP+UA fallback for FAST</small></div><button class="btn" onclick="expandChart('opsIdentityChart','Identity / Session Daily Trend')">Expand</button></div>
+        <div class="panel-head"><div class="panel-title">Identity / Session Daily Trend<small>Identity and session signals by selected source</small></div><button class="btn" onclick="expandChart('opsIdentityChart','Identity / Session Daily Trend')">Expand</button></div>
         <div class="chart-box"><canvas id="opsIdentityChart"></canvas></div>
       </div>
-    </div>
-    <div class="panel" style="margin-top:12px">
-      <div class="panel-head"><div class="panel-title">Popular Content / Manifest Leaders<small>Content title when available; channel manifest leaders otherwise</small></div></div>
-      <div id="opsPopularTable"></div>
     </div>
   </section>
 
@@ -474,6 +444,9 @@ DATA.concurrency_status_minute=inflateRows(DATA.concurrency_status_minute||[],DA
   "channel_geo_daily",
   "channel_device_type_daily",
   "region_channel_device_daily",
+  "ua_os_daily",
+  "ua_brand_daily",
+  "ua_model_daily",
   "ua_device_detail_daily",
   "fast_platform_channel_geo_daily",
   "fast_platform_channel_ua_device_daily",
@@ -628,6 +601,12 @@ function setConcurrencyStatus(value){
   renderConcurrency();
   refreshModalChart();
 }
+function fastStatusHistoryNote(){
+  if(state.source==="fast"&&state.concurrencyStatus!=="all"&&String(state.start||"")<"2026-06-19"){
+    return "FAST HTTP status-code minute history is currently available from 19/06/26 onward. Earlier FAST status-code lines will be completed after historical FAST lake partitions are processed.";
+  }
+  return "";
+}
 function concurrencyStatusOptionsHtml(){
   const codes=(DATA.concurrency_status_codes||[]).map(function(v){return String(v)}).filter(Boolean).sort();
   return ["<option value='all'>All HTTP statuses</option>"].concat(codes.map(function(code){return "<option value='"+esc(code)+"'>Status "+esc(code)+"</option>"})).join("");
@@ -640,8 +619,10 @@ function concurrencyModalControlsHtml(){
   return "<div class='mini-controls'>"
     +"<button class='btn' id='modalConcInterval1' onclick='setConcurrencyInterval(1)'>1 min</button>"
     +"<button class='btn' id='modalConcInterval5' onclick='setConcurrencyInterval(5)'>5 min</button>"
+    +"<button class='btn' id='modalConcInterval10' onclick='setConcurrencyInterval(10)'>10 min</button>"
     +"<button class='btn' id='modalConcInterval15' onclick='setConcurrencyInterval(15)'>15 min</button>"
     +"<button class='btn' id='modalConcInterval30' onclick='setConcurrencyInterval(30)'>30 min</button>"
+    +"<button class='btn' id='modalConcInterval60' onclick='setConcurrencyInterval(60)'>1 hour</button>"
     +"<div class='mini-field'><label>Custom min</label><input id='modalConcCustomMinutes' type='number' min='1' max='240' step='1' value='"+esc(concurrencyIntervalMinutes())+"' onchange='setCustomConcurrencyInterval(this.value)'/></div>"
     +"<div class='mini-field'><label>HTTP Status</label><select id='modalConcStatusSelect' onchange='setConcurrencyStatus(this.value)'></select></div>"
     +"</div>";
@@ -669,7 +650,7 @@ function syncConcurrencyControls(){
   if(input)input.value=interval;
   const modalInput=el("modalConcCustomMinutes");
   if(modalInput)modalInput.value=interval;
-  [1,5,15,30].forEach(function(v){
+  [1,5,10,15,30,60].forEach(function(v){
     const btn=el("concInterval"+v);
     if(btn)btn.classList.toggle("active",interval===v);
     const modalBtn=el("modalConcInterval"+v);
@@ -1377,8 +1358,7 @@ function renderTraffic(){
   });
   const rows=Array.from(map.values()).sort(function(a,b){return a.key.localeCompare(b.key)}).map(function(r){r.avg_unique_viewers=r.avg_unique_viewers_count?r.avg_unique_viewers_sum/r.avg_unique_viewers_count:0;return r});
   const labels=rows.map(function(r){return fmtDate(r.key)});
-  if(!rows.length){clearChart("trafficChart");clearChart("audienceChart");return}
-  draw("trafficChart",lineConfig(labels,[{label:"Raw Request Hours",data:rows.map(function(r){return n(r.request_watch_hours)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.12)",tension:.25,pointRadius:2},{label:"Status 200 Hours",data:rows.map(function(r){return n(r.status_200_request_hours)}),borderColor:COLORS[2],backgroundColor:"rgba(18,128,92,.12)",tension:.25,pointRadius:2}],"Hours"));
+  if(!rows.length){clearChart("audienceChart");return}
   if(state.platform!=="all"){
     draw("audienceChart",lineConfig(labels,[{label:"Peak active viewers",data:rows.map(function(r){return n(r.peak_unique_viewers)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.12)",tension:.25,pointRadius:2},{label:"Average active viewers",data:rows.map(function(r){return n(r.avg_unique_viewers)}),borderColor:COLORS[1],backgroundColor:"rgba(184,132,22,.12)",tension:.25,pointRadius:2}],"Viewers"));
   }else if(state.channel!=="all"){
@@ -1393,7 +1373,12 @@ function renderConcurrency(){
   const box=el("concurrencyBox");box.innerHTML="<canvas id='concurrencyChart'></canvas>";
   const note=el("concurrencyNote");
   if(note)note.textContent="";
-  if(state.source==="stream"){clearChart("concurrencyChart","Active viewer minute trend is available for FAST only.");return}
+  const statusHistoryNote=fastStatusHistoryNote();
+  if(state.source==="stream"&&state.platform!=="all"){
+    clearChart("concurrencyChart","STREAM minute-level data is available at source/channel level only.");
+    if(note)note.textContent="Select All Platforms to view STREAM minute-level active users.";
+    return;
+  }
   let rows=[];
   if(state.concurrencyStatus==="all"){
     rows=filterRows(DATA.concurrency_minute||[],{dateKey:"log_date",channel:true})
@@ -1409,7 +1394,11 @@ function renderConcurrency(){
       return String(r.code||"")===state.concurrencyStatus;
     }).map(function(r){return {minute:String(r.m||""),value:n(r.uv)}});
   }
-  if(!rows.length){clearChart("concurrencyChart","No embedded minute-level concurrency rows for this selection. Daily FAST summary is still available.");return}
+  if(!rows.length){
+    clearChart("concurrencyChart","No embedded minute-level concurrency rows for this selection.");
+    if(note)note.textContent=statusHistoryNote;
+    return;
+  }
   const interval=concurrencyIntervalMinutes();
   const minuteTotals=new Map();
   rows.forEach(function(r){
@@ -1431,7 +1420,7 @@ function renderConcurrency(){
   const grouped=Array.from(buckets.values()).sort(function(a,b){return a.key.localeCompare(b.key)});
   if(!grouped.length){clearChart("concurrencyChart","No valid minute timestamps for this selection.");return}
   const statusText=state.concurrencyStatus==="all"?"all HTTP statuses":"HTTP status "+state.concurrencyStatus+" only";
-  if(note)note.textContent="Each point is the sum of distinct cliIP active-viewer counts for every minute inside the "+concurrencyIntervalLabel()+" bucket, using "+statusText+". Example: 12:00 to 12:04 equals five one-minute cliIP counts added together.";
+  if(note)note.textContent="Each point is the sum of distinct cliIP active-viewer counts for every minute inside the "+concurrencyIntervalLabel()+" bucket, using "+statusText+". Example: 12:00 to 12:04 equals five one-minute cliIP counts added together."+(statusHistoryNote?" "+statusHistoryNote:"");
   draw("concurrencyChart",lineConfig(grouped.map(function(r){return fmtDateTime(r.key)}),[
     {label:"Total cliIP viewer-minute count - "+statusText,data:grouped.map(function(r){return n(r.active_cliip_minute_count)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.12)",tension:.22,pointRadius:0}
   ],"cliIP minute-sum"));
@@ -1482,6 +1471,8 @@ function fastDeviceIdentityLabel(r){
   return "Unknown / Needs Review";
 }
 function renderPieBreakdown(tableId,ranked,metric,valueLabel,decimals,totalOverride){
+  const target=el(tableId);
+  if(!target)return;
   const d=decimals==null?1:decimals;
   const total=totalOverride==null?sum(ranked,metric):n(totalOverride);
   const items=ranked.map(function(r,i){
@@ -1493,11 +1484,20 @@ function renderPieBreakdown(tableId,ranked,metric,valueLabel,decimals,totalOverr
       +"<span class='pie-value'>"+fmt(value,d)+" "+esc(valueLabel)+"<small>"+pct(share)+"</small></span>"
       +"</div>";
   }).join("");
-  el(tableId).innerHTML="<div class='pie-breakdown'><div class='pie-total'>Total "+esc(valueLabel)+": "+fmt(total,d)+"</div>"+items+"</div>";
+  target.innerHTML="<div class='pie-breakdown'><div class='pie-total'>Total "+esc(valueLabel)+": "+fmt(total,d)+"</div>"+items+"</div>";
+}
+function renderPieNote(tableId,note){
+  const target=el(tableId);
+  if(target)target.insertAdjacentHTML("afterbegin","<div class='chart-note'>"+esc(note)+"</div>");
 }
 function renderPieWithTable(chartId,tableId,rows,labelFn,metric,valueLabel,decimals){
   const all=groupSum(rows,labelFn,[metric]).filter(function(r){return n(r[metric])>0}).sort(function(a,b){return n(b[metric])-n(a[metric])});
-  if(!all.length){clearChart(chartId,"No data for selected filters");el(tableId).innerHTML="";return}
+  if(!all.length){
+    clearChart(chartId,"No data for selected filters");
+    const target=el(tableId);
+    if(target)target.innerHTML="<div class='pie-breakdown'><div class='pie-total'>No data for selected filters</div></div>";
+    return;
+  }
   const total=sum(all,metric);
   let ranked=all.slice(0,10);
   if(all.length>10){
@@ -1514,8 +1514,6 @@ function renderPlaytimePies(){
     if(state.source==="fast"){
       const fastGeo=fastPlatformChannelGeoRows();
       const fastDevices=fastPlatformChannelUaDeviceRows();
-      renderPieWithTable("playStateChart","playStateTable",fastGeo,stateRegionLabel,"raw_watch_hours","Hours",1);
-      renderPieWithTable("playCityChart","playCityTable",fastGeo,cityGeoLabel,"raw_watch_hours","Hours",1);
       renderPieWithTable("ipGeoChart","ipGeoTable",fastGeo,geoLabel,"approx_unique_ips","Approx IPs",0);
       renderPieWithTable("playPlatformChart","playPlatformTable",fastDevices,function(r){return r.device_type_label||"Unknown / Needs Review"},"raw_watch_hours","Hours",1);
       renderPieWithTable("ipPlatformChart","ipPlatformTable",fastDevices,function(r){return r.device_type_label||"Unknown / Needs Review"},"approx_unique_ips","Approx IPs",0);
@@ -1526,17 +1524,23 @@ function renderPlaytimePies(){
       renderPieWithTable("decodeQualityChart","decodeQualityTable",fastDevices,function(r){return r.decode_quality||"Unknown / Needs Review"},"raw_watch_hours","Hours",1);
       return;
     }
-    [["playStateChart","playStateTable"],["playCityChart","playCityTable"],["playPlatformChart","playPlatformTable"],["playOsChart","playOsTable"],["ipGeoChart","ipGeoTable"],["ipPlatformChart","ipPlatformTable"],["ipOsChart","ipOsTable"],["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
+    [["playPlatformChart","playPlatformTable"],["playOsChart","playOsTable"],["ipGeoChart","ipGeoTable"],["ipPlatformChart","ipPlatformTable"],["ipOsChart","ipOsTable"],["playBrandChart","playBrandTable"],["playFormChart","playFormTable"],["decodeQualityChart","decodeQualityTable"]].forEach(function(pair){
       clearChart(pair[0],"Not available for selected filters");
       renderTable(pair[1],["Metric","Status"],[["Selected filters","Not Available"]],[]);
     });
+    const channelDevices=channelDeviceTypeRows();
+    const regionDevices=regionChannelDeviceRows();
+    const fallbackNote="STREAM platform-level OS/device split is not present in current CDN marts. Showing source/channel device distribution for the selected date range.";
+    renderPieWithTable("playPlatformChart","playPlatformTable",channelDevices,function(r){return r.device_type||"Unknown / NA"},"raw_watch_hours","Hours",1);
+    renderPieWithTable("ipPlatformChart","ipPlatformTable",channelDevices,function(r){return r.device_type||"Unknown / NA"},"approx_unique_ips","Approx IPs",0);
+    renderPieWithTable("playOsChart","playOsTable",regionDevices,regionDeviceLabel,"raw_watch_hours","Hours",1);
+    renderPieWithTable("ipOsChart","ipOsTable",regionDevices,regionDeviceLabel,"approx_unique_ips","Approx IPs",0);
+    ["playPlatformTable","ipPlatformTable","playOsTable","ipOsTable"].forEach(function(id){renderPieNote(id,fallbackNote)});
     return;
   }
   const geo=state.channel==="all"
     ?filterRows(DATA.geo_daily||[],{channel:false,platform:false})
     :filterRows(DATA.channel_geo_daily||[],{channel:true,platform:false});
-  renderPieWithTable("playStateChart","playStateTable",geo,stateRegionLabel,"raw_watch_hours","Hours",1);
-  renderPieWithTable("playCityChart","playCityTable",geo,cityGeoLabel,"raw_watch_hours","Hours",1);
   renderPieWithTable("ipGeoChart","ipGeoTable",geo,geoLabel,"approx_unique_ips","Approx IPs",0);
   if(state.channel!=="all"){
     const channelDevices=channelDeviceTypeRows();
@@ -1699,27 +1703,6 @@ function renderGeoDevice(){
   }),[6,7]);
 }
 
-function opsMinuteRows(){
-  if(state.source==="fast")return filterRows(DATA.concurrency_minute||[],{channel:true,platform:true});
-  if(state.source==="stream"&&state.platform==="all")return filterRows(DATA.concurrency_minute||[],{channel:true,platform:false});
-  return [];
-}
-function groupOpsMinute(rows,bucketMinutes){
-  const bucket=Math.max(1,Number(bucketMinutes)||1);
-  const m=new Map();
-  (rows||[]).forEach(function(r){
-    const idx=parseMinuteIndex(r.minute_ist);
-    if(idx==null)return;
-    const b=Math.floor(idx/bucket)*bucket;
-    if(!m.has(b))m.set(b,{key:minuteIndexLabel(b),active_cliip:0,active_ua:0,ts_rows:0,status_200_ts_rows:0});
-    const o=m.get(b);
-    o.active_cliip+=n(r.unique_viewers);
-    o.active_ua+=n(r.unique_ua_viewers);
-    o.ts_rows+=n(r.raw_ts_rows);
-    o.status_200_ts_rows+=n(r.status_200_ts_rows);
-  });
-  return Array.from(m.values()).sort(function(a,b){return a.key.localeCompare(b.key)});
-}
 function opsManifestDailyRows(){
   const rows=state.source==="fast"?fastPlatformChannelManifestRows():streamContentRows();
   const grouped=groupSum(rows,function(r){return String(r.log_date||"").slice(0,10)},["m3u8_rows","status_200_m3u8_rows","non_200_m3u8_rows","approx_unique_ips","approx_sessions","approx_devices"]);
@@ -1734,53 +1717,16 @@ function opsIdentityDailyRows(){
   return groupSum(rows,function(r){return String(r.log_date||"").slice(0,10)},["total_devices","total_sessions","total_ipua_sessions","new_devices","returning_devices"]).filter(function(r){return r.key}).sort(function(a,b){return a.key.localeCompare(b.key)});
 }
 function renderOpsMonitoring(){
-  const minuteRows=opsMinuteRows();
-  const minute1=groupOpsMinute(minuteRows,1);
-  const minute5=groupOpsMinute(minuteRows,5);
   const manifestDaily=opsManifestDailyRows();
   const identityDaily=opsIdentityDailyRows();
   const manifestViews=sum(manifestDaily,"m3u8_rows");
-  const peakMinute=max(minute1,"active_cliip");
-  const peakFive=max(minute5,"active_cliip");
   const identityPrimary=state.source==="fast"?sum(identityDaily,"distinct_cliips"):sum(identityDaily,"total_devices");
   const identitySecondary=state.source==="fast"?sum(identityDaily,"distinct_ipua_pairs"):sum(identityDaily,"total_sessions");
   el("opsKpis").innerHTML=[
-    kpi("Minute Rows",minuteRows.length?fmtInt(minuteRows.length):"Not Available",state.source==="fast"?"FAST minute mart rows in selected filters":(state.platform==="all"?"STREAM minute mart rows in selected filters":"STREAM platform-specific minute mart is not available"),""),
-    kpi("Peak Active Users",peakMinute?fmtInt(peakMinute):"Not Available",state.source==="fast"?"Peak summed cliIP per minute":(state.platform==="all"?"Peak STREAM cliIP per minute":"STREAM platform-specific metric is not available"),"gold"),
-    kpi("Peak 5-Min User-Minute",peakFive?fmtInt(peakFive):"Not Available",state.source==="fast"?"Highest 5-minute summed cliIP activity":(state.platform==="all"?"Highest STREAM 5-minute summed cliIP activity":"STREAM platform-specific metric is not available"),"violet"),
     kpi("Master Manifest Views",manifestViews?fmtInt(manifestViews):"Not Available",state.source==="fast"?"FAST platform/channel m3u8 rows":"STREAM content/title m3u8 rows","green"),
     kpi(state.source==="fast"?"Unique Users":"Device IDs",identityPrimary?fmtInt(identityPrimary):"Not Available",state.source==="fast"?"Daily distinct cliIP sum":"STREAM app device_id identity",""),
     kpi(state.source==="fast"?"IP + UA Signatures":"Sessions",identitySecondary?fmtInt(identitySecondary):"Not Available",state.source==="fast"?"Daily distinct cliIP+UA sum, not app session_id":"STREAM app session_id identity","")
   ].join("");
-
-  if(minute1.length){
-    draw("opsUsersMinuteChart",lineConfig(minute1.map(function(r){return fmtDateTime(r.key)}),[
-      {label:"Active cliIP",data:minute1.map(function(r){return n(r.active_cliip)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.2,pointRadius:0},
-      {label:"Distinct UA",data:minute1.map(function(r){return n(r.active_ua)}),borderColor:COLORS[3],backgroundColor:"rgba(96,87,177,.10)",tension:.2,pointRadius:0}
-    ],"Count"));
-    el("opsUsersMinuteNote").textContent="FAST only. Counts are summed at platform/channel minute grain for the selected filters.";
-  }else{
-    clearChart("opsUsersMinuteChart",state.source==="fast"?"No FAST minute rows for selected filters":(state.platform==="all"?"No STREAM minute rows for selected filters":"STREAM minute-level platform split is not available"));
-    el("opsUsersMinuteNote").textContent="";
-  }
-  if(minute5.length){
-    draw("opsUsers5Chart",lineConfig(minute5.map(function(r){return fmtDateTime(r.key)}),[
-      {label:"cliIP 5-min sum",data:minute5.map(function(r){return n(r.active_cliip)}),borderColor:COLORS[1],backgroundColor:"rgba(184,132,22,.10)",tension:.2,pointRadius:0},
-      {label:"UA 5-min sum",data:minute5.map(function(r){return n(r.active_ua)}),borderColor:COLORS[2],backgroundColor:"rgba(18,128,92,.10)",tension:.2,pointRadius:0}
-    ],"Viewer-minute count"));
-    el("opsUsers5Note").textContent="Each point is a 5-minute summed viewer-minute count, matching the Grafana-style 5-minute summation concept.";
-  }else{
-    clearChart("opsUsers5Chart",state.source==="fast"?"No FAST 5-minute rows for selected filters":(state.platform==="all"?"No STREAM 5-minute rows for selected filters":"STREAM 5-minute platform split is not available"));
-    el("opsUsers5Note").textContent="";
-  }
-  if(manifestDaily.length){
-    draw("opsViewsChart",lineConfig(manifestDaily.map(function(r){return fmtDate(r.key)}),[
-      {label:"Manifest Views",data:manifestDaily.map(function(r){return n(r.m3u8_rows)}),borderColor:COLORS[2],backgroundColor:"rgba(18,128,92,.10)",tension:.25,pointRadius:2},
-      {label:"Status 200 Views",data:manifestDaily.map(function(r){return n(r.status_200_m3u8_rows)}),borderColor:COLORS[0],backgroundColor:"rgba(31,120,151,.10)",tension:.25,pointRadius:2}
-    ],"Views"));
-  }else{
-    clearChart("opsViewsChart","No manifest/content rows for selected filters");
-  }
   if(identityDaily.length){
     const datasets=state.source==="fast"
       ?[
@@ -1795,22 +1741,6 @@ function renderOpsMonitoring(){
     draw("opsIdentityChart",lineConfig(identityDaily.map(function(r){return fmtDate(r.key)}),datasets,"Count"));
   }else{
     clearChart("opsIdentityChart",state.source==="fast"?"FAST app device_id/session_id is not available; select platform/channel for IP+UA signatures":"No STREAM identity rows for selected filters");
-  }
-
-  if(state.source==="stream"&&streamContentRows().length){
-    const detailed=contentRollup(streamContentRows(),function(r){return [r.content_title||"Unknown / NA",r.category_name||"Unknown / NA",r.channel_name||"Other",r.platform_name||"Unknown / NA",String(r.log_date||"").slice(0,10)].join("|||")},30);
-    renderTable("opsPopularTable",["Date","Content Title","Category","Channel","Platform","Views","Users","Sessions","Devices"],detailed.map(function(r){
-      const p=String(r.key).split("|||");
-      return [fmtDate(p[4]),p[0],p[1],p[2],p[3],fmtInt(r.m3u8_rows),fmtInt(r.approx_unique_ips),fmtInt(r.approx_sessions),fmtInt(r.approx_devices)];
-    }),[5,6,7,8]);
-  }else if(state.source==="fast"&&fastPlatformChannelManifestRows().length){
-    const rows=contentRollup(fastPlatformChannelManifestRows(),function(r){return [r.log_date||"",r.channel_name||"Other",r.platform_name||"Unknown"].join("|||")},30);
-    renderTable("opsPopularTable",["Date","Channel","Platform","Manifest Views","Status 200 Views","Approx IPs","IP+UA"],rows.map(function(r){
-      const p=String(r.key).split("|||");
-      return [fmtDate(p[0]),p[1],p[2],fmtInt(r.m3u8_rows),fmtInt(r.status_200_m3u8_rows),fmtInt(r.approx_unique_ips),fmtInt(r.distinct_ipua_pairs)];
-    }),[3,4,5,6]);
-  }else{
-    renderTable("opsPopularTable",["Metric","Status"],[["Popular content / manifest leaders","Not Available for selected filters"]],[]);
   }
 }
 
@@ -1845,10 +1775,7 @@ const CHART_SECTION={
   viewershipTrendChart:"viewership",
   contentRankChart:"content",
   contentTrendChart:"content",
-  trafficChart:"traffic",
   audienceChart:"traffic",
-  playStateChart:"playtime",
-  playCityChart:"playtime",
   playPlatformChart:"playtime",
   playOsChart:"playtime",
   ipGeoChart:"playtime",
@@ -1865,9 +1792,6 @@ const CHART_SECTION={
   geoChart:"geoDevice",
   cityChart:"geoDevice",
   deviceEvidence:"geoDevice",
-  opsUsersMinuteChart:"ops",
-  opsUsers5Chart:"ops",
-  opsViewsChart:"ops",
   opsIdentityChart:"ops"
 };
 function sectionIsNearViewport(section){
