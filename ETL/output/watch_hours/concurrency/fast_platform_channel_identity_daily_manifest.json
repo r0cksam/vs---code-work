@@ -1,16 +1,16 @@
 {
-  "generated_at_utc": "2026-06-23T05:00:24.057695+00:00",
+  "generated_at_utc": "2026-06-29T05:55:11.231823+00:00",
   "source": "fast",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\fast_platform_channel_identity_daily.parquet",
   "date_range_replaced": {
-    "start": "2026-06-22",
-    "end": "2026-06-23"
+    "start": "2026-06-26",
+    "end": "2026-06-27"
   },
   "metric_notes": {
     "distinct_cliips": "Exact daily distinct cliIP for each FAST platform/channel on .ts rows.",
     "distinct_uas": "Exact daily distinct normalized User-Agent for each FAST platform/channel on .ts rows.",
     "distinct_ipua_pairs": "Exact daily distinct cliIP + User-Agent pair for each FAST platform/channel on .ts rows."
   },
-  "new_rows": 31
+  "new_rows": 32
 }

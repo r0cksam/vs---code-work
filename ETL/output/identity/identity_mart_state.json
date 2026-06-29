@@ -1083,15 +1083,87 @@
     "stream/2026-06-23": {
       "source": "stream",
       "date": "2026-06-23",
-      "file_count": 1,
-      "bytes": 69857772,
-      "max_mtime_ns": 1782186765968521400,
+      "file_count": 2,
+      "bytes": 847332466,
+      "max_mtime_ns": 1782272354299835200,
       "output_counts": {
-        "identity_device_daily": 488,
-        "identity_session_daily": 499,
-        "identity_ipua_daily": 509
+        "identity_device_daily": 14091,
+        "identity_session_daily": 17777,
+        "identity_ipua_daily": 16118
+      }
+    },
+    "stream/2026-06-24": {
+      "source": "stream",
+      "date": "2026-06-24",
+      "file_count": 2,
+      "bytes": 825103371,
+      "max_mtime_ns": 1782359344366818600,
+      "output_counts": {
+        "identity_device_daily": 13124,
+        "identity_session_daily": 16714,
+        "identity_ipua_daily": 15227
+      }
+    },
+    "stream/2026-06-25": {
+      "source": "stream",
+      "date": "2026-06-25",
+      "file_count": 2,
+      "bytes": 830901708,
+      "max_mtime_ns": 1782445637102255800,
+      "output_counts": {
+        "identity_device_daily": 12927,
+        "identity_session_daily": 16523,
+        "identity_ipua_daily": 15143
+      }
+    },
+    "stream/2026-06-26": {
+      "source": "stream",
+      "date": "2026-06-26",
+      "file_count": 2,
+      "bytes": 807368282,
+      "max_mtime_ns": 1782532349699627400,
+      "output_counts": {
+        "identity_device_daily": 12441,
+        "identity_session_daily": 16034,
+        "identity_ipua_daily": 14518
+      }
+    },
+    "stream/2026-06-27": {
+      "source": "stream",
+      "date": "2026-06-27",
+      "file_count": 2,
+      "bytes": 715887228,
+      "max_mtime_ns": 1782618470294932300,
+      "output_counts": {
+        "identity_device_daily": 12732,
+        "identity_session_daily": 16168,
+        "identity_ipua_daily": 14772
+      }
+    },
+    "stream/2026-06-28": {
+      "source": "stream",
+      "date": "2026-06-28",
+      "file_count": 2,
+      "bytes": 680034146,
+      "max_mtime_ns": 1782704434099919100,
+      "output_counts": {
+        "identity_device_daily": 12133,
+        "identity_session_daily": 15327,
+        "identity_ipua_daily": 13949
+      }
+    },
+    "stream/2026-06-29": {
+      "source": "stream",
+      "date": "2026-06-29",
+      "file_count": 1,
+      "bytes": 53636125,
+      "max_mtime_ns": 1782704434232051300,
+      "output_counts": {
+        "identity_device_daily": 378,
+        "identity_session_daily": 382,
+        "identity_ipua_daily": 395
       }
     }
   },
-  "updated_at_utc": "2026-06-23T05:18:57.193489+00:00"
+  "updated_at_utc": "2026-06-29T05:33:57.988159+00:00"
 }
