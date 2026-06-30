@@ -1,0 +1,394 @@
+r"""Create polished, responsive news banners from layered artwork.
+
+Expected files inside the design folder (case-insensitive):
+
+    BG.png
+    character.png
+    Text.png
+    Lagataar coverage.png
+    india tv logo white.png
+    Live.png
+
+By default the script reads ``AUTO creative design`` beside this file and
+creates 1920x840, 1800x520, and 640x360 versions in ``output``.  The design
+uses separate layout presets so the headline and people stay prominent in
+every aspect ratio.
+
+Examples:
+
+    py b.py --no-pause
+    py b.py "D:\artwork\my design" --output-dir "D:\exports"
+    py b.py --only 640x360 --png-only --no-pause
+
+Dependency:
+
+    py -m pip install Pillow
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import math
+import os
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+from PIL import Image, ImageEnhance, ImageFilter
+
+
+try:
+    RESAMPLE = Image.Resampling.LANCZOS
+except AttributeError:  # Pillow < 9.1
+    RESAMPLE = Image.LANCZOS
+
+
+def application_dir() -> Path:
+    """Directory containing the script, or the packaged .exe."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+BASE_DIR = application_dir()
+DEFAULT_DESIGN_DIR = BASE_DIR / "AUTO creative design"
+DEFAULT_OUTPUT_DIR = BASE_DIR / "output"
+
+
+ASSET_NAMES = {
+    "background": "BG.png",
+    "character": "character.png",
+    "text": "Text.png",
+    "coverage": "Lagataar coverage.png",
+    "logo": "india tv logo white.png",
+    "live": "Live.png",
+}
+
+
+@dataclass(frozen=True)
+class Layout:
+    size: tuple[int, int]
+    background_focus: tuple[float, float]
+    shade_strength: float
+    shade_center: float
+    shade_width: float
+    character_height: int
+    character_x: int
+    character_y: int
+    text_width: int
+    text_x: int
+    text_y: int
+    branding: tuple[tuple[str, int, int, int], ...]
+
+    @property
+    def label(self) -> str:
+        return f"{self.size[0]}x{self.size[1]}"
+
+
+# Positions are intentionally art-directed per aspect ratio.  A single
+# proportional resize makes faces and headlines too small on short banners.
+LAYOUTS = (
+    Layout(
+        size=(1920, 840),
+        background_focus=(0.50, 0.50),
+        shade_strength=0.24,
+        shade_center=0.38,
+        shade_width=0.27,
+        character_height=840,
+        character_x=771,
+        character_y=0,
+        text_width=929,
+        text_x=30,
+        text_y=160,
+        branding=(("coverage", 302, 333, 420),),
+    ),
+    Layout(
+        size=(1800, 520),
+        background_focus=(0.50, 0.50),
+        shade_strength=0.31,
+        shade_center=0.34,
+        shade_width=0.28,
+        character_height=650,
+        character_x=911,
+        character_y=-58,
+        text_width=870,
+        text_x=62,
+        text_y=66,
+        branding=(("coverage", 302, 350, 304),),
+    ),
+    Layout(
+        size=(640, 360),
+        background_focus=(0.48, 0.50),
+        shade_strength=0.34,
+        shade_center=0.22,
+        shade_width=0.30,
+        character_height=330,
+        character_x=189,
+        character_y=42,
+        text_width=290,
+        text_x=18,
+        text_y=84,
+        branding=(
+            ("logo", 172, 76, 167),
+            ("live", 138, 80, 235),
+        ),
+    ),
+)
+
+
+def find_asset(directory: Path, wanted_name: str) -> Path:
+    """Find an asset without requiring Windows-style filename casing."""
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Design folder not found: {directory}")
+
+    files = {path.name.casefold(): path for path in directory.iterdir() if path.is_file()}
+    try:
+        return files[wanted_name.casefold()]
+    except KeyError as exc:
+        raise FileNotFoundError(
+            f'Missing "{wanted_name}" inside design folder: {directory}'
+        ) from exc
+
+
+def load_assets(directory: Path) -> dict[str, Image.Image]:
+    assets: dict[str, Image.Image] = {}
+    for key, filename in ASSET_NAMES.items():
+        path = find_asset(directory, filename)
+        with Image.open(path) as source:
+            image = source.convert("RGBA")
+            image.load()
+        assets[key] = image
+    return assets
+
+
+def fit_cover(
+    image: Image.Image,
+    target_size: tuple[int, int],
+    focus: tuple[float, float] = (0.5, 0.5),
+) -> Image.Image:
+    """Resize/crop like CSS object-fit: cover, with a selectable focal point."""
+    target_w, target_h = target_size
+    scale = max(target_w / image.width, target_h / image.height)
+    resized = image.resize(
+        (max(target_w, round(image.width * scale)), max(target_h, round(image.height * scale))),
+        RESAMPLE,
+    )
+    overflow_x = resized.width - target_w
+    overflow_y = resized.height - target_h
+    left = round(overflow_x * min(1.0, max(0.0, focus[0])))
+    top = round(overflow_y * min(1.0, max(0.0, focus[1])))
+    return resized.crop((left, top, left + target_w, top + target_h))
+
+
+def resize_to_width(image: Image.Image, width: int) -> Image.Image:
+    height = max(1, round(image.height * width / image.width))
+    return image.resize((width, height), RESAMPLE)
+
+
+def resize_to_height(image: Image.Image, height: int) -> Image.Image:
+    width = max(1, round(image.width * height / image.height))
+    return image.resize((width, height), RESAMPLE)
+
+
+def alpha_composite_clipped(
+    canvas: Image.Image, layer: Image.Image, position: tuple[int, int]
+) -> None:
+    """Alpha-composite a layer even when part of it sits outside the canvas."""
+    x, y = position
+    left = max(0, x)
+    top = max(0, y)
+    right = min(canvas.width, x + layer.width)
+    bottom = min(canvas.height, y + layer.height)
+    if right <= left or bottom <= top:
+        return
+    crop = layer.crop((left - x, top - y, right - x, bottom - y))
+    canvas.alpha_composite(crop, (left, top))
+
+
+def add_readability_shade(
+    background: Image.Image,
+    strength: float,
+    center_ratio: float,
+    width_ratio: float,
+) -> Image.Image:
+    """Add a soft dark focus zone behind headline artwork."""
+    center = background.width * center_ratio
+    spread = max(1.0, background.width * width_ratio)
+    max_alpha = round(255 * min(1.0, max(0.0, strength)))
+    alpha_values = []
+    for x in range(background.width):
+        distance = (x - center) / spread
+        alpha_values.append(round(max_alpha * math.exp(-2.0 * distance * distance)))
+    alpha_strip = Image.new("L", (background.width, 1))
+    alpha_strip.putdata(alpha_values)
+    alpha = alpha_strip.resize(background.size, Image.Resampling.NEAREST)
+    overlay = Image.new("RGBA", background.size, (0, 0, 0, 0))
+    overlay.putalpha(alpha)
+    return Image.alpha_composite(background, overlay)
+
+
+def add_character_shadow(
+    canvas: Image.Image, character: Image.Image, position: tuple[int, int]
+) -> None:
+    """Create a restrained contact shadow that separates people from the scene."""
+    radius = max(5, round(canvas.height * 0.012))
+    shadow_alpha = character.getchannel("A").filter(ImageFilter.GaussianBlur(radius))
+    shadow_alpha = shadow_alpha.point(lambda value: round(value * 0.25))
+    shadow = Image.new("RGBA", character.size, (0, 0, 0, 0))
+    shadow.putalpha(shadow_alpha)
+    x, y = position
+    alpha_composite_clipped(canvas, shadow, (x - radius, y + radius // 3))
+
+
+def prepare_background(background: Image.Image, layout: Layout) -> Image.Image:
+    canvas = fit_cover(background, layout.size, layout.background_focus).convert("RGBA")
+    # Small color/contrast lift preserves the dramatic broadcast look after resizing.
+    canvas = ImageEnhance.Color(canvas).enhance(1.03)
+    canvas = ImageEnhance.Contrast(canvas).enhance(1.025)
+    return add_readability_shade(
+        canvas,
+        layout.shade_strength,
+        layout.shade_center,
+        layout.shade_width,
+    )
+
+
+def render_layout(assets: dict[str, Image.Image], layout: Layout) -> Image.Image:
+    canvas = prepare_background(assets["background"], layout)
+
+    character = resize_to_height(assets["character"], layout.character_height)
+    character_position = (layout.character_x, layout.character_y)
+    add_character_shadow(canvas, character, character_position)
+    alpha_composite_clipped(canvas, character, character_position)
+
+    text = resize_to_width(assets["text"], layout.text_width)
+    alpha_composite_clipped(canvas, text, (layout.text_x, layout.text_y))
+
+    for asset_key, width, x, y in layout.branding:
+        layer = resize_to_width(assets[asset_key], width)
+        alpha_composite_clipped(canvas, layer, (x, y))
+
+    return canvas
+
+
+def unique_run_id(output_dir: Path) -> str:
+    timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    candidate = timestamp
+    counter = 2
+    while any(output_dir.glob(f"banner_*_{candidate}.*")):
+        candidate = f"{timestamp}_{counter:02d}"
+        counter += 1
+    return candidate
+
+
+def save_banner(
+    image: Image.Image,
+    output_dir: Path,
+    label: str,
+    run_id: str,
+    save_jpeg: bool,
+) -> list[Path]:
+    stem = f"banner_{label}_{run_id}"
+    png_path = output_dir / f"{stem}.png"
+    image.save(png_path, "PNG", optimize=True)
+    paths = [png_path]
+
+    if save_jpeg:
+        jpg_path = output_dir / f"{stem}.jpg"
+        image.convert("RGB").save(
+            jpg_path,
+            "JPEG",
+            quality=95,
+            subsampling=0,
+            optimize=True,
+        )
+        paths.append(jpg_path)
+    return paths
+
+
+def make_banners(
+    design_dir: Path,
+    output_dir: Path,
+    selected_labels: set[str] | None = None,
+    save_jpeg: bool = True,
+) -> list[Path]:
+    assets = load_assets(design_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_id = unique_run_id(output_dir)
+    created: list[Path] = []
+
+    for layout in LAYOUTS:
+        if selected_labels and layout.label not in selected_labels:
+            continue
+        banner = render_layout(assets, layout)
+        created.extend(save_banner(banner, output_dir, layout.label, run_id, save_jpeg))
+
+    return created
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Create responsive news banners from layered PNG artwork."
+    )
+    parser.add_argument(
+        "design_dir",
+        nargs="?",
+        type=Path,
+        default=DEFAULT_DESIGN_DIR,
+        help=f"layered artwork folder (default: {DEFAULT_DESIGN_DIR})",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"export folder (default: {DEFAULT_OUTPUT_DIR})",
+    )
+    parser.add_argument(
+        "--only",
+        action="append",
+        choices=[layout.label for layout in LAYOUTS],
+        help="render only this size; repeat the option to select multiple sizes",
+    )
+    parser.add_argument(
+        "--png-only",
+        action="store_true",
+        help="skip the high-quality JPEG copies",
+    )
+    parser.add_argument(
+        "--no-pause",
+        action="store_true",
+        help="do not wait for Enter before closing",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    status = 0
+    try:
+        design_dir = args.design_dir.expanduser().resolve()
+        output_dir = args.output_dir.expanduser().resolve()
+        created = make_banners(
+            design_dir=design_dir,
+            output_dir=output_dir,
+            selected_labels=set(args.only) if args.only else None,
+            save_jpeg=not args.png_only,
+        )
+        print(f"Created {len(created)} file(s) from: {design_dir}")
+        for path in created:
+            print(f"  {path}")
+    except Exception as exc:
+        status = 1
+        print(f"Banner creation failed: {exc}", file=sys.stderr)
+
+    if not args.no_pause and sys.stdin is not None and sys.stdin.isatty():
+        try:
+            input("\nPress Enter to close...")
+        except (EOFError, KeyboardInterrupt):
+            pass
+    return status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

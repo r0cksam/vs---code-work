@@ -35,6 +35,9 @@ superset/
 *.xlsx
 *.xls
 
+# Large generated banner archives
+ETL/Banner Maker/*.zip
+
 # Generated dashboard HTML can exceed GitHub's file-size limit.
 ETL/output/**/*.html
 ETL/output/watch_hours/*.html
