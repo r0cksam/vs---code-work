@@ -82,6 +82,188 @@ read_excel = _extract_module.read_excel
 read_source_daily = _extract_module.read_source_daily
 
 
+def device_data_span(daily_rows: list[dict]) -> tuple[str, str, int]:
+    dates = sorted(
+        str(row.get("date", "")).strip()[:10]
+        for row in daily_rows
+        if str(row.get("date", "")).strip()
+    )
+    if not dates:
+        return "", "", 0
+    return dates[0], dates[-1], len(set(dates))
+
+
+def read_identity_device_data(identity_path: Path) -> tuple[list, list, dict]:
+    """Build Overview device rows from the compact identity mart when available."""
+    if not identity_path.exists():
+        return [], [], {}
+
+    try:
+        import pandas as pd
+    except ImportError:
+        return [], [], {}
+
+    try:
+        df = pd.read_parquet(identity_path)
+    except (FileNotFoundError, OSError, ValueError):
+        return [], [], {}
+
+    required = {"source", "log_date", "device_id"}
+    if df.empty or not required.issubset(df.columns):
+        return [], [], {}
+
+    work = df.copy()
+    work["date"] = work["log_date"].astype(str).str.slice(0, 10)
+    work["source"] = work["source"].fillna("stream").astype(str).str.strip().str.lower()
+    work["source"] = work["source"].replace("", "stream")
+    work["device_id"] = work["device_id"].astype(str).str.strip()
+    work = work[
+        work["date"].str.match(r"^\d{4}-\d{2}-\d{2}$", na=False)
+        & work["device_id"].ne("")
+        & work["device_id"].str.lower().ne("nan")
+    ]
+    if work.empty:
+        return [], [], {}
+
+    if "rows_with_identity" in work.columns:
+        work["rows_on_date"] = pd.to_numeric(work["rows_with_identity"], errors="coerce").fillna(0)
+    else:
+        work["rows_on_date"] = 0
+    if "distinct_sessions" in work.columns:
+        work["distinct_sessions"] = pd.to_numeric(work["distinct_sessions"], errors="coerce").fillna(0)
+    else:
+        work["distinct_sessions"] = 0
+
+    grouped = work.groupby(["source", "device_id", "date"], as_index=False).agg(
+        rows_on_date=("rows_on_date", "sum"),
+        distinct_sessions=("distinct_sessions", "sum"),
+    )
+
+    device_idx: dict[str, int] = {}
+    first_seen_by_device: dict[int, str] = {}
+    first_seen_by_source_device: dict[tuple[str, int], str] = {}
+    snapshot_map: dict[int, dict] = {}
+    daily_map: dict[str, dict] = {}
+
+    for row in grouped.itertuples(index=False):
+        source = str(row.source or "stream").strip().lower() or "stream"
+        device_id = str(row.device_id)
+        date_value = str(row.date)
+        idx = device_idx.get(device_id)
+        if idx is None:
+            idx = len(device_idx)
+            device_idx[device_id] = idx
+
+        rows_on_date = int(row.rows_on_date or 0)
+        sessions = int(row.distinct_sessions or 0)
+
+        old_first = first_seen_by_device.get(idx)
+        if old_first is None or date_value < old_first:
+            first_seen_by_device[idx] = date_value
+        source_key = (source, idx)
+        old_source_first = first_seen_by_source_device.get(source_key)
+        if old_source_first is None or date_value < old_source_first:
+            first_seen_by_source_device[source_key] = date_value
+
+        snap = snapshot_map.setdefault(
+            idx,
+            {
+                "device_id": device_id,
+                "first_seen": date_value,
+                "last_seen": date_value,
+                "days": set(),
+                "total_rows": 0,
+                "sessions": 0,
+            },
+        )
+        snap["first_seen"] = min(snap["first_seen"], date_value)
+        snap["last_seen"] = max(snap["last_seen"], date_value)
+        snap["days"].add(date_value)
+        snap["total_rows"] += rows_on_date
+        snap["sessions"] += sessions
+
+        item = daily_map.setdefault(
+            date_value,
+            {"date": date_value, "devices": set(), "rows": 0, "sessions": 0, "sources": {}},
+        )
+        item["devices"].add(idx)
+        item["rows"] += rows_on_date
+        item["sessions"] += sessions
+        source_item = item["sources"].setdefault(
+            source,
+            {"devices": set(), "rows": 0, "sessions": 0},
+        )
+        source_item["devices"].add(idx)
+        source_item["rows"] += rows_on_date
+        source_item["sessions"] += sessions
+
+    first_seen_counts: dict[str, int] = {}
+    snapshot_rows = []
+    for idx, snap in snapshot_map.items():
+        first_seen = str(snap["first_seen"])
+        first_seen_counts[first_seen] = first_seen_counts.get(first_seen, 0) + 1
+        snapshot_rows.append(
+            {
+                "device_id": snap["device_id"],
+                "first_seen": first_seen,
+                "last_seen": snap["last_seen"],
+                "days_seen": len(snap["days"]),
+                "total_rows": int(snap["total_rows"]),
+                "sessions": int(snap["sessions"]),
+            }
+        )
+
+    daily_rows = [
+        {
+            "date": date_value,
+            "devices": sorted(value["devices"]),
+            "active_devices": len(value["devices"]),
+            "new_devices": sum(
+                1 for idx in value["devices"] if first_seen_by_device.get(idx) == date_value
+            ),
+            "rows": int(value["rows"]),
+            "sessions": int(value["sessions"]),
+            "sources": {
+                source: {
+                    "devices": sorted(src_value["devices"]),
+                    "active_devices": len(src_value["devices"]),
+                    "new_devices": sum(
+                        1
+                        for idx in src_value["devices"]
+                        if first_seen_by_source_device.get((source, idx)) == date_value
+                    ),
+                    "rows": int(src_value["rows"]),
+                    "sessions": int(src_value["sessions"]),
+                }
+                for source, src_value in sorted(value["sources"].items())
+            },
+        }
+        for date_value, value in sorted(daily_map.items())
+    ]
+
+    return snapshot_rows, daily_rows, first_seen_counts
+
+
+def filter_device_rows_to_dates(
+    device_daily_rows: list[dict],
+    first_seen_counts: dict,
+    allowed_dates: set[str],
+) -> tuple[list[dict], dict]:
+    if not allowed_dates:
+        return device_daily_rows, first_seen_counts
+    filtered_rows = [
+        row
+        for row in device_daily_rows
+        if str(row.get("date", "")).strip()[:10] in allowed_dates
+    ]
+    filtered_first_seen = {
+        str(date_value): count
+        for date_value, count in first_seen_counts.items()
+        if str(date_value)[:10] in allowed_dates
+    }
+    return filtered_rows, filtered_first_seen
+
+
 def atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
     import tempfile
 
@@ -132,12 +314,45 @@ def main() -> None:
         for missing in missing_device_files:
             print(f"    - {missing}")
 
+    completed_dates = {
+        str(row.get("date", "")).strip()[:10]
+        for row in data_rows
+        if str(row.get("date", "")).strip()
+    }
+
     snapshot_rows, device_daily_rows, device_first_seen_counts = read_device_data(
         device_snapshot_csv,
         device_daily_csv,
     )
+    identity_device_path = Path(
+        os.getenv(
+            "VG_OVERVIEW_IDENTITY_DEVICE_DAILY",
+            str(base_dir.parent / "identity" / "identity_device_daily.parquet"),
+        )
+    )
+    identity_snapshot_rows, identity_daily_rows, identity_first_seen_counts = read_identity_device_data(
+        identity_device_path
+    )
+    if identity_daily_rows and device_data_span(identity_daily_rows)[2] > device_data_span(device_daily_rows)[2]:
+        # Historical lake partitions may be archived off the active lake.
+        # The identity mart is the compact, append-safe source for full-range device activity.
+        snapshot_rows = identity_snapshot_rows
+        device_daily_rows = identity_daily_rows
+        device_first_seen_counts = identity_first_seen_counts
+
+    device_daily_rows, device_first_seen_counts = filter_device_rows_to_dates(
+        device_daily_rows,
+        device_first_seen_counts,
+        completed_dates,
+    )
     device_summary = build_device_summary(snapshot_rows, device_daily_rows)
     source_rows = read_source_daily(source_daily_csv)
+    if completed_dates:
+        source_rows = [
+            row
+            for row in source_rows
+            if str(row.get("date", "")).strip()[:10] in completed_dates
+        ]
     source_dates: dict[str, list[str]] = {}
     for row in source_rows:
         source = str(row.get("source", "")).strip().lower()

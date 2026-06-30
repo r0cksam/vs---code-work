@@ -218,11 +218,20 @@ def pa_total_file_count_scoped(lake_root: Path, year: str | None, month: str | N
     return sum(pa_total_file_count(root) for root in scoped_roots(lake_root, year, month) or [lake_root])
 
 
-def safe_query(con, sql: str, label: str = "") -> pd.DataFrame:
+def safe_query(
+    con,
+    sql: str,
+    label: str = "",
+    *,
+    raise_on_error: bool = False,
+) -> pd.DataFrame:
     try:
         return con.execute(sql).df()
     except Exception as exc:
-        log.warning(f"Query failed [{label}]: {exc}")
+        message = f"Query failed [{label}]: {exc}"
+        if raise_on_error:
+            raise RuntimeError(message) from exc
+        log.warning(message)
         return pd.DataFrame()
 
 
@@ -474,7 +483,7 @@ def query_new_dates(
         FROM {reader}
         GROUP BY year, month, day
         ORDER BY partition_date
-    """, "day breakdown")
+    """, "day breakdown", raise_on_error=True)
 
     if df.empty:
         return []
@@ -601,7 +610,7 @@ def query_source_split_rows(
         WHERE {date_filter_sql(split_dates)}
         GROUP BY year, month, day, source
         ORDER BY partition_date, source
-    """, "source day breakdown")
+    """, "source day breakdown", raise_on_error=True)
 
     rows: list[dict] = []
     for _, row in df.iterrows():
@@ -674,6 +683,250 @@ def overview_rows_to_source_seed(rows: list[dict]) -> list[dict]:
     return out
 
 
+def _overview_output_root(out_dir: Path) -> Path:
+    candidates = [
+        out_dir.parent,
+        out_dir,
+        Path(__file__).resolve().parents[2] / "output",
+    ]
+    for candidate in candidates:
+        if (candidate / "watch_hours" / "profile" / "daily_volume.parquet").exists():
+            return candidate
+    return out_dir.parent
+
+
+def _read_mart(path: Path, required: bool = False) -> pd.DataFrame:
+    if not path.exists():
+        if required:
+            log.warning(f"Overview mart fallback missing required file: {path}")
+        return pd.DataFrame()
+    try:
+        return pd.read_parquet(path)
+    except Exception as exc:
+        if required:
+            log.warning(f"Overview mart fallback could not read required file {path}: {exc}")
+        else:
+            log.warning(f"Overview mart fallback skipped optional file {path}: {exc}")
+        return pd.DataFrame()
+
+
+def _filter_mart_dates(
+    df: pd.DataFrame,
+    date_col: str,
+    year: str | None,
+    month: str | None,
+) -> pd.DataFrame:
+    if df.empty or date_col not in df.columns:
+        return pd.DataFrame()
+    out = df.copy()
+    out[date_col] = out[date_col].astype(str)
+    if year:
+        out = out[out[date_col].str.slice(0, 4) == year]
+    if month:
+        out = out[out[date_col].str.slice(5, 7) == month]
+    return out
+
+
+def _int_value(value, default: int = 0) -> int:
+    try:
+        if pd.isna(value):
+            return default
+        return int(value)
+    except Exception:
+        return default
+
+
+def _float_value(value, default: float = 0.0) -> float:
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _pct(part: int, whole: int) -> float:
+    return round(part / whole, 6) if whole else 0.0
+
+
+def _identity_lookup(identity: pd.DataFrame) -> tuple[dict[tuple[str, str], dict], dict[str, dict]]:
+    empty: tuple[dict[tuple[str, str], dict], dict[str, dict]] = ({}, {})
+    if identity.empty or {"log_date", "source"} - set(identity.columns):
+        return empty
+
+    work = identity.copy()
+    work["log_date"] = work["log_date"].astype(str)
+    work["source"] = work["source"].astype(str).str.lower()
+    value_cols = [
+        col
+        for col in [
+            "total_devices",
+            "total_sessions",
+            "total_ipua_sessions",
+            "device_identity_rows",
+            "session_identity_rows",
+            "ipua_identity_rows",
+        ]
+        if col in work.columns
+    ]
+    if not value_cols:
+        return empty
+
+    by_source = (
+        work.groupby(["log_date", "source"], as_index=False)[value_cols]
+        .sum(numeric_only=True)
+    )
+    by_date = (
+        work.groupby("log_date", as_index=False)[value_cols]
+        .sum(numeric_only=True)
+    )
+    source_map = {
+        (str(row["log_date"]), str(row["source"])): row.to_dict()
+        for _, row in by_source.iterrows()
+    }
+    date_map = {
+        str(row["log_date"]): row.to_dict()
+        for _, row in by_date.iterrows()
+    }
+    return source_map, date_map
+
+
+def _source_byte_lookup(latency_daily: pd.DataFrame) -> dict[tuple[str, str], float]:
+    if latency_daily.empty or {"log_date", "source", "rows", "avg_total_bytes"} - set(latency_daily.columns):
+        return {}
+    work = latency_daily.copy()
+    work["log_date"] = work["log_date"].astype(str)
+    work["source"] = work["source"].astype(str).str.lower()
+    work["byte_estimate"] = (
+        pd.to_numeric(work["rows"], errors="coerce").fillna(0)
+        * pd.to_numeric(work["avg_total_bytes"], errors="coerce").fillna(0)
+    )
+    grouped = work.groupby(["log_date", "source"], as_index=False)["byte_estimate"].sum()
+    return {
+        (str(row["log_date"]), str(row["source"])): float(row["byte_estimate"])
+        for _, row in grouped.iterrows()
+    }
+
+
+def build_overview_from_marts(
+    out_dir: Path,
+    year: str | None,
+    month: str | None,
+) -> tuple[list[dict], list[dict]]:
+    """Build Overview rows from compact marts when a direct lake scan fails."""
+    output_root = _overview_output_root(out_dir)
+    daily = _filter_mart_dates(
+        _read_mart(output_root / "watch_hours" / "profile" / "daily_volume.parquet", required=True),
+        "log_date",
+        year,
+        month,
+    )
+    source_daily = _filter_mart_dates(
+        _read_mart(output_root / "watch_hours" / "daily_tables" / "daily_volume.parquet", required=True),
+        "log_date",
+        year,
+        month,
+    )
+    if daily.empty or source_daily.empty:
+        return [], []
+
+    identity = _filter_mart_dates(
+        _read_mart(output_root / "identity" / "identity_daily.parquet"),
+        "log_date",
+        year,
+        month,
+    )
+    latency_daily = _filter_mart_dates(
+        _read_mart(output_root / "latency" / "profile" / "daily.parquet"),
+        "log_date",
+        year,
+        month,
+    )
+    identity_by_source, identity_by_date = _identity_lookup(identity)
+    bytes_by_source = _source_byte_lookup(latency_daily)
+
+    overview_rows: list[dict] = []
+    daily = daily.sort_values("log_date")
+    for _, row in daily.iterrows():
+        date_key = str(row["log_date"])
+        total_rows = _int_value(row.get("rows"))
+        identity_row = identity_by_date.get(date_key, {})
+        dist_ip = _int_value(row.get("approx_unique_ips"))
+        dist_ipua = _int_value(identity_row.get("total_ipua_sessions"))
+        dist_dev = _int_value(identity_row.get("total_devices"))
+        dist_sess = _int_value(identity_row.get("total_sessions"))
+        sess_avail = min(total_rows, _int_value(identity_row.get("session_identity_rows")))
+        sess_none = max(0, total_rows - sess_avail)
+        overview_rows.append({
+            "ist_date": datetime.strptime(date_key, "%Y-%m-%d").strftime("%d/%m/%y"),
+            "bytes_gib": round(_float_value(row.get("total_bytes")) / (1024 ** 3), 2),
+            "total_rows": total_rows,
+            "ip_rows": total_rows,
+            "dist_ip": dist_ip,
+            "dist_ip_ua": dist_ipua,
+            "dist_dev": dist_dev,
+            "dist_sess": dist_sess,
+            "sess_avail": sess_avail,
+            "sess_na": 0,
+            "sess_none": sess_none,
+        })
+
+    source_rows: list[dict] = []
+    source_daily = source_daily.sort_values(["log_date", "source"])
+    for _, row in source_daily.iterrows():
+        date_key = str(row["log_date"])
+        source = str(row.get("source") or "stream").lower()
+        total_rows = _int_value(row.get("rows"))
+        identity_row = identity_by_source.get((date_key, source), {})
+        dist_ip = _int_value(row.get("approx_unique_ips"))
+        dist_ipua = _int_value(identity_row.get("total_ipua_sessions"))
+        dist_dev = _int_value(identity_row.get("total_devices"))
+        dist_sess = _int_value(identity_row.get("total_sessions"))
+        sess_avail = min(total_rows, _int_value(identity_row.get("session_identity_rows")))
+        sess_none = max(0, total_rows - sess_avail)
+        source_rows.append({
+            "source": source,
+            "date": date_key,
+            "bytes": round(bytes_by_source.get((date_key, source), 0.0) / (1024 ** 3), 2),
+            "rows": total_rows,
+            "ip_rows": total_rows,
+            "dist_ip": dist_ip,
+            "dist_ipua": dist_ipua,
+            "dist_dev": dist_dev,
+            "dist_sess": dist_sess,
+            "dist_ip_r2": dist_ip,
+            "dist_ipua_r2": dist_ipua,
+            "sess_avail": sess_avail,
+            "sess_na": 0,
+            "sess_none": sess_none,
+            "pct_ip": _pct(dist_ip, total_rows),
+            "pct_ipua": _pct(dist_ipua, total_rows),
+            "pct_sess": _pct(sess_avail, total_rows),
+            "pct_sessna": 0.0,
+            "pct_none": _pct(sess_none, total_rows),
+        })
+
+    return overview_rows, source_rows
+
+
+def mart_date_ranges(data_rows: list[dict]) -> tuple[str, str]:
+    if not data_rows:
+        return "N/A", "N/A"
+    dates = sorted(datetime.strptime(row["ist_date"], "%d/%m/%y") for row in data_rows)
+    start = dates[0]
+    end = dates[-1]
+    return (
+        f"{start.strftime('%Y-%m-%d')} -> {end.strftime('%Y-%m-%d')}",
+        f"{start.strftime('%Y-%m-%d')} 00:00:00 -> {end.strftime('%Y-%m-%d')} 23:59:59",
+    )
+
+
+def write_source_rows_csv(output_path: Path, source_rows: list[dict]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(source_rows).to_csv(output_path, index=False)
+    log.info(f"Wrote source daily rows: {output_path} ({len(source_rows):,} rows)")
+
+
 def write_source_daily_csv(
     output_path: Path,
     all_rows: list[dict],
@@ -682,6 +935,16 @@ def write_source_daily_csv(
     month: str | None,
     cols: set[str],
 ) -> None:
+    _, mart_source_rows = build_overview_from_marts(output_path.parent, year, month)
+    if mart_source_rows:
+        # Source-aware dashboard filtering must come from the full processed mart.
+        # The active lake may only contain recent days when historical lake
+        # partitions are archived to another drive, so lake-only source splitting
+        # would silently drop older FAST rows.
+        write_source_rows_csv(output_path, mart_source_rows)
+        log.info("Source daily rows came from compact watch-hours marts.")
+        return
+
     source_dates = source_dates_from_lake(lake_root, year, month)
     split_dates = {
         date_key
@@ -705,9 +968,7 @@ def write_source_daily_csv(
     source_rows.extend(split_rows)
     source_rows.sort(key=lambda r: (r["date"], r.get("source", "stream")))
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(source_rows).to_csv(output_path, index=False)
-    log.info(f"Wrote source daily rows: {output_path} ({len(source_rows):,} rows)")
+    write_source_rows_csv(output_path, source_rows)
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1063,11 +1324,52 @@ def run(
 
     # â”€â”€ Query new dates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     log.info("Querying day-by-day breakdown â€¦")
-    new_rows = query_new_dates(
-        con, lake_root, year_filter, month_filter,
-        cols, existing_row_counts, day_counts,
-    )
-    con.close()
+    query_failed = False
+    try:
+        new_rows = query_new_dates(
+            con, lake_root, year_filter, month_filter,
+            cols, existing_row_counts, day_counts,
+        )
+    except RuntimeError as exc:
+        query_failed = True
+        new_rows = []
+        log.warning(f"Day breakdown query unavailable; trying mart fallback. {exc}")
+    finally:
+        con.close()
+
+    if query_failed:
+        fallback_rows, fallback_source_rows = build_overview_from_marts(
+            out_dir,
+            year_filter,
+            month_filter,
+        )
+        if not fallback_rows:
+            raise SystemExit(
+                "Overview day breakdown failed and mart fallback was unavailable. "
+                "The pipeline stopped so stale Overview output is not mistaken for fresh output."
+            )
+
+        if date_range_ist == "N/A" or time_range_ist == "N/A":
+            date_range_ist, time_range_ist = mart_date_ranges(fallback_rows)
+
+        log.info(f"Writing {len(fallback_rows)} Overview rows from compact marts ...")
+        write_source_rows_csv(out_dir / SOURCE_DAILY_FILENAME, fallback_source_rows)
+        write_overview_excel(
+            output_path    = output_file,
+            data_rows      = fallback_rows,
+            lake_root      = lake_root,
+            year_filter    = year_filter,
+            month_filter   = month_filter,
+            total_rows_pa  = total_rows,
+            total_files    = total_files,
+            date_range_ist = date_range_ist,
+            time_range_ist = time_range_ist,
+        )
+
+        print(f"\n{'=' * 60}")
+        print(f"  Overview saved from compact marts: {output_file}")
+        print(f"{'=' * 60}\n")
+        return
 
     if not new_rows:
         source_csv = out_dir / SOURCE_DAILY_FILENAME

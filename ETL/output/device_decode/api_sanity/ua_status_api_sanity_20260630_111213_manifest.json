@@ -1,0 +1,16 @@
+{
+  "generated_at_utc": "2026-06-30T05:47:56.776184+00:00",
+  "lookup": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_decode_lookup_both_all.parquet",
+  "statuses": "decoded_local,unknown,malformed",
+  "api_url": "https://whatmyuseragent.com/api",
+  "api_cache": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\cache\\device_decode\\whatmyuseragent_status_sanity_20260630_111213.parquet",
+  "api_limit": -1,
+  "new_api_candidates_this_run": 1092,
+  "report_rows": 1092,
+  "elapsed_seconds": 342.15,
+  "outputs": {
+    "csv": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\api_sanity\\ua_status_api_sanity_20260630_111213.csv",
+    "parquet": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\api_sanity\\ua_status_api_sanity_20260630_111213.parquet",
+    "summary": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\api_sanity\\ua_status_api_sanity_20260630_111213_summary.csv"
+  }
+}

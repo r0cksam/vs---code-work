@@ -1505,6 +1505,7 @@ def main() -> None:
     else:
         print("\n[skip] UA model-code device decode profile step skipped.")
 
+    overview_report_ok = False
     if not args.skip_overview:
         overview_report_ok = run(
             [
@@ -2015,6 +2016,26 @@ def main() -> None:
         )
     else:
         print("\n[skip] identity mart skipped.")
+
+    if identity_ok and overview_report_ok and not args.skip_overview:
+        overview_after_identity_cmd = [
+            python,
+            str(overview_dashboard_dir / "generate_dashboard.py"),
+            "--data-dir",
+            str(overview_data_dir),
+            str(overview_data_dir / "overview_report.xlsx"),
+            str(overview_html),
+        ]
+        if args.dry_run:
+            overview_after_identity_cmd.append("--dry-run")
+        run(
+            overview_after_identity_cmd,
+            cwd=overview_dashboard_dir,
+            env=env,
+            step_name="overview_dashboard_html_after_identity",
+            log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+        )
 
     content_ok = True
     if not args.skip_content_mart:

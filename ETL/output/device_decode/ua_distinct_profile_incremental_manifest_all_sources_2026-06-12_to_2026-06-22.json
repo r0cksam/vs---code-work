@@ -1,0 +1,14 @@
+{
+  "approx_ips_note": "sum of per-day distinct IP counts; not true cross-day distinct IP",
+  "distinct_ua": 9910,
+  "first_date": "2026-06-12",
+  "generated_at": "2026-06-29T14:29:04",
+  "lake": "\\\\192.168.50.11\\analysis team\\Veto Logs Backup\\DO NOT DELETE",
+  "last_date": "2026-06-22",
+  "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_distinct_profile_all_sources_2026-06-12_to_2026-06-22.parquet",
+  "part_files": 22,
+  "parts_dir": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\device_decode\\ua_profile_parts",
+  "raw_rows": 644924709,
+  "source": "both",
+  "source_days": 22
+}
