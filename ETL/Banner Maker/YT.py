@@ -164,6 +164,9 @@ def track(input_url: str, interval_sec: int = 60, out_dir: str = "viewer_logs", 
     print(f"Writing to: {out_path}")
 
     writer = pq.ParquetWriter(out_path, SCHEMA)
+    known_titles = {}      # video_id -> title, remembered even after a stream ends
+    previously_live = set()  # video_ids that were live as of the last poll
+
     try:
         while True:
             now = datetime.datetime.now(IST)
@@ -178,15 +181,30 @@ def track(input_url: str, interval_sec: int = 60, out_dir: str = "viewer_logs", 
                     live_videos = []
                     print(f"{date_str} {time_str} IST  Error scanning channel: {e}")
 
+                currently_live = set()
+
                 if not live_videos:
                     print(f"{date_str} {time_str} IST  No live streams found right now.")
                     rows.append((date_str, time_str, None, None, None, "no_live_streams"))
                 else:
                     print(f"{date_str} {time_str} IST  {len(live_videos)} live stream(s) found:")
                     for vid, title, viewers in live_videos:
+                        currently_live.add(vid)
+                        known_titles[vid] = title
                         rows.append((date_str, time_str, vid, title, viewers, "is_live"))
                         print(f'    [{vid}] viewers={viewers}  "{title}"')
 
+                newly_started = currently_live - previously_live
+                newly_ended = previously_live - currently_live
+
+                for vid in newly_started:
+                    print(f'    >> NEW STREAM DETECTED: [{vid}] "{known_titles.get(vid)}"')
+
+                for vid in newly_ended:
+                    print(f'    >> STREAM ENDED: [{vid}] "{known_titles.get(vid)}"')
+                    rows.append((date_str, time_str, vid, known_titles.get(vid), None, "stream_ended"))
+
+                previously_live = currently_live
                 write_batch(writer, rows)
 
             else:
