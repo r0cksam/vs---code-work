@@ -1,4 +1,4 @@
-"""
+r"""
 YouTube Live Viewer Count Tracker (No API Key Needed) -- Parquet Edition
 --------------------------------------------------------------------------
 Uses yt-dlp to read publicly visible live viewer counts. It can track one or
@@ -12,28 +12,25 @@ Channel polling is deliberately conservative:
     - A stream must be confirmed non-live on multiple polls before it ends.
 
 Storage:
-    Rows are buffered into useful Parquet row groups. Files roll hourly by
-    default, so completed segments remain readable even if a later segment is
-    interrupted. The active file has a .partial suffix and is atomically
-    renamed to .parquet after it is closed successfully.
+    Rows are buffered into useful Parquet row groups. By default, files close
+    on exact IST clock-hour boundaries and are stored in Hive-style calendar
+    folders below:
+        Y:\Veto Logs Backup\DO NOT DELETE\source=Youtube\
+          year=2026\month=06\day=30\
+            indiatv_30-06-2026_14-00_a1b2c3d4.parquet
 
-    With multiple sources, each URL is written below its own
-    output/source=<name-hash>/ directory so schemas and file publication stay
-    independent while all sources share one globally bounded lookup pool.
+    The active file has a .partial suffix and is atomically renamed to
+    .parquet after it closes successfully. Multiple channels share the same
+    date partition and are identified safely in their filenames.
 
-    Query all completed segments with DuckDB:
-        SELECT *
-        FROM read_parquet('viewer_logs/*.parquet')
-        ORDER BY date, time;
-
-    For a multi-source run, the source name is inferred from its Hive-style
-    directory:
+    Query all completed segments with DuckDB (filename includes the channel):
         SELECT *
         FROM read_parquet(
-            'viewer_logs/source=*/*.parquet',
-            hive_partitioning = true
+            'Y:/Veto Logs Backup/DO NOT DELETE/source=Youtube/year=*/month=*/day=*/*.parquet',
+            hive_partitioning = true,
+            filename = true
         )
-        ORDER BY source, date, time;
+        ORDER BY year, month, day, date, time;
 
 Setup:
     pip install -U yt-dlp pyarrow
@@ -55,7 +52,7 @@ Useful options:
     --workers N           Maximum parallel video lookups (default: 4).
     --end-confirmations N Successful non-live checks required (default: 2).
     --row-group-rows N    Buffered rows per Parquet row group (default: 250).
-    --roll-minutes N      Close and publish a file every N minutes (default: 60).
+    --roll-minutes N      Close on aligned IST N-minute boundaries (default: 60).
     --once                Run one poll, print its timing, and exit.
 
 Note: yt-dlp relies on YouTube's public page structure rather than a versioned
@@ -74,7 +71,7 @@ import uuid
 from concurrent.futures import Executor, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -90,6 +87,8 @@ except Exception:
     pass
 
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30), name="IST")
+DEFAULT_OUTPUT_DIR = r"Y:\Veto Logs Backup\DO NOT DELETE"
+YOUTUBE_SOURCE_PARTITION = "source=Youtube"
 
 YDL_OPTS = {
     "quiet": True,
@@ -315,28 +314,63 @@ def write_batch(writer: pq.ParquetWriter, rows: Sequence[Row]) -> None:
 
 
 class RollingParquetLogger:
-    """Buffer useful row groups and atomically publish closed rolling files."""
+    """Publish clock-aligned files in IST year/month/day Hive partitions."""
 
-    def __init__(self, out_dir: str, row_group_rows: int, roll_minutes: int):
+    def __init__(
+        self,
+        out_dir: str,
+        row_group_rows: int,
+        roll_minutes: int,
+        file_prefix: str = "Youtube",
+        now_provider: Optional[Callable[[], datetime.datetime]] = None,
+    ):
         self.out_dir = out_dir
         self.row_group_rows = row_group_rows
         self.roll_seconds = roll_minutes * 60
+        self.file_prefix = re.sub(
+            r'[<>:"/\\|?*\x00-\x1f]+',
+            "_",
+            file_prefix,
+        ).strip(" ._") or "Youtube"
+        self.now_provider = now_provider or (lambda: datetime.datetime.now(IST))
         self.buffer: List[Row] = []
         self.writer: Optional[pq.ParquetWriter] = None
         self.partial_path: Optional[str] = None
         self.final_path: Optional[str] = None
-        self.opened_at = 0.0
+        self.segment_start: Optional[datetime.datetime] = None
+        self.segment_end: Optional[datetime.datetime] = None
         os.makedirs(out_dir, exist_ok=True)
         self._open_segment()
 
-    def _open_segment(self) -> None:
-        stamp = datetime.datetime.now(IST).strftime("%Y-%m-%d_%H%M%S")
+    def _segment_bounds(
+        self,
+        now_ist: datetime.datetime,
+    ) -> Tuple[datetime.datetime, datetime.datetime]:
+        midnight = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
+        seconds_from_midnight = (now_ist - midnight).total_seconds()
+        bucket = int(seconds_from_midnight // self.roll_seconds)
+        start = midnight + datetime.timedelta(seconds=bucket * self.roll_seconds)
+        return start, start + datetime.timedelta(seconds=self.roll_seconds)
+
+    def _open_segment(
+        self,
+        reference_time: Optional[datetime.datetime] = None,
+    ) -> None:
+        now_ist = (reference_time or self.now_provider()).astimezone(IST)
+        self.segment_start, self.segment_end = self._segment_bounds(now_ist)
+        partition_dir = os.path.join(
+            self.out_dir,
+            f"year={self.segment_start:%Y}",
+            f"month={self.segment_start:%m}",
+            f"day={self.segment_start:%d}",
+        )
+        os.makedirs(partition_dir, exist_ok=True)
+        stamp = self.segment_start.strftime("%d-%m-%Y_%H-%M")
         token = uuid.uuid4().hex[:8]
-        filename = f"log_{stamp}_{token}.parquet"
-        self.final_path = os.path.join(self.out_dir, filename)
+        filename = f"{self.file_prefix}_{stamp}_{token}.parquet"
+        self.final_path = os.path.join(partition_dir, filename)
         self.partial_path = self.final_path + ".partial"
         self.writer = pq.ParquetWriter(self.partial_path, SCHEMA)
-        self.opened_at = time.monotonic()
 
     def _flush_rows(self, count: int) -> None:
         if not self.writer or count <= 0:
@@ -362,9 +396,23 @@ class RollingParquetLogger:
         """Add rows and return a completed path when a rotation occurred."""
 
         completed_path = None
-        if time.monotonic() - self.opened_at >= self.roll_seconds:
+        row_time = self.now_provider().astimezone(IST)
+        if rows:
+            try:
+                row_time = datetime.datetime.strptime(
+                    f"{rows[0][0]} {rows[0][1]}",
+                    "%Y-%m-%d %H:%M:%S",
+                ).replace(tzinfo=IST)
+            except (TypeError, ValueError):
+                pass
+        outside_segment = (
+            self.segment_start is not None
+            and self.segment_end is not None
+            and not (self.segment_start <= row_time < self.segment_end)
+        )
+        if outside_segment:
             completed_path = self._close_segment()
-            self._open_segment()
+            self._open_segment(row_time)
         self.buffer.extend(rows)
         self._flush_complete_groups()
         return completed_path
@@ -564,13 +612,25 @@ class SourceRuntime:
     stopped: bool = False
 
 
-def source_slug(url: str) -> str:
+def source_name_from_url(url: str) -> str:
     parsed = urlparse(url)
     path_parts = [part.lstrip("@") for part in parsed.path.split("/") if part]
     human_part = path_parts[-1] if path_parts else parsed.netloc or "youtube"
     safe_part = re.sub(r"[^A-Za-z0-9._-]+", "-", human_part).strip("-._")
+    return (safe_part or "youtube")[:48]
+
+
+def source_slug(url: str) -> str:
+    safe_part = source_name_from_url(url)
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:8]
-    return f"{(safe_part or 'source')[:48]}-{digest}"
+    return f"{safe_part}-{digest}"
+
+
+def youtube_output_root(out_dir: str) -> str:
+    normalized = os.path.normpath(out_dir)
+    if os.path.basename(normalized).lower() == YOUTUBE_SOURCE_PARTITION.lower():
+        return normalized
+    return os.path.join(normalized, YOUTUBE_SOURCE_PARTITION)
 
 
 def poll_source(
@@ -638,7 +698,7 @@ def poll_source(
 def track_many(
     input_urls: Sequence[str],
     interval_sec: int = 60,
-    out_dir: str = "viewer_logs",
+    out_dir: str = DEFAULT_OUTPUT_DIR,
     scan_limit: int = 10,
     max_workers: int = 4,
     discovery_every: int = 1,
@@ -664,20 +724,21 @@ def track_many(
 
     multiple_sources = len(urls) > 1
     runtimes: List[SourceRuntime] = []
+    partition_root = youtube_output_root(out_dir)
     try:
         for url in urls:
             slug = source_slug(url)
-            source_out_dir = (
-                os.path.join(out_dir, f"source={slug}")
-                if multiple_sources
-                else out_dir
-            )
             runtimes.append(
                 SourceRuntime(
                     url,
                     slug,
                     is_channel_url(url),
-                    RollingParquetLogger(source_out_dir, row_group_rows, roll_minutes),
+                    RollingParquetLogger(
+                        partition_root,
+                        row_group_rows,
+                        roll_minutes,
+                        source_name_from_url(url),
+                    ),
                 )
             )
     except Exception:
@@ -791,7 +852,7 @@ def track_many(
 def track(
     input_url: str,
     interval_sec: int = 60,
-    out_dir: str = "viewer_logs",
+    out_dir: str = DEFAULT_OUTPUT_DIR,
     scan_limit: int = 10,
     max_workers: int = 4,
     discovery_every: int = 1,
@@ -836,7 +897,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("url", help="YouTube video or channel URL")
     parser.add_argument("interval_sec", nargs="?", type=positive_int, default=60)
-    parser.add_argument("out_dir", nargs="?", default="viewer_logs")
+    parser.add_argument("out_dir", nargs="?", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("scan_limit", nargs="?", type=positive_int, default=10)
     parser.add_argument(
         "--extra-url",
