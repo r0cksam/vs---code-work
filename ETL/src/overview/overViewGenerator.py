@@ -53,6 +53,29 @@ OVERVIEW_FILENAME = "overview_report.xlsx"
 SOURCE_DAILY_FILENAME = "overview_source_daily.csv"
 OVERVIEW_SHEET    = "Overview"
 
+
+def latest_completed_ist_date() -> str:
+    """Return the latest full IST day that dashboards are allowed to publish."""
+    ist_today = (datetime.now(timezone.utc) + IST_OFFSET).date()
+    return (ist_today - timedelta(days=1)).isoformat()
+
+
+def keep_completed_ist_dates(df: pd.DataFrame, date_col: str = "log_date") -> pd.DataFrame:
+    if df.empty or date_col not in df.columns:
+        return df
+    cutoff = latest_completed_ist_date()
+    mask = df[date_col].astype(str).str[:10].le(cutoff)
+    return df.loc[mask].copy()
+
+
+def filter_day_counts_to_completed(day_counts: dict) -> dict:
+    cutoff = latest_completed_ist_date()
+    return {
+        key: value
+        for key, value in day_counts.items()
+        if str(key)[:10] <= cutoff
+    }
+
 # â”€â”€ Column indices (1-indexed for openpyxl) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #   A (1) = reserved for % Drop label
 #   B (2) = Date (IST)  â€¦  S (19) = % Session Not Found
@@ -489,10 +512,14 @@ def query_new_dates(
         return []
 
     new_rows: list[dict] = []
+    allowed_dates = set(day_counts)
     for _, row in df.iterrows():
         ist_str = partition_date_to_ist_str(row["partition_date"])
         date_key = pd.to_datetime(row["partition_date"]).strftime("%Y-%m-%d")
-        pa_count  = day_counts.get(date_key, int(row["total_rows"]))
+        if allowed_dates and date_key not in allowed_dates:
+            log.info(f"  Skipping {ist_str} (not a completed dashboard date)")
+            continue
+        pa_count = day_counts[date_key] if date_key in day_counts else int(row["total_rows"])
         existing_count = existing_row_counts.get(ist_str)
         if existing_count == pa_count:
             log.info(f"  Skipping {ist_str} (already loaded, {pa_count:,} rows unchanged)")
@@ -821,12 +848,14 @@ def build_overview_from_marts(
         year,
         month,
     )
+    daily = keep_completed_ist_dates(daily, "log_date")
     source_daily = _filter_mart_dates(
         _read_mart(output_root / "watch_hours" / "daily_tables" / "daily_volume.parquet", required=True),
         "log_date",
         year,
         month,
     )
+    source_daily = keep_completed_ist_dates(source_daily, "log_date")
     if daily.empty or source_daily.empty:
         return [], []
 
@@ -836,12 +865,14 @@ def build_overview_from_marts(
         year,
         month,
     )
+    identity = keep_completed_ist_dates(identity, "log_date")
     latency_daily = _filter_mart_dates(
         _read_mart(output_root / "latency" / "profile" / "daily.parquet"),
         "log_date",
         year,
         month,
     )
+    latency_daily = keep_completed_ist_dates(latency_daily, "log_date")
     identity_by_source, identity_by_date = _identity_lookup(identity)
     bytes_by_source = _source_byte_lookup(latency_daily)
 
@@ -1284,6 +1315,7 @@ def run(
     # â”€â”€ Parquet metadata (zero-scan) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     log.info("Reading Parquet metadata (zero-scan) ...")
     day_counts  = pa_row_counts_by_day(lake_root, year_filter, month_filter)
+    day_counts = filter_day_counts_to_completed(day_counts)
     total_rows  = sum(day_counts.values())
     total_files = pa_total_file_count_scoped(lake_root, year_filter, month_filter)
     log.info(f"  {total_rows:,} rows across {total_files:,} parquet files")
@@ -1349,8 +1381,7 @@ def run(
                 "The pipeline stopped so stale Overview output is not mistaken for fresh output."
             )
 
-        if date_range_ist == "N/A" or time_range_ist == "N/A":
-            date_range_ist, time_range_ist = mart_date_ranges(fallback_rows)
+        date_range_ist, time_range_ist = mart_date_ranges(fallback_rows)
 
         log.info(f"Writing {len(fallback_rows)} Overview rows from compact marts ...")
         write_source_rows_csv(out_dir / SOURCE_DAILY_FILENAME, fallback_source_rows)
@@ -1373,12 +1404,43 @@ def run(
 
     if not new_rows:
         source_csv = out_dir / SOURCE_DAILY_FILENAME
-        if not source_csv.exists():
-            log.info("Source daily CSV missing; creating it from current Overview rows.")
-            current_rows = load_existing_rows(output_file)
-            source_rows_for_csv = overview_rows_to_source_seed(current_rows)
-            write_source_daily_csv(source_csv, source_rows_for_csv, lake_root, year_filter, month_filter, cols)
-        print("\n  Nothing new to add - your file is already up to date.")
+        mart_rows, mart_source_rows = build_overview_from_marts(
+            out_dir,
+            year_filter,
+            month_filter,
+        )
+        if mart_rows:
+            date_range_ist, time_range_ist = mart_date_ranges(mart_rows)
+            log.info(
+                "No parquet row-count changes, but refreshing Overview from compact marts "
+                "so late-built latency/identity values are current."
+            )
+            write_source_rows_csv(source_csv, mart_source_rows)
+            write_overview_excel(
+                output_path    = output_file,
+                data_rows      = mart_rows,
+                lake_root      = lake_root,
+                year_filter    = year_filter,
+                month_filter   = month_filter,
+                total_rows_pa  = total_rows,
+                total_files    = total_files,
+                date_range_ist = date_range_ist,
+                time_range_ist = time_range_ist,
+            )
+            print("\n  Overview refreshed from compact marts.")
+        else:
+            if not source_csv.exists():
+                log.info("Source daily CSV missing; creating it from current Overview rows.")
+                current_rows = load_existing_rows(output_file)
+                current_rows = [
+                    row
+                    for row in current_rows
+                    if datetime.strptime(row["ist_date"], "%d/%m/%y").strftime("%Y-%m-%d")
+                    <= latest_completed_ist_date()
+                ]
+                source_rows_for_csv = overview_rows_to_source_seed(current_rows)
+                write_source_daily_csv(source_csv, source_rows_for_csv, lake_root, year_filter, month_filter, cols)
+            print("\n  Nothing new to add - your file is already up to date.")
         return
 
     unchanged = sum(1 for date, count in existing_row_counts.items() if day_counts.get(datetime.strptime(date, "%d/%m/%y").strftime("%Y-%m-%d")) == count)
@@ -1397,6 +1459,7 @@ def run(
         all_rows = old_rows + new_rows
         all_rows.sort(key=lambda x: datetime.strptime(x["ist_date"], "%d/%m/%y"))
 
+    date_range_ist, time_range_ist = mart_date_ranges(all_rows)
     source_rows_for_csv = overview_rows_to_source_seed(all_rows)
     write_source_daily_csv(
         out_dir / SOURCE_DAILY_FILENAME,

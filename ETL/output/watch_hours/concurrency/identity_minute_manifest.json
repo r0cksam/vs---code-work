@@ -1,11 +1,11 @@
 {
-  "generated_at_utc": "2026-06-30T04:39:15.314771+00:00",
+  "generated_at_utc": "2026-07-01T04:58:45.112969+00:00",
   "source": "stream",
   "lake": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\data\\lake",
   "output": "D:\\Veto Logs Backup\\Vs - Code Work\\ETL\\output\\watch_hours\\concurrency\\identity_minute.parquet",
   "date_range_replaced": {
-    "start": "2026-06-29",
-    "end": "2026-06-30"
+    "start": "2026-06-30",
+    "end": "2026-07-01"
   },
   "metric_notes": {
     "distinct_cliips": "Distinct cliIP values per IST minute on .ts playback rows.",
@@ -13,5 +13,5 @@
     "distinct_devices": "Distinct STREAM device_id values per IST minute where queryStr carries device_id.",
     "distinct_sessions": "Distinct STREAM session_id values per IST minute where queryStr carries session_id."
   },
-  "new_rows": 27551
+  "new_rows": 34343
 }

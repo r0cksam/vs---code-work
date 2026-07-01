@@ -5,10 +5,11 @@ Required files in ``input`` beside this script:
     BG.png
     character.png
     Text.png
+    Lagataar coverage.png
     india tv logo white.png
+    Live.png
 
 The script creates 1920x840, 1800x520, and 640x360 PNG/JPG banners.
-Every run is written to its own ``output/HH-MM-SS`` folder.
 When matching ``Mi Tv <size>.png`` files exist in ``AUTO creative design``,
 it also performs a visual sanity check and prints a similarity score.
 """
@@ -48,17 +49,21 @@ ASSET_NAMES = {
     "background": "BG.png",
     "character": "character.png",
     "text": "Text.png",
+    "coverage": "Lagataar coverage.png",
     "logo": "india tv logo white.png",
+    "live": "Live.png",
 }
 
 RECOMMENDED_SIZES = {
     "background": (1920, 840),
     "character": (1149, 840),
     "text": (929, 217),
+    "coverage": (302, 134),
     "logo": (172, 47),
+    "live": (138, 57),
 }
 
-TRANSPARENT_ASSETS = {"character", "text", "logo"}
+TRANSPARENT_ASSETS = {"character", "text", "coverage", "logo"}
 
 
 @dataclass(frozen=True)
@@ -104,7 +109,7 @@ LAYOUTS = (
         text_width=929,
         text_x=31,
         text_y=160,
-        branding=(("logo", 172, 410, 420),),
+        branding=(("coverage", 302, 329, 420),),
     ),
     Layout(
         size=(1800, 520),
@@ -113,11 +118,14 @@ LAYOUTS = (
         shade_strength=0.31,
         shade_center=0.34,
         shade_width=0.28,
-        characters=(CharacterPlacement("all", 0.64735, 927, -32),),
+        characters=(
+            CharacterPlacement("left", 0.65764, 910, -50),
+            CharacterPlacement("right", 0.64735, 927, -32),
+        ),
         text_width=869,
         text_x=61,
         text_y=65,
-        branding=(("logo", 172, 410, 300),),
+        branding=(("coverage", 291, 350, 300),),
     ),
     Layout(
         size=(640, 360),
@@ -126,11 +134,17 @@ LAYOUTS = (
         shade_strength=0.34,
         shade_center=0.22,
         shade_width=0.30,
-        characters=(CharacterPlacement("all", 0.38487, 195, 41),),
+        characters=(
+            CharacterPlacement("left", 0.34130, 241, 50),
+            CharacterPlacement("right", 0.38487, 195, 41),
+        ),
         text_width=289,
         text_x=17,
         text_y=82,
-        branding=(("logo", 172, 76, 167),),
+        branding=(
+            ("logo", 172, 76, 167),
+            ("live", 138, 80, 235),
+        ),
     ),
 )
 
@@ -411,20 +425,6 @@ def unique_run_id(output_dir: Path) -> str:
     return candidate
 
 
-def create_run_output_dir(output_root: Path) -> Path:
-    """Create an HH-MM-SS folder, adding a suffix for same-second runs."""
-
-    output_root.mkdir(parents=True, exist_ok=True)
-    timestamp = dt.datetime.now().strftime("%H-%M-%S")
-    candidate = output_root / timestamp
-    counter = 2
-    while candidate.exists():
-        candidate = output_root / f"{timestamp}_{counter:02d}"
-        counter += 1
-    candidate.mkdir()
-    return candidate
-
-
 def save_banner(
     image: Image.Image,
     output_dir: Path,
@@ -456,8 +456,8 @@ def make_banners(
 ) -> tuple[list[Path], list[QualityCheck], list[str]]:
     assets = load_assets(input_dir)
     asset_warnings = validate_assets(assets)
-    run_output_dir = create_run_output_dir(output_dir)
-    run_id = unique_run_id(run_output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_id = unique_run_id(output_dir)
     created: list[Path] = []
     checks: list[QualityCheck] = []
 
@@ -471,9 +471,7 @@ def make_banners(
                     banner, layout.label, reference_dir, minimum_similarity
                 )
             )
-        created.extend(
-            save_banner(banner, run_output_dir, layout.label, run_id, save_jpeg)
-        )
+        created.extend(save_banner(banner, output_dir, layout.label, run_id, save_jpeg))
     return created, checks, asset_warnings
 
 

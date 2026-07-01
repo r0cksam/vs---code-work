@@ -2017,7 +2017,28 @@ def main() -> None:
     else:
         print("\n[skip] identity mart skipped.")
 
-    if identity_ok and overview_report_ok and not args.skip_overview:
+    if identity_ok and not args.skip_overview:
+        overview_report_after_ok = run(
+            [
+                python,
+                str(overview_generator_script),
+                str(lake_root),
+                "--out-dir",
+                str(overview_data_dir),
+                "--year",
+                args.overview_year or "",
+                "--month",
+                args.overview_month or "",
+                "--yes",
+                "--auto",
+            ],
+            cwd=etl_root,
+            env=env,
+            step_name="overview_report_xlsx_after_latency_identity",
+            log_dir=log_dir,
+            allow_failure=args.continue_on_error,
+            retry_on_memory=True,
+        )
         overview_after_identity_cmd = [
             python,
             str(overview_dashboard_dir / "generate_dashboard.py"),
@@ -2028,14 +2049,19 @@ def main() -> None:
         ]
         if args.dry_run:
             overview_after_identity_cmd.append("--dry-run")
-        run(
-            overview_after_identity_cmd,
-            cwd=overview_dashboard_dir,
-            env=env,
-            step_name="overview_dashboard_html_after_identity",
-            log_dir=log_dir,
-            allow_failure=args.continue_on_error,
-        )
+        if overview_report_after_ok:
+            run(
+                overview_after_identity_cmd,
+                cwd=overview_dashboard_dir,
+                env=env,
+                step_name="overview_dashboard_html_after_identity",
+                log_dir=log_dir,
+                allow_failure=args.continue_on_error,
+            )
+        else:
+            reason = "overview_report_xlsx_after_latency_identity failed; skipped final HTML refresh"
+            print(f"\n[skip] overview_dashboard_html_after_identity: {reason}")
+            record_skip("overview_dashboard_html_after_identity", reason)
 
     content_ok = True
     if not args.skip_content_mart:
