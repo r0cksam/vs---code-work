@@ -1405,8 +1405,6 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
         if isinstance(devices.get(name), pd.DataFrame):
             devices[name] = filter_source(devices[name], source)
 
-    source_true_ranges = source_true_ranges_from_lake(daily)
-
     min_date, max_date = completed_date_window(
         daily,
         [
@@ -1437,6 +1435,10 @@ def build_data(args: argparse.Namespace) -> dict[str, Any]:
     for name, date_col in {"summary": "log_date", "ua": "first_date", "top_ua": "first_date"}.items():
         if isinstance(devices.get(name), pd.DataFrame):
             devices[name] = filter_date_window(devices[name], min_date, max_date, date_col)
+
+    # Calculate the header range only after source/date filters so partial today
+    # cannot leak into the advertised true range.
+    source_true_ranges = source_true_ranges_from_lake(daily)
 
     channel_top = top_table(channel, ["source", "channel_name"], "raw_watch_hours", 60)
     geo_top = top_table(geo, ["source", "country", "state", "city"], "raw_watch_hours", 80)

@@ -527,7 +527,77 @@ def clean_records(df: pd.DataFrame, columns: list[str] | None = None) -> list[di
     return json.loads(out.to_json(orient="records"))
 
 
+def latest_completed_ist_date() -> str:
+    """Static reports are completed-day views; today's partition is still in progress."""
+    return (datetime.now(IST_ZONE).date() - timedelta(days=1)).isoformat()
+
+
+def filter_completed_frame(df: pd.DataFrame, date_col: str = "log_date") -> pd.DataFrame:
+    """Remove current/future IST dates before records are written or embedded."""
+    if df.empty or date_col not in df.columns:
+        return df
+    dates = pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
+    keep = dates.le(latest_completed_ist_date()).fillna(False)
+    return df.loc[keep].copy()
+
+
+def _weighted_value(df: pd.DataFrame, value_col: str, weight_col: str = "rows") -> float | None:
+    if df.empty or value_col not in df.columns or weight_col not in df.columns:
+        return None
+    values = pd.to_numeric(df[value_col], errors="coerce")
+    weights = pd.to_numeric(df[weight_col], errors="coerce").fillna(0)
+    valid = values.notna() & weights.gt(0)
+    if not valid.any():
+        return None
+    return float((values[valid] * weights[valid]).sum() / weights[valid].sum())
+
+
+def _sum_numeric(df: pd.DataFrame, col: str) -> float:
+    if df.empty or col not in df.columns:
+        return 0.0
+    return float(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
+
+
+def rebuild_summary_from_completed_tables(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Refresh summary metadata from filtered daily/profile rows so header ranges stay honest."""
+    daily = tables.get("daily", pd.DataFrame())
+    if daily.empty or "log_date" not in daily.columns:
+        return tables.get("summary", pd.DataFrame())
+    dates = pd.to_datetime(daily["log_date"], errors="coerce").dropna()
+    if dates.empty:
+        return pd.DataFrame()
+    source = daily["source"] if "source" in daily.columns else pd.Series(dtype=object)
+    channel_daily = tables.get("channel_daily", pd.DataFrame())
+    host_daily = tables.get("host_daily", pd.DataFrame())
+    extension = daily["extension"].fillna("").astype(str).str.lower() if "extension" in daily.columns else pd.Series("", index=daily.index)
+    row = {
+        "first_date": dates.min().strftime("%Y-%m-%d"),
+        "last_date": dates.max().strftime("%Y-%m-%d"),
+        "rows": int(_sum_numeric(daily, "rows")),
+        "ts_rows": int(_sum_numeric(daily.loc[extension.eq("ts")], "rows")) if "rows" in daily.columns else 0,
+        "playlist_rows": int(_sum_numeric(daily.loc[extension.eq("m3u8")], "rows")) if "rows" in daily.columns else 0,
+        "sources": int(source.dropna().astype(str).nunique()) if not source.empty else 0,
+        "channels": int(channel_daily["channel_name"].dropna().astype(str).nunique()) if "channel_name" in channel_daily.columns else 0,
+        "hosts": int(host_daily["reqHost"].dropna().astype(str).nunique()) if "reqHost" in host_daily.columns else 0,
+        "ttfb_rows": int(_sum_numeric(daily, "ttfb_rows")),
+    }
+    for col in ["ttfb_p95_ms", "turnaround_p95_ms", "transfer_p95_ms", "throughput_p05"]:
+        row[col] = _weighted_value(daily, col, "rows")
+    return pd.DataFrame([row])
+
+
+def filter_completed_tables(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    filtered = {
+        name: filter_completed_frame(frame)
+        for name, frame in tables.items()
+        if name != "summary"
+    }
+    filtered["summary"] = rebuild_summary_from_completed_tables(filtered)
+    return filtered
+
+
 def build_payload(tables: dict[str, pd.DataFrame], args: argparse.Namespace) -> dict:
+    tables = filter_completed_tables(tables)
     summary = clean_records(tables.get("summary", pd.DataFrame()))
     stats = summary[0] if summary else {}
     source_dates: dict[str, list[str]] = {}
@@ -608,6 +678,7 @@ def main() -> None:
             logger.info("Date scope: all available lake partitions")  # FIX-11
         logger.info(f"Source scope: {args.source}")  # FIX-11
         tables = build_tables(args)
+        tables = filter_completed_tables(tables)
         for name, frame in tables.items():
             write_frame(frame, args.profile_out / f"{name}.parquet", args.dry_run)
 

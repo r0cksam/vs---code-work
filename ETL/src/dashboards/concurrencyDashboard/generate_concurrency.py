@@ -8,7 +8,7 @@ import importlib.util
 import json
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -169,6 +169,19 @@ def read_optional_parquet(path: Path) -> pd.DataFrame:
         return pd.read_parquet(path)
     except Exception as exc:
         raise ParquetReadError(f"Could not read optional parquet file {path}: {exc}") from exc
+
+
+def latest_completed_ist_date() -> str:
+    """Static concurrency reports should only expose fully completed IST dates."""
+    return (datetime.now(IST).date() - timedelta(days=1)).isoformat()
+
+
+def filter_completed_frame(df: pd.DataFrame, date_col: str = "log_date") -> pd.DataFrame:
+    if df.empty or date_col not in df.columns:
+        return df
+    dates = pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
+    keep = dates.le(latest_completed_ist_date()).fillna(False)
+    return df.loc[keep].copy()
 
 
 def clean_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -430,6 +443,9 @@ def build_data(data_dir: Path, title: str, embed_window_days: int = 30) -> tuple
     minute = clean_frame(read_parquet(minute_path))
     status_minute = clean_frame(read_optional_parquet(status_minute_path))
     summary = clean_frame(read_parquet(summary_path))
+    minute = filter_completed_frame(minute)
+    status_minute = filter_completed_frame(status_minute)
+    summary = filter_completed_frame(summary)
     if not status_minute.empty:
         status_minute = status_minute.sort_values(
             ["log_date", "platform_name", "channel_name", "candidate_id", "status_code", "minute_ist"]

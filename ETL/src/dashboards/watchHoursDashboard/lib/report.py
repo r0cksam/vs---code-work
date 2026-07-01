@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import unquote_plus
 
@@ -21,7 +21,7 @@ from .aggregations import (
     build_geo_breakdown,
     build_query_review,
 )
-from .constants import CHUNK_DURATION_HOURS, REPORT_DEFINITIONS, STATUS_CODE_MEANINGS, COUNTRY_LABELS
+from .constants import CHUNK_DURATION_HOURS, REPORT_DEFINITIONS, STATUS_CODE_MEANINGS, COUNTRY_LABELS, IST
 from .readers import (
     DEFAULT_LAKE_FOLDER,
     enrich_asn,
@@ -129,6 +129,59 @@ def _compact_daily_tables(tables: dict[str, list[dict]]) -> tuple[dict[str, list
         schemas[name] = schema
         compact[name] = values
     return schemas, compact
+
+
+def _latest_completed_date_text() -> str:
+    """Return the latest full IST date; static dashboards must not embed partial today data."""
+    return (datetime.now(IST).date() - timedelta(days=1)).isoformat()
+
+
+def _filter_completed_date_frame(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
+    """Drop partial/current-day rows from date-bearing frames before any totals are calculated."""
+    if df.empty or date_col not in df.columns:
+        return df
+    dates = pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
+    keep = dates.le(_latest_completed_date_text()).fillna(False)
+    return df.loc[keep].copy()
+
+
+def _filter_completed_daily_tables(tables: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """Apply the same completed-day cutoff to compact daily tables used by front-end filters."""
+    cutoff = _latest_completed_date_text()
+    filtered: dict[str, list[dict]] = {}
+    for name, rows in tables.items():
+        kept: list[dict] = []
+        for row in rows:
+            date_value = row.get("log_date") or row.get("date") or row.get("day")
+            if date_value and str(date_value)[:10] > cutoff:
+                continue
+            kept.append(row)
+        filtered[name] = kept
+    return filtered
+
+
+def _channel_summary_from_daily(channel_daily: pd.DataFrame) -> pd.DataFrame:
+    """Rebuild channel totals from filtered daily rows so summary cards cannot include partial today."""
+    required = {"channel_name", "raw_ts_chunks", "raw_watch_hours", "status_200_ts_chunks", "status_200_watch_hours"}
+    if channel_daily.empty or not required.issubset(channel_daily.columns):
+        return pd.DataFrame()
+    agg_spec: dict[str, tuple[str, str]] = {
+        "raw_ts_chunks": ("raw_ts_chunks", "sum"),
+        "raw_watch_hours": ("raw_watch_hours", "sum"),
+        "status_200_ts_chunks": ("status_200_ts_chunks", "sum"),
+        "status_200_watch_hours": ("status_200_watch_hours", "sum"),
+    }
+    if "approx_unique_ips" in channel_daily.columns:
+        # Daily approximate IPs are not exactly additive across days, but this preserves
+        # the previous dashboard convention for range-level channel summaries.
+        agg_spec["approx_unique_ips"] = ("approx_unique_ips", "sum")
+    if "source" in channel_daily.columns:
+        agg_spec["source"] = ("source", lambda values: ",".join(sorted(set(values.dropna().astype(str)))))
+    return (
+        channel_daily.groupby("channel_name", as_index=False, dropna=False)
+        .agg(**agg_spec)
+        .sort_values("raw_watch_hours", ascending=False)
+    )
 
 
 def _clean_decode_samples(df: pd.DataFrame) -> pd.DataFrame:
@@ -426,12 +479,14 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     ).sort_values("raw_watch_hours", ascending=False)
 
     channel_daily = read_csv(profile_dir, "channel_daily")
+    channel_daily = _filter_completed_date_frame(channel_daily, "log_date")
 
     daily = with_numbers(
         read_csv(profile_dir, "daily"),
         ["rows", "status_200_rows", "non_200_rows", "raw_ts_rows", "status_200_ts_rows",
          "ts_rows", "m3u8_rows", "approx_unique_ips"],
     )
+    daily = _filter_completed_date_frame(daily, "log_date")
 
     status     = add_status_meanings(with_numbers(read_csv(profile_dir, "status"), ["rows", "approx_unique_ips"]))
     extensions = with_numbers(read_csv(profile_dir, "extensions"), ["rows", "approx_unique_ips"])
@@ -470,6 +525,7 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
         ["raw_ts_chunks", "raw_watch_hours", "status_200_ts_chunks", "status_200_watch_hours", "approx_unique_ips"],
     )
     files = with_numbers(read_csv(profile_dir, "files"), ["size_mb"])
+    files = _filter_completed_date_frame(files, "date")
 
     # ── Derived summary scalars ───────────────────────────────────────────────
     total_rows     = total(daily, "rows") or total(status, "rows")
@@ -494,8 +550,8 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
     status_200_ts_rows  = total(daily, "status_200_ts_rows") or total(channel_summary, "status_200_ts_chunks")
     ts_rows             = raw_ts_rows
     m3u8_rows           = total(daily, "m3u8_rows")
-    raw_watch_hours     = total(channel_summary, "raw_watch_hours") or (raw_ts_rows * CHUNK_DURATION_HOURS)
-    status_200_watch_hours = total(channel_summary, "status_200_watch_hours") or (status_200_ts_rows * CHUNK_DURATION_HOURS)
+    raw_watch_hours     = (raw_ts_rows * CHUNK_DURATION_HOURS) or total(channel_summary, "raw_watch_hours")
+    status_200_watch_hours = (status_200_ts_rows * CHUNK_DURATION_HOURS) or total(channel_summary, "status_200_watch_hours")
     unmapped_ts_rows    = total(unmapped, "raw_ts_chunks")
     mapped_coverage     = pct(max(ts_rows - unmapped_ts_rows, 0), ts_rows)
 
@@ -531,6 +587,15 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
             channel_daily["m3u8_rows"] = 0
         channel_daily["log_date"] = pd.to_datetime(channel_daily["log_date"], errors="coerce").dt.strftime("%Y-%m-%d")
         channel_daily             = channel_daily.dropna(subset=["log_date"])
+        rebuilt_channel_summary = _channel_summary_from_daily(channel_daily)
+        if not rebuilt_channel_summary.empty:
+            channel_summary = rebuilt_channel_summary
+
+    if not channel_summary.empty:
+        # Re-apply share after the summary is rebuilt from completed daily rows.
+        channel_summary["share_pct"] = channel_summary["raw_watch_hours"].map(
+            lambda v: pct(v, raw_watch_hours)
+        )
 
     if not status.empty:
         status["row_pct"] = status["rows"].map(lambda v: pct(v, total_rows))
@@ -565,18 +630,31 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
 
     query_param_row = one_row(query_params)
     cmcd_row        = one_row(cmcd)
-    file_dates      = (
+    daily_tables = _filter_completed_daily_tables(read_all_daily_tables(profile_dir))
+    daily_dates = (
+        sorted(daily["log_date"].dropna().astype(str).unique().tolist())
+        if not daily.empty and "log_date" in daily.columns
+        else []
+    )
+    file_dates = (
         sorted(files["date"].dropna().astype(str).unique().tolist())
         if not files.empty and "date" in files.columns
         else []
     )
-    source_dates = {}
-    if not files.empty and {"source", "date"}.issubset(files.columns):
+    report_dates = daily_dates or file_dates
+    source_dates: dict[str, list[str]] = {}
+    for row in daily_tables.get("daily_volume", []):
+        date_value = str(row.get("log_date") or row.get("date") or "")[:10]
+        if not date_value:
+            continue
+        source = str(row.get("source") or "stream").strip().lower() or "stream"
+        source_dates.setdefault(source, []).append(date_value)
+    if not source_dates and not files.empty and {"source", "date"}.issubset(files.columns):
         for source, group in files.groupby(files["source"].fillna("").astype(str).str.lower()):
             source_dates[source] = sorted(group["date"].dropna().astype(str).unique().tolist())
+    source_dates = {source: sorted(set(dates)) for source, dates in source_dates.items()}
     source_true_ranges = true_source_ranges_from_lake(source_dates, DEFAULT_LAKE_FOLDER)
-    true_range = combined_range(source_true_ranges) if source_true_ranges else true_data_range(file_dates, files)
-    daily_tables = read_all_daily_tables(profile_dir)
+    true_range = combined_range(source_true_ranges) if source_true_ranges else true_data_range(report_dates, files)
     device_decode = load_device_decode_outputs()
     encoded_display_fields = {"state", "city", "sample_reqPath", "sample_value", "userAgent", "UA"}
     for rows in daily_tables.values():
@@ -595,8 +673,8 @@ def build_report_data(profile_dir: Path, title: str) -> dict:
         "generated_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "profile_dir":    str(profile_dir),
         "date_range":     {
-            "first": file_dates[0] if file_dates else "",
-            "last":  file_dates[-1] if file_dates else "",
+            "first": report_dates[0] if report_dates else "",
+            "last":  report_dates[-1] if report_dates else "",
         },
         "true_data_range":  true_range,
         "source_true_ranges": source_true_ranges,
